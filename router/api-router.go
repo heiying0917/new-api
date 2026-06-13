@@ -172,6 +172,28 @@ func SetApiRouter(router *gin.Engine) {
 			supplierMeRoute.GET("/market-price", controller.SupplierMarketPrice)
 		}
 
+		settlementSelfRoute := apiRouter.Group("/supplier/self/settlement")
+		settlementSelfRoute.Use(middleware.SupplierAuth())
+		{
+			settlementSelfRoute.POST("/", controller.SupplierCreateSettlement)
+			settlementSelfRoute.GET("/", controller.SupplierListSettlements)
+			settlementSelfRoute.GET("/:id", controller.SupplierGetSettlement)
+			settlementSelfRoute.GET("/:id/logs", controller.SupplierGetSettlementLogs)
+			settlementSelfRoute.POST("/:id/cancel", controller.SupplierCancelSettlement)
+			settlementSelfRoute.GET("/:id/export", controller.SupplierExportSettlement)
+		}
+
+		settlementAdminRoute := apiRouter.Group("/admin/settlement")
+		settlementAdminRoute.Use(middleware.RootAuth())
+		{
+			settlementAdminRoute.GET("/", controller.AdminListSettlements)
+			settlementAdminRoute.GET("/:id", controller.AdminGetSettlement)
+			settlementAdminRoute.GET("/:id/logs", controller.AdminGetSettlementLogs)
+			settlementAdminRoute.POST("/:id/confirm", controller.AdminConfirmSettlement)
+			settlementAdminRoute.POST("/:id/cancel", controller.AdminCancelSettlement)
+			settlementAdminRoute.GET("/:id/export", controller.AdminExportSettlement)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
