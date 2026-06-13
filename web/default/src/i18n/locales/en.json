@@ -4587,6 +4587,11 @@
     "Failed to load channels": "Failed to load channels",
     "Update settings for supplier": "Update settings for supplier",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo",
-    "Optional notes about this channel": "Optional notes about this channel"
+    "Optional notes about this channel": "Optional notes about this channel",
+    "Supplier Overview": "Supplier Overview",
+    "Market Prices": "Market Prices",
+    "Pending Settlement": "Pending Settlement",
+    "Payable": "Payable",
+    "Records": "Records"
   }
 }

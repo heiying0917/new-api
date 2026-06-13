@@ -4587,6 +4587,11 @@
     "Failed to load channels": "加载渠道失败",
     "Update settings for supplier": "更新供应商设置",
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "逗号分隔的模型名称，如 gpt-4,gpt-3.5-turbo",
-    "Optional notes about this channel": "关于此渠道的可选备注"
+    "Optional notes about this channel": "关于此渠道的可选备注",
+    "Supplier Overview": "供应商概览",
+    "Market Prices": "市场价",
+    "Pending Settlement": "待结算",
+    "Payable": "应付",
+    "Records": "记录数"
   }
 }
