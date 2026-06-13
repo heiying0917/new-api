@@ -33,6 +33,7 @@ import {
   User,
   Users,
   Wallet,
+  Boxes,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
@@ -106,6 +107,12 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('My Channels'),
+            url: '/my-channels',
+            icon: Boxes,
+            minRole: ROLE.SUPPLIER,
           },
           {
             title: t('Profile'),
