@@ -42,6 +42,8 @@ import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedSuppliersIndexRouteImport } from './routes/_authenticated/suppliers/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
+import { Route as AuthenticatedSettlementsIndexRouteImport } from './routes/_authenticated/settlements/index'
+import { Route as AuthenticatedSettlementReviewIndexRouteImport } from './routes/_authenticated/settlement-review/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
@@ -238,6 +240,18 @@ const AuthenticatedSubscriptionsIndexRoute =
   AuthenticatedSubscriptionsIndexRouteImport.update({
     id: '/subscriptions/',
     path: '/subscriptions/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettlementsIndexRoute =
+  AuthenticatedSettlementsIndexRouteImport.update({
+    id: '/settlements/',
+    path: '/settlements/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettlementReviewIndexRoute =
+  AuthenticatedSettlementReviewIndexRouteImport.update({
+    id: '/settlement-review/',
+    path: '/settlement-review/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedRedemptionCodesIndexRoute =
@@ -445,6 +459,8 @@ export interface FileRoutesByFullPath {
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/settlement-review/': typeof AuthenticatedSettlementReviewIndexRoute
+  '/settlements/': typeof AuthenticatedSettlementsIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/suppliers/': typeof AuthenticatedSuppliersIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
@@ -505,6 +521,8 @@ export interface FileRoutesByTo {
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/settlement-review': typeof AuthenticatedSettlementReviewIndexRoute
+  '/settlements': typeof AuthenticatedSettlementsIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/suppliers': typeof AuthenticatedSuppliersIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
@@ -569,6 +587,8 @@ export interface FileRoutesById {
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/_authenticated/settlement-review/': typeof AuthenticatedSettlementReviewIndexRoute
+  '/_authenticated/settlements/': typeof AuthenticatedSettlementsIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/suppliers/': typeof AuthenticatedSuppliersIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
@@ -632,6 +652,8 @@ export interface FileRouteTypes {
     | '/playground/'
     | '/profile/'
     | '/redemption-codes/'
+    | '/settlement-review/'
+    | '/settlements/'
     | '/subscriptions/'
     | '/suppliers/'
     | '/system-settings/'
@@ -692,6 +714,8 @@ export interface FileRouteTypes {
     | '/playground'
     | '/profile'
     | '/redemption-codes'
+    | '/settlement-review'
+    | '/settlements'
     | '/subscriptions'
     | '/suppliers'
     | '/system-settings'
@@ -755,6 +779,8 @@ export interface FileRouteTypes {
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
     | '/_authenticated/redemption-codes/'
+    | '/_authenticated/settlement-review/'
+    | '/_authenticated/settlements/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/suppliers/'
     | '/_authenticated/system-settings/'
@@ -1030,6 +1056,20 @@ declare module '@tanstack/react-router' {
       path: '/subscriptions'
       fullPath: '/subscriptions/'
       preLoaderRoute: typeof AuthenticatedSubscriptionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settlements/': {
+      id: '/_authenticated/settlements/'
+      path: '/settlements'
+      fullPath: '/settlements/'
+      preLoaderRoute: typeof AuthenticatedSettlementsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settlement-review/': {
+      id: '/_authenticated/settlement-review/'
+      path: '/settlement-review'
+      fullPath: '/settlement-review/'
+      preLoaderRoute: typeof AuthenticatedSettlementReviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/redemption-codes/': {
@@ -1330,6 +1370,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
+  AuthenticatedSettlementReviewIndexRoute: typeof AuthenticatedSettlementReviewIndexRoute
+  AuthenticatedSettlementsIndexRoute: typeof AuthenticatedSettlementsIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedSuppliersIndexRoute: typeof AuthenticatedSuppliersIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
@@ -1355,6 +1397,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
+  AuthenticatedSettlementReviewIndexRoute:
+    AuthenticatedSettlementReviewIndexRoute,
+  AuthenticatedSettlementsIndexRoute: AuthenticatedSettlementsIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
   AuthenticatedSuppliersIndexRoute: AuthenticatedSuppliersIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,

@@ -20,6 +20,7 @@ import {
   Activity,
   Box,
   Building,
+  ClipboardCheck,
   CreditCard,
   FileText,
   FlaskConical,
@@ -28,6 +29,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  Receipt,
   Settings,
   Ticket,
   User,
@@ -115,6 +117,12 @@ export function useSidebarData(): SidebarData {
             minRole: ROLE.SUPPLIER,
           },
           {
+            title: t('Billing & Settlement'),
+            url: '/settlements',
+            icon: Receipt,
+            minRole: ROLE.SUPPLIER,
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -144,6 +152,12 @@ export function useSidebarData(): SidebarData {
             title: t('Suppliers'),
             url: '/suppliers',
             icon: Building,
+            minRole: ROLE.SUPER_ADMIN,
+          },
+          {
+            title: t('Settlement Review'),
+            url: '/settlement-review',
+            icon: ClipboardCheck,
             minRole: ROLE.SUPER_ADMIN,
           },
           {
