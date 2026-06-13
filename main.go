@@ -131,6 +131,9 @@ func main() {
 	// Channel upstream model update check task
 	controller.StartChannelUpstreamModelUpdateTask()
 
+	// Supplier channel health check task (default disabled; enable via SupplierHealthCheckEnabled option)
+	go controller.StartSupplierHealthCheckTask()
+
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {
 			controller.UpdateMidjourneyTaskBulk()

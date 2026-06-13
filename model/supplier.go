@@ -87,6 +87,22 @@ func UpdateSupplier(userId int, fields map[string]interface{}) error {
 	return nil
 }
 
+// CascadeSupplierBySupplierId 根据供应商名下渠道的可用情况，级联更新供应商 enabled。
+// 全部渠道不可用 → enabled=false；存在可用渠道 → enabled=true。supplierId<=0 时为 no-op。
+func CascadeSupplierBySupplierId(supplierId int) error {
+	if supplierId <= 0 {
+		return nil
+	}
+	var enabledCount int64
+	if err := DB.Model(&Channel{}).
+		Where("supplier_id = ? AND status = ?", supplierId, common.ChannelStatusEnabled).
+		Count(&enabledCount).Error; err != nil {
+		return err
+	}
+	return DB.Model(&Supplier{}).Where("user_id = ?", supplierId).
+		Update("enabled", enabledCount > 0).Error
+}
+
 func GetAllSuppliers(startIdx, num int) ([]*SupplierListItem, int64, error) {
 	return querySuppliers("", startIdx, num)
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -59,6 +60,10 @@ type Channel struct {
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
+
+	// transient dispatch fields (populated by InitChannelCache, never persisted)
+	SupplierPriority int  `json:"-" gorm:"-"`
+	SupplierEnabled  bool `json:"-" gorm:"-"`
 }
 
 type ChannelInfo struct {
@@ -483,6 +488,31 @@ func (channel *Channel) GetPriority() int64 {
 	return *channel.Priority
 }
 
+// GetDispatchStrategy 读取全局调度策略（priority|bidding），默认 priority。
+func GetDispatchStrategy() string {
+	common.OptionMapRWMutex.RLock()
+	v := common.OptionMap["DispatchStrategy"]
+	common.OptionMapRWMutex.RUnlock()
+	if v == "bidding" {
+		return "bidding"
+	}
+	return "priority"
+}
+
+// dispatchEffectivePriority 计算分层用有效优先级。
+//
+//	priority 策略：SupplierPriority 为主键，渠道优先级为辅（供应商优先级全 0 时等同原渠道优先级 → 向后兼容）。
+//	bidding 策略：成本价低者得到更高的有效优先级（先被调度）。
+func dispatchEffectivePriority(ch *Channel, strategy string) int64 {
+	if strategy == "bidding" {
+		if ch.CostPrice == nil || *ch.CostPrice <= 0 {
+			return math.MinInt64 / 2 // 无成本价（如管理员渠道）→ 竞价中排最低（最后兜底）
+		}
+		return -int64(*ch.CostPrice * 1000) // 价低→值大→优先
+	}
+	return int64(ch.SupplierPriority)*1_000_000_000 + ch.GetPriority()
+}
+
 func (channel *Channel) GetWeight() int {
 	if channel.Weight == nil {
 		return 0
@@ -776,6 +806,9 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
 			return false
 		}
+	}
+	if channel != nil && channel.SupplierId > 0 {
+		_ = CascadeSupplierBySupplierId(channel.SupplierId)
 	}
 	return true
 }

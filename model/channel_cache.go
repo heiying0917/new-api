@@ -39,9 +39,40 @@ func InitChannelCache() {
 	for group := range groups {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
+
+	// 批量加载供应商资料，填充瞬态字段（供调度用）
+	supplierIds := make([]int, 0)
+	for _, ch := range newChannelId2channel {
+		if ch.SupplierId > 0 {
+			supplierIds = append(supplierIds, ch.SupplierId)
+		}
+	}
+	supplierMap := map[int]Supplier{}
+	if len(supplierIds) > 0 {
+		var sups []Supplier
+		DB.Where("user_id IN ?", supplierIds).Find(&sups)
+		for _, s := range sups {
+			supplierMap[s.UserId] = s
+		}
+	}
+	for _, ch := range newChannelId2channel {
+		if ch.SupplierId == 0 {
+			ch.SupplierEnabled = true // 管理员渠道始终可用
+			ch.SupplierPriority = 0
+		} else if s, ok := supplierMap[ch.SupplierId]; ok {
+			ch.SupplierEnabled = s.Enabled
+			ch.SupplierPriority = s.Priority
+		} else {
+			ch.SupplierEnabled = true // 找不到资料：放行，避免误杀
+		}
+	}
+
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
+		}
+		if !channel.SupplierEnabled {
+			continue // 禁用供应商的渠道不参与调度
 		}
 		groups := strings.Split(channel.Group, ",")
 		for _, group := range groups {
@@ -56,10 +87,12 @@ func InitChannelCache() {
 	}
 
 	// sort by priority
+	strategy := GetDispatchStrategy()
 	for group, model2channels := range newGroup2model2channels {
 		for model, channels := range model2channels {
 			sort.Slice(channels, func(i, j int) bool {
-				return newChannelId2channel[channels[i]].GetPriority() > newChannelId2channel[channels[j]].GetPriority()
+				return dispatchEffectivePriority(newChannelId2channel[channels[i]], strategy) >
+					dispatchEffectivePriority(newChannelId2channel[channels[j]], strategy)
 			})
 			newGroup2model2channels[group][model] = channels
 		}
@@ -123,10 +156,12 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
+	strategy := GetDispatchStrategy()
+
 	uniquePriorities := make(map[int]bool)
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(channel.GetPriority())] = true
+			uniquePriorities[int(dispatchEffectivePriority(channel, strategy))] = true
 		} else {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
@@ -147,7 +182,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	var targetChannels []*Channel
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
+			if dispatchEffectivePriority(channel, strategy) == targetPriority {
 				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
@@ -252,11 +287,28 @@ func CacheUpdateChannel(channel *Channel) {
 	if !common.MemoryCacheEnabled {
 		return
 	}
-	channelSyncLock.Lock()
-	defer channelSyncLock.Unlock()
 	if channel == nil {
 		return
 	}
+
+	// Repopulate transient supplier fields BEFORE acquiring the cache lock (avoid DB I/O under lock).
+	// Mirrors InitChannelCache enrichment so the dispatched channel retains correct SupplierPriority/SupplierEnabled.
+	if channel.SupplierId == 0 {
+		channel.SupplierEnabled = true
+		channel.SupplierPriority = 0
+	} else {
+		var s Supplier
+		if err := DB.First(&s, "user_id = ?", channel.SupplierId).Error; err == nil {
+			channel.SupplierEnabled = s.Enabled
+			channel.SupplierPriority = s.Priority
+		} else {
+			channel.SupplierEnabled = true // fail open
+			channel.SupplierPriority = 0
+		}
+	}
+
+	channelSyncLock.Lock()
+	defer channelSyncLock.Unlock()
 
 	if channelsIDM == nil {
 		channelsIDM = make(map[int]*Channel)
