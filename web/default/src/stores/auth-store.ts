@@ -28,6 +28,7 @@ export interface AuthUser {
   username: string
   display_name?: string
   email?: string
+  phone?: string
   role: number
   status?: number
   group?: string

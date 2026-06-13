@@ -16,32 +16,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { t } from 'i18next'
+import z from 'zod'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
+import { Suppliers } from '@/features/suppliers'
 
-export const ROLE = {
-  GUEST: 0, // 后续如果需要用到这个角色那就再加，同语先留一下
-  USER: 1,
-  SUPPLIER: 5,
-  ADMIN: 10,
-  SUPER_ADMIN: 100,
-} as const
+const suppliersSearchSchema = z.object({
+  page: z.number().optional().catch(1),
+  pageSize: z.number().optional().catch(undefined),
+  filter: z.string().optional().catch(''),
+})
 
-export type RoleValue = (typeof ROLE)[keyof typeof ROLE]
+export const Route = createFileRoute('/_authenticated/suppliers/')({
+  beforeLoad: () => {
+    const { auth } = useAuthStore.getState()
 
-const DEFAULT_ROLE = ROLE.GUEST
-
-const ROLE_LABEL_KEYS: Record<RoleValue, string> = {
-  [ROLE.SUPER_ADMIN]: 'Super Admin',
-  [ROLE.ADMIN]: 'Admin',
-  [ROLE.SUPPLIER]: 'Supplier',
-  [ROLE.USER]: 'User',
-  [ROLE.GUEST]: 'Guest',
-}
-
-export function getRoleLabelKey(role?: number): string {
-  return ROLE_LABEL_KEYS[role as RoleValue] ?? ROLE_LABEL_KEYS[DEFAULT_ROLE]
-}
-
-export function getRoleLabel(role?: number): string {
-  return t(getRoleLabelKey(role))
-}
+    if (!auth.user || auth.user.role < ROLE.SUPER_ADMIN) {
+      throw redirect({
+        to: '/403',
+      })
+    }
+  },
+  validateSearch: suppliersSearchSchema,
+  component: Suppliers,
+})

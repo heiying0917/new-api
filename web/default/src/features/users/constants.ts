@@ -65,6 +65,7 @@ export const getUserStatusOptions = (t: (key: string) => string) => [
 
 export const USER_ROLE = {
   USER: 1,
+  SUPPLIER: 5,
   ADMIN: 10,
   ROOT: 100,
 } as const
@@ -73,6 +74,11 @@ export const USER_ROLES = {
   [USER_ROLE.USER]: {
     labelKey: 'User',
     value: USER_ROLE.USER,
+    icon: User,
+  },
+  [USER_ROLE.SUPPLIER]: {
+    labelKey: 'Supplier',
+    value: USER_ROLE.SUPPLIER,
     icon: User,
   },
   [USER_ROLE.ADMIN]: {
@@ -89,6 +95,7 @@ export const USER_ROLES = {
 
 export const getUserRoleOptions = (t: (key: string) => string) => [
   { label: t('User'), value: String(USER_ROLE.USER), icon: User },
+  { label: t('Supplier'), value: String(USER_ROLE.SUPPLIER), icon: User },
   { label: t('Admin'), value: String(USER_ROLE.ADMIN), icon: Users },
   { label: t('Root'), value: String(USER_ROLE.ROOT), icon: Shield },
 ]

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  Building,
   CreditCard,
   FileText,
   FlaskConical,
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
+import { ROLE } from '@/lib/roles'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -130,6 +132,12 @@ export function useSidebarData(): SidebarData {
             title: t('Users'),
             url: '/users',
             icon: Users,
+          },
+          {
+            title: t('Suppliers'),
+            url: '/suppliers',
+            icon: Building,
+            minRole: ROLE.SUPER_ADMIN,
           },
           {
             title: t('Redemption Codes'),

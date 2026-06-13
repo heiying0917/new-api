@@ -16,32 +16,33 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { t } from 'i18next'
 
-export const ROLE = {
-  GUEST: 0, // 后续如果需要用到这个角色那就再加，同语先留一下
-  USER: 1,
-  SUPPLIER: 5,
-  ADMIN: 10,
-  SUPER_ADMIN: 100,
-} as const
-
-export type RoleValue = (typeof ROLE)[keyof typeof ROLE]
-
-const DEFAULT_ROLE = ROLE.GUEST
-
-const ROLE_LABEL_KEYS: Record<RoleValue, string> = {
-  [ROLE.SUPER_ADMIN]: 'Super Admin',
-  [ROLE.ADMIN]: 'Admin',
-  [ROLE.SUPPLIER]: 'Supplier',
-  [ROLE.USER]: 'User',
-  [ROLE.GUEST]: 'Guest',
+export interface Supplier {
+  user_id: number
+  username: string
+  email: string
+  phone: string
+  user_status: number
+  priority: number
+  enabled: boolean
+  settlement_mode: 'manual' | 'auto'
+  settlement_cycle: 'day' | 'week' | 'month'
+  remark: string
 }
 
-export function getRoleLabelKey(role?: number): string {
-  return ROLE_LABEL_KEYS[role as RoleValue] ?? ROLE_LABEL_KEYS[DEFAULT_ROLE]
+export type SuppliersDialogType = 'update'
+
+export interface ApiResponse<T = unknown> {
+  success: boolean
+  message?: string
+  data?: T
 }
 
-export function getRoleLabel(role?: number): string {
-  return t(getRoleLabelKey(role))
+export interface GetSuppliersResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: Supplier[]
+    total: number
+  }
 }
