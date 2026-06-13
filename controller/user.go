@@ -164,6 +164,10 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
+	if user.Phone == "" || len(user.Phone) > 20 {
+		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": "invalid phone"})
+		return
+	}
 	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -181,7 +185,8 @@ func Register(c *gin.Context) {
 		Password:    user.Password,
 		DisplayName: user.Username,
 		InviterId:   inviterId,
-		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		Phone:       user.Phone,
+		Role:        common.RoleSupplierUser, // 公开注册即供应商
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
@@ -196,6 +201,10 @@ func Register(c *gin.Context) {
 	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
+	}
+	// 供应商资料创建失败不阻断注册：列表查询会用默认值兜底，管理员更新时也会按需补建。
+	if _, err := model.CreateSupplierProfile(insertedUser.Id); err != nil {
+		common.SysLog(fmt.Sprintf("CreateSupplierProfile error for user %d: %v", insertedUser.Id, err))
 	}
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {

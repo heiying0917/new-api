@@ -147,6 +147,14 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		supplierAdminRoute := apiRouter.Group("/supplier")
+		supplierAdminRoute.Use(middleware.RootAuth())
+		{
+			supplierAdminRoute.GET("/", controller.GetAllSuppliers)
+			supplierAdminRoute.GET("/search", controller.SearchSuppliers)
+			supplierAdminRoute.PUT("/", controller.UpdateSupplier)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
