@@ -34,8 +34,10 @@ type Channel struct {
 	ResponseTime       int     `json:"response_time"` // in milliseconds
 	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
 	Other              string  `json:"other"`
-	Balance            float64 `json:"balance"` // in USD
-	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
+	Balance            float64  `json:"balance"` // in USD
+	BalanceUpdatedTime int64    `json:"balance_updated_time" gorm:"bigint"`
+	SupplierId         int      `json:"supplier_id" gorm:"index;default:0"`
+	CostPrice          *float64 `json:"cost_price" gorm:"default:0"` // 成本价 ¥/$（X元=1刀）
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
@@ -1087,6 +1089,30 @@ func CountChannelsByType(channelType int) (int64, error) {
 	var count int64
 	err := DB.Model(&Channel{}).Where("type = ?", channelType).Count(&count).Error
 	return count, err
+}
+
+func GetChannelsBySupplier(supplierId, startIdx, num int) ([]*Channel, int64, error) {
+	var channels []*Channel
+	var total int64
+	if err := DB.Model(&Channel{}).Where("supplier_id = ?", supplierId).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := DB.Where("supplier_id = ?", supplierId).Omit("key").Order("id desc").
+		Limit(num).Offset(startIdx).Find(&channels).Error
+	return channels, total, err
+}
+
+func SearchChannelsBySupplier(supplierId int, keyword string, startIdx, num int) ([]*Channel, int64, error) {
+	var channels []*Channel
+	var total int64
+	like := "%" + keyword + "%"
+	q := DB.Model(&Channel{}).Where("supplier_id = ?", supplierId).
+		Where("name LIKE ? OR models LIKE ?", like, like)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Omit("key").Order("id desc").Limit(num).Offset(startIdx).Find(&channels).Error
+	return channels, total, err
 }
 
 // Return map[type]count for all channels
