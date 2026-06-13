@@ -1148,6 +1148,30 @@ func SearchChannelsBySupplier(supplierId int, keyword string, startIdx, num int)
 	return channels, total, err
 }
 
+// GetGroupMarketPrices 返回每个分组当前启用渠道中最低的 cost_price（仅 cost_price>0 的渠道参与）。
+func GetGroupMarketPrices() (map[string]float64, error) {
+	var channels []Channel
+	if err := DB.Where("status = ?", common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]float64)
+	for _, ch := range channels {
+		if ch.CostPrice == nil || *ch.CostPrice <= 0 {
+			continue
+		}
+		for _, g := range strings.Split(ch.Group, ",") {
+			g = strings.TrimSpace(g)
+			if g == "" {
+				continue
+			}
+			if cur, ok := result[g]; !ok || *ch.CostPrice < cur {
+				result[g] = *ch.CostPrice
+			}
+		}
+	}
+	return result, nil
+}
+
 // Return map[type]count for all channels
 func CountChannelsGroupByType() (map[int64]int64, error) {
 	type result struct {

@@ -459,6 +459,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 
+	// 供应商渠道：按官方价记账（不含分组折扣），供后续结算
+	var officialUsd float64
+	if relayInfo.ChannelId > 0 {
+		if ch, chErr := model.CacheGetChannel(relayInfo.ChannelId); chErr == nil && ch != nil && ch.SupplierId > 0 {
+			officialUsd = ComputeOfficialUsd(summary.PromptTokens, summary.CompletionTokens,
+				summary.ModelRatio, summary.CompletionRatio, summary.ModelPrice, relayInfo.PriceData.UsePrice)
+		}
+	}
+
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     summary.PromptTokens,
@@ -472,6 +481,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
+		OfficialUsd:      officialUsd,
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))

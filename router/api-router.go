@@ -165,6 +165,13 @@ func SetApiRouter(router *gin.Engine) {
 			supplierSelfRoute.DELETE("/:id", controller.SupplierDeleteChannel)
 		}
 
+		supplierMeRoute := apiRouter.Group("/supplier/self")
+		supplierMeRoute.Use(middleware.SupplierAuth())
+		{
+			supplierMeRoute.GET("/pending", controller.SupplierPending)
+			supplierMeRoute.GET("/market-price", controller.SupplierMarketPrice)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
