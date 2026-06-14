@@ -229,9 +229,27 @@ var (
 	SearchRateLimitEnable         = true
 	SearchRateLimitNum            = 10
 	SearchRateLimitDuration int64 = 60
+
+	// 登录防暴破（账号维度，免疫 IP 轮换）。实现见 common/login_throttle.go。
+	LoginThrottleEnable          = true
+	LoginCaptchaThreshold        = 3    // 账号失败累计达到该值后要求验证码（前端按需弹 Turnstile）
+	LoginLockThreshold           = 10   // 账号失败累计达到该值后进入硬锁定
+	LoginFailWindow        int64 = 1800 // 失败计数窗口（秒），锁定期间计数不清零，用于档位递增
+	LoginLockBaseDuration  int64 = 900  // 硬锁定基础时长（秒），随失败档位递增（×4、×96≈24h）
+	LoginGlobalFailMax           = 500  // 全局失败上限（每窗口），触发全局降级
+	LoginGlobalFailWindow  int64 = 60   // 全局失败统计窗口（秒）
+	AdminLoginStricter           = true // role>=Admin 阈值减半、锁定时长翻倍
 )
 
 var RateLimitKeyExpirationDuration = 20 * time.Minute
+
+// TrustedProxies 可信代理 CIDR 列表（来自 env TRUSTED_PROXIES，空 = 信任无，
+// 此时 c.ClientIP() 使用真实 TCP peer，忽略客户端伪造的 X-Forwarded-For）。
+var TrustedProxies []string
+
+// CookieSecure 会话 Cookie 是否仅经 HTTPS 传输（env COOKIE_SECURE）。
+// 本地 http 调试需为 false；生产经 TLS 时应设为 true。
+var CookieSecure = false
 
 const (
 	UserStatusEnabled  = 1 // don't use 0, 0 is the default value!

@@ -54,9 +54,9 @@ func TestQuerySuppliers_PendingAndSettled(t *testing.T) {
 	require.NoError(t, DB.Create(&Channel{Id: 5001, Name: "a", Key: "k1", SupplierId: u.Id, CostPrice: &cp1, Models: "m", Group: "g"}).Error)
 	require.NoError(t, DB.Create(&Channel{Id: 5002, Name: "b", Key: "k2", SupplierId: u.Id, CostPrice: &cp2, Models: "m", Group: "g"}).Error)
 
-	// Unsettled consume logs => contribute to PendingCNY.
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 5001, OfficialUsd: 0.10, SettlementId: 0, CreatedAt: 100}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 5002, OfficialUsd: 0.20, SettlementId: 0, CreatedAt: 200}).Error)
+	// Unsettled consume logs => contribute to PendingCNY (成交价逐条冻结在 cost_price_snapshot).
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 5001, OfficialUsd: 0.10, CostPriceSnapshot: cp1, SettlementId: 0, CreatedAt: 100}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 5002, OfficialUsd: 0.20, CostPriceSnapshot: cp2, SettlementId: 0, CreatedAt: 200}).Error)
 
 	// Settled settlements => contribute to SettledCNY (sum of computed_cny on settled).
 	require.NoError(t, DB.Create(&Settlement{SupplierId: u.Id, Status: SettlementStatusSettled, ComputedCNY: 12.5, SettledAt: time.Now().Unix()}).Error)

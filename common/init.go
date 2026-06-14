@@ -126,6 +126,30 @@ func InitEnv() {
 	SearchRateLimitEnable = GetEnvOrDefaultBool("SEARCH_RATE_LIMIT_ENABLE", true)
 	SearchRateLimitNum = GetEnvOrDefault("SEARCH_RATE_LIMIT", 10)
 	SearchRateLimitDuration = int64(GetEnvOrDefault("SEARCH_RATE_LIMIT_DURATION", 60))
+
+	// 登录防暴破（账号维度，免疫 IP 轮换）
+	LoginThrottleEnable = GetEnvOrDefaultBool("LOGIN_THROTTLE_ENABLE", true)
+	LoginCaptchaThreshold = GetEnvOrDefault("LOGIN_CAPTCHA_THRESHOLD", 3)
+	LoginLockThreshold = GetEnvOrDefault("LOGIN_LOCK_THRESHOLD", 10)
+	LoginFailWindow = int64(GetEnvOrDefault("LOGIN_FAIL_WINDOW", 1800))
+	LoginLockBaseDuration = int64(GetEnvOrDefault("LOGIN_LOCK_BASE_DURATION", 900))
+	LoginGlobalFailMax = GetEnvOrDefault("LOGIN_GLOBAL_FAIL_MAX", 500)
+	LoginGlobalFailWindow = int64(GetEnvOrDefault("LOGIN_GLOBAL_FAIL_WINDOW", 60))
+	AdminLoginStricter = GetEnvOrDefaultBool("ADMIN_LOGIN_STRICTER", true)
+
+	// 会话 Cookie 仅 HTTPS（生产经 TLS 时建议 true，本地 http 调试保持 false）
+	CookieSecure = GetEnvOrDefaultBool("COOKIE_SECURE", false)
+
+	// 可信代理：空 = 信任无，c.ClientIP() 用真实 TCP peer，防止 X-Forwarded-For 伪造绕过限流
+	trustedProxiesStr := GetEnvOrDefaultString("TRUSTED_PROXIES", "")
+	var trustedProxies []string
+	for _, p := range strings.Split(trustedProxiesStr, ",") {
+		if tp := strings.TrimSpace(p); tp != "" {
+			trustedProxies = append(trustedProxies, tp)
+		}
+	}
+	TrustedProxies = trustedProxies
+
 	initConstantEnv()
 }
 

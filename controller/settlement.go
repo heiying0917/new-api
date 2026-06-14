@@ -20,6 +20,12 @@ func SupplierCreateSettlement(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.RecordSettlementLedger(&model.SettlementLedger{
+		SettlementId: s.Id, SupplierId: s.SupplierId, Action: "create",
+		OfficialUsd: s.OfficialUsd, ComputedCNY: s.ComputedCNY,
+		OperatorId: c.GetInt("id"), OperatorIsAdmin: false,
+		SnapshotHash: model.SettlementSnapshotHash(s),
+	})
 	common.ApiSuccess(c, s)
 }
 
@@ -102,6 +108,14 @@ func SupplierCancelSettlement(c *gin.Context) {
 	if err := model.CancelSettlement(id, c.GetInt("id"), false); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if s, e := model.GetSettlementById(id); e == nil {
+		model.RecordSettlementLedger(&model.SettlementLedger{
+			SettlementId: s.Id, SupplierId: s.SupplierId, Action: "cancel",
+			OfficialUsd: s.OfficialUsd, ComputedCNY: s.ComputedCNY,
+			OperatorId: c.GetInt("id"), OperatorIsAdmin: false,
+			SnapshotHash: model.SettlementSnapshotHash(s),
+		})
 	}
 	common.ApiSuccess(c, nil)
 }
@@ -241,6 +255,21 @@ func AdminConfirmSettlement(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 确认即打款：账本必须落一条，即使回查失败也用手上已知数据记录（杜绝"已确认但无账本"）。
+	led := &model.SettlementLedger{
+		SettlementId: id, Action: "confirm",
+		ActualAmount: body.ActualAmount, ActualCurrency: body.ActualCurrency,
+		OperatorId: c.GetInt("id"), OperatorIsAdmin: true, Remark: body.Remark,
+	}
+	if s, e := model.GetSettlementById(id); e == nil {
+		led.SupplierId = s.SupplierId
+		led.OfficialUsd = s.OfficialUsd
+		led.ComputedCNY = s.ComputedCNY
+		led.SnapshotHash = model.SettlementSnapshotHash(s)
+	} else {
+		common.SysLog("ledger: refetch settlement after confirm failed: " + e.Error())
+	}
+	model.RecordSettlementLedger(led)
 	common.ApiSuccess(c, nil)
 }
 
@@ -250,6 +279,14 @@ func AdminCancelSettlement(c *gin.Context) {
 	if err := model.CancelSettlement(id, 0, true); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if s, e := model.GetSettlementById(id); e == nil {
+		model.RecordSettlementLedger(&model.SettlementLedger{
+			SettlementId: s.Id, SupplierId: s.SupplierId, Action: "cancel",
+			OfficialUsd: s.OfficialUsd, ComputedCNY: s.ComputedCNY,
+			OperatorId: c.GetInt("id"), OperatorIsAdmin: true,
+			SnapshotHash: model.SettlementSnapshotHash(s),
+		})
 	}
 	common.ApiSuccess(c, nil)
 }

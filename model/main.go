@@ -283,6 +283,7 @@ func migrateDB() error {
 		&UserOAuthBinding{},
 		&PerfMetric{},
 		&Settlement{},
+		&SettlementLedger{},
 	)
 	if err != nil {
 		return err
@@ -334,6 +335,7 @@ func migrateDBFast() error {
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
 		{&Settlement{}, "Settlement"},
+		{&SettlementLedger{}, "SettlementLedger"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"sync"
 )
 
 const (
@@ -9,6 +10,17 @@ const (
 	SettlementStatusSettled   = 2
 	SettlementStatusCancelled = 3
 )
+
+// settlementCreateLocks 每供应商一把进程内互斥锁，串行化同一供应商的结算发起，
+// 与 DB 层 settlement_id=0 去重一起，杜绝并发重复打包。（多节点见方案 P3 的 Redis 锁）
+var settlementCreateLocks sync.Map
+
+func lockSupplierSettlement(supplierId int) func() {
+	m, _ := settlementCreateLocks.LoadOrStore(supplierId, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 type Settlement struct {
 	Id             int     `json:"id"`
@@ -37,7 +49,9 @@ func CreateSettlement(supplierId int, source string, now int64) (*Settlement, er
 	if supplierId <= 0 {
 		return nil, errors.New("invalid supplier id")
 	}
-	// 1. 取供应商渠道 id + cost_price
+	// 串行化同一供应商的并发发起，防重复打包
+	defer lockSupplierSettlement(supplierId)()
+	// 1. 取供应商渠道 id（成交价已逐条冻结在日志的 cost_price_snapshot，结算不再活取现价）
 	var channels []*Channel
 	if err := DB.Where("supplier_id = ?", supplierId).Find(&channels).Error; err != nil {
 		return nil, err
@@ -46,14 +60,8 @@ func CreateSettlement(supplierId int, source string, now int64) (*Settlement, er
 		return nil, errors.New("supplier has no channels")
 	}
 	channelIds := make([]int, 0, len(channels))
-	costById := map[int]float64{}
 	for _, ch := range channels {
 		channelIds = append(channelIds, ch.Id)
-		cp := 0.0
-		if ch.CostPrice != nil {
-			cp = *ch.CostPrice
-		}
-		costById[ch.Id] = cp
 	}
 	// 2. 建账单占位
 	if source == "" {
@@ -87,13 +95,11 @@ func CreateSettlement(supplierId int, source string, now int64) (*Settlement, er
 		LOG_DB.Model(&Log{}).Where("settlement_id = ?", s.Id).
 			Select("COALESCE(MIN(created_at),0)").Scan(&minCreated)
 	}
+	// 应收款 = Σ(每条 official_usd × 该条冻结的成交价 cost_price_snapshot)，
+	// 按条累加：免疫供应商事后改价套现，渠道被删也不影响。
 	var computedCNY float64
-	for _, chId := range channelIds {
-		var sum float64
-		LOG_DB.Model(&Log{}).Where("settlement_id = ? AND channel_id = ?", s.Id, chId).
-			Select("COALESCE(SUM(official_usd),0)").Scan(&sum)
-		computedCNY += sum * costById[chId]
-	}
+	LOG_DB.Model(&Log{}).Where("settlement_id = ?", s.Id).
+		Select("COALESCE(SUM(official_usd * cost_price_snapshot),0)").Scan(&computedCNY)
 	// 5. 回填
 	s.OfficialUsd = officialUsd
 	s.ComputedCNY = computedCNY
@@ -106,6 +112,7 @@ func CreateSettlement(supplierId int, source string, now int64) (*Settlement, er
 }
 
 // CancelSettlement 撤销待审核账单(status=1→3)，释放其日志(settlement_id 归0)。
+// 状态转移用条件原子 UPDATE，防与确认/重复撤销竞态。
 func CancelSettlement(settlementId int, supplierId int, operatorIsAdmin bool) error {
 	var s Settlement
 	if err := DB.First(&s, settlementId).Error; err != nil {
@@ -114,35 +121,51 @@ func CancelSettlement(settlementId int, supplierId int, operatorIsAdmin bool) er
 	if !operatorIsAdmin && s.SupplierId != supplierId {
 		return errors.New("forbidden: not your settlement")
 	}
-	if s.Status != SettlementStatusApplied {
+	// 原子：仅当仍为 applied 才置为 cancelled（RowsAffected==1 才算本次成功）
+	res := DB.Model(&Settlement{}).
+		Where("id = ? AND status = ?", settlementId, SettlementStatusApplied).
+		Update("status", SettlementStatusCancelled)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
 		return errors.New("only applied settlement can be cancelled")
 	}
+	// 释放日志（settlement_id 归 0）
 	if err := LOG_DB.Model(&Log{}).Where("settlement_id = ?", settlementId).Update("settlement_id", 0).Error; err != nil {
 		return err
 	}
-	return DB.Model(&Settlement{}).Where("id = ?", settlementId).Update("status", SettlementStatusCancelled).Error
+	return nil
 }
 
 // ConfirmSettlement 超管确认结算(status=1→2)。
+// 用条件原子 UPDATE + RowsAffected 检查，杜绝两个超管并发确认导致的重复打款(TOCTOU)。
 func ConfirmSettlement(settlementId int, actualAmount float64, currency, method, remark string, now int64) error {
-	var s Settlement
-	if err := DB.First(&s, settlementId).Error; err != nil {
-		return err
-	}
-	if s.Status != SettlementStatusApplied {
-		return errors.New("only applied settlement can be confirmed")
-	}
 	if currency != "CNY" && currency != "USD" {
 		return errors.New("currency must be CNY or USD")
 	}
-	return DB.Model(&Settlement{}).Where("id = ?", settlementId).Updates(map[string]interface{}{
-		"status":          SettlementStatusSettled,
-		"actual_amount":   actualAmount,
-		"actual_currency": currency,
-		"settle_method":   method,
-		"remark":          remark,
-		"settled_at":      now,
-	}).Error
+	res := DB.Model(&Settlement{}).
+		Where("id = ? AND status = ?", settlementId, SettlementStatusApplied).
+		Updates(map[string]interface{}{
+			"status":          SettlementStatusSettled,
+			"actual_amount":   actualAmount,
+			"actual_currency": currency,
+			"settle_method":   method,
+			"remark":          remark,
+			"settled_at":      now,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		var cnt int64
+		DB.Model(&Settlement{}).Where("id = ?", settlementId).Count(&cnt)
+		if cnt == 0 {
+			return errors.New("settlement not found")
+		}
+		return errors.New("结算状态已变更（可能已确认或撤销），请刷新重试")
+	}
+	return nil
 }
 
 func GetSettlementsBySupplier(supplierId, startIdx, num int) ([]*Settlement, int64, error) {

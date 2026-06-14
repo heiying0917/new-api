@@ -49,6 +49,12 @@ const renderRole = (role, t) => {
           {t('普通用户')}
         </Tag>
       );
+    case 5:
+      return (
+        <Tag color='cyan' shape='circle'>
+          {t('供应商')}
+        </Tag>
+      );
     case 10:
       return (
         <Tag color='yellow' shape='circle'>
@@ -216,6 +222,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    unlockUser,
     t,
   },
 ) => {
@@ -231,6 +238,11 @@ const renderOperations = (
     },
     {
       node: 'divider',
+    },
+    {
+      node: 'item',
+      name: t('解锁登录'),
+      onClick: () => unlockUser(record),
     },
     {
       node: 'item',
@@ -316,6 +328,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  unlockUser,
 }) => {
   return [
     {
@@ -383,6 +396,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          unlockUser,
           t,
         }),
     },

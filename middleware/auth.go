@@ -120,6 +120,28 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
+	// group 默认取自会话；会话用户下方会用缓存最新值覆盖
+	group := session.Get("group")
+	// 会话可吊销：会话用户从缓存回查最新 status/role/group，使封禁/降权/改组即时生效
+	// （cookie 内旧值不再被信任）。access_token 路径已从 DB 取最新用户，无需重复。
+	// 仅当数据层已就绪时回查（model.DB 未初始化的场景——如纯中间件单测——降级为信任会话值，
+	// 生产环境路由注册晚于 InitDB，恒为已就绪）。
+	if !useAccessToken && model.DB != nil {
+		if uid, ok := id.(int); ok {
+			userCache, cacheErr := model.GetUserCache(uid)
+			if cacheErr != nil || userCache == nil {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"success": false,
+					"message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid),
+				})
+				c.Abort()
+				return
+			}
+			status = userCache.Status
+			role = userCache.Role
+			group = userCache.Group
+		}
+	}
 	if status.(int) == common.UserStatusDisabled {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -149,8 +171,8 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
-	c.Set("group", session.Get("group"))
-	c.Set("user_group", session.Get("group"))
+	c.Set("group", group)
+	c.Set("user_group", group)
 	c.Set("use_access_token", useAccessToken)
 
 	c.Next()

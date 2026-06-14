@@ -54,6 +54,9 @@ type Log struct {
 	UpstreamRequestId string  `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string  `json:"other"`
 	OfficialUsd       float64 `json:"official_usd" gorm:"default:0;index"`
+	// CostPriceSnapshot 成交那一刻冻结的渠道成本价(¥/$1)。结算按「每条 official_usd × 本列」累加，
+	// 杜绝供应商事后改价套现；单价随日志走，渠道被删也不影响。0 表示非供应商渠道或改造前旧日志。
+	CostPriceSnapshot float64 `json:"cost_price_snapshot" gorm:"default:0"`
 	SettlementId      int     `json:"settlement_id" gorm:"default:0;index"`
 }
 
@@ -220,6 +223,7 @@ type RecordConsumeLogParams struct {
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
 	OfficialUsd      float64                `json:"official_usd"`
+	CostPriceSnapshot float64               `json:"cost_price_snapshot"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -264,6 +268,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 		OfficialUsd:       params.OfficialUsd,
+		CostPriceSnapshot: params.CostPriceSnapshot,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {

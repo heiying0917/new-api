@@ -20,6 +20,7 @@ type UserBase struct {
 	Email    string `json:"email"`
 	Quota    int    `json:"quota"`
 	Status   int    `json:"status"`
+	Role     int    `json:"role"`
 	Username string `json:"username"`
 	Setting  string `json:"setting"`
 }
@@ -110,6 +111,7 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		Group:    user.Group,
 		Quota:    user.Quota,
 		Status:   user.Status,
+		Role:     user.Role,
 		Username: user.Username,
 		Setting:  user.Setting,
 		Email:    user.Email,
@@ -127,6 +129,11 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	err := common.RedisHGetObj(getUserCacheKey(userId), &userCache)
 	if err != nil {
 		return nil, err
+	}
+	// 兼容升级：旧缓存条目无 Role 字段（反序列化为 0）时视为未命中，强制回源 DB，
+	// 避免会话用户因缓存缺角色被误判为低权限（首次访问后缓存自动补全 Role）。
+	if userCache.Role == 0 {
+		return nil, fmt.Errorf("user cache missing role, reloading from db")
 	}
 	return &userCache, nil
 }

@@ -56,6 +56,16 @@ func main() {
 		return
 	}
 
+	// 启动级逃生通道：UNLOCK_ALL_ON_START=true 时清空所有登录暴破锁定，
+	// 用于管理员/超管被锁死时自救（设此环境变量后重启容器即全部解锁）。
+	if os.Getenv("UNLOCK_ALL_ON_START") == "true" {
+		if n, err := model.ResetAllLoginLocks(); err != nil {
+			common.SysLog("UNLOCK_ALL_ON_START failed: " + err.Error())
+		} else {
+			common.SysLog(fmt.Sprintf("UNLOCK_ALL_ON_START: cleared login locks for %d users", n))
+		}
+	}
+
 	common.SysLog("New API " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -163,6 +173,11 @@ func main() {
 
 	// Initialize HTTP server
 	server := gin.New()
+	// 可信代理加固：默认 TrustedProxies 为空 = 信任无，c.ClientIP() 使用真实 TCP peer，
+	// 防止攻击者伪造 X-Forwarded-For 绕过所有 IP 维度限流（配 env TRUSTED_PROXIES 启用）。
+	if err := server.SetTrustedProxies(common.TrustedProxies); err != nil {
+		common.SysLog("failed to set trusted proxies: " + err.Error())
+	}
 	server.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
 		common.SysLog(fmt.Sprintf("panic detected: %v", err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -184,7 +199,7 @@ func main() {
 		Path:     "/",
 		MaxAge:   2592000, // 30 days
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   common.CookieSecure,
 		SameSite: http.SameSiteStrictMode,
 	})
 	server.Use(sessions.Sessions("session", store))

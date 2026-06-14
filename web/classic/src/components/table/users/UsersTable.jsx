@@ -128,6 +128,11 @@ const UsersTable = (usersData) => {
     setShowResetTwoFAModal(false);
   };
 
+  // 解除该用户的登录暴破锁定（清零失败计数与锁定状态）
+  const unlockUser = (record) => {
+    manageUser(record.id, 'unlock', record);
+  };
+
   // Get all columns
   const columns = useMemo(() => {
     return getUsersColumns({
@@ -141,6 +146,7 @@ const UsersTable = (usersData) => {
       showResetPasskeyModal: showResetPasskeyUserModal,
       showResetTwoFAModal: showResetTwoFAUserModal,
       showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+      unlockUser,
     });
   }, [
     t,
@@ -153,6 +159,7 @@ const UsersTable = (usersData) => {
     showResetPasskeyUserModal,
     showResetTwoFAUserModal,
     showUserSubscriptionsUserModal,
+    unlockUser,
   ]);
 
   // Handle compact mode by removing fixed positioning

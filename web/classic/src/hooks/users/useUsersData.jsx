@@ -141,7 +141,11 @@ export const useUsersData = () => {
           if (action === 'delete') {
             return { ...u, DeletedAt: new Date() };
           }
-          return { ...u, status: user.status, role: user.role };
+          // unlock 等操作不返回 data，避免读取 undefined
+          if (user) {
+            return { ...u, status: user.status, role: user.role };
+          }
+          return u;
         }
         return u;
       });

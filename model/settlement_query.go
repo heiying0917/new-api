@@ -3,53 +3,40 @@ package model
 // SupplierPendingStat 供应商待结算统计
 type SupplierPendingStat struct {
 	OfficialUsd float64 `json:"official_usd"` // 未结算官方价总额($)
-	PayableCNY  float64 `json:"payable_cny"`  // 应付人民币 = Σ(各渠道 officialUsd × cost_price)
+	PayableCNY  float64 `json:"payable_cny"`  // 应付人民币 = Σ(每条 officialUsd × 冻结成交价 cost_price_snapshot)
 	LogCount    int64   `json:"log_count"`
 }
 
 // GetSupplierPendingStat 汇总某供应商所有渠道未结算(settlement_id=0)消费日志的官方价与应付金额。
-// 使用两步查询（cross-DB safe, no JOIN）：
-//  1. 从 channels 表取供应商的所有渠道（id + cost_price）
-//  2. 对每个渠道从 LOG_DB 聚合未结算消费日志
+// 应付按「每条日志冻结的成交价 cost_price_snapshot」累加，与结算口径一致、免疫事后改价。
+// 两步（cross-DB safe, no JOIN）：取供应商渠道 id → 在 LOG_DB 一次聚合。
 func GetSupplierPendingStat(supplierId int) (SupplierPendingStat, error) {
-	type channelCost struct {
-		Id        int
-		CostPrice *float64
-	}
-
-	var channels []channelCost
+	var channelIds []int
 	if err := DB.Model(&Channel{}).
-		Select("id, cost_price").
 		Where("supplier_id = ?", supplierId).
-		Scan(&channels).Error; err != nil {
+		Pluck("id", &channelIds).Error; err != nil {
 		return SupplierPendingStat{}, err
 	}
-
 	var stat SupplierPendingStat
-	for _, ch := range channels {
-		var sumUsd float64
-		var count int64
-		row := LOG_DB.Model(&Log{}).
-			Select("COALESCE(SUM(official_usd), 0)").
-			Where("type = ? AND settlement_id = 0 AND channel_id = ?", LogTypeConsume, ch.Id).
-			Row()
-		if err := row.Scan(&sumUsd); err != nil {
-			return SupplierPendingStat{}, err
-		}
-
-		if err := LOG_DB.Model(&Log{}).
-			Where("type = ? AND settlement_id = 0 AND channel_id = ?", LogTypeConsume, ch.Id).
-			Count(&count).Error; err != nil {
-			return SupplierPendingStat{}, err
-		}
-
-		stat.OfficialUsd += sumUsd
-		if ch.CostPrice != nil {
-			stat.PayableCNY += sumUsd * *ch.CostPrice
-		}
-		stat.LogCount += count
+	if len(channelIds) == 0 {
+		return stat, nil
 	}
-
+	var agg struct {
+		OfficialUsd float64
+		PayableCNY  float64
+		LogCount    int64
+	}
+	if err := LOG_DB.Model(&Log{}).
+		Select("COALESCE(SUM(official_usd),0) AS official_usd, " +
+			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, " +
+			"COUNT(*) AS log_count").
+		Where("type = ? AND settlement_id = 0 AND channel_id IN ?", LogTypeConsume, channelIds).
+		Scan(&agg).Error; err != nil {
+		return SupplierPendingStat{}, err
+	}
+	stat.OfficialUsd = agg.OfficialUsd
+	stat.PayableCNY = agg.PayableCNY
+	stat.LogCount = agg.LogCount
 	return stat, nil
 }
 
@@ -65,20 +52,17 @@ type SettlementChannelRow struct {
 }
 
 // GetSettlementChannelBreakdown 按渠道聚合某结算单捕获的消费日志。
-// 两步查询（cross-DB safe, no JOIN）：
-//  1. 从 LOG_DB 按 channel_id 聚合 settlement_id=settlementId 的日志：
-//     requests=COUNT(*), tokens=SUM(prompt+completion), official=SUM(official_usd)；
-//  2. 从 DB 的 channels 表回填 channel_name + cost_price（一次查询）。
-//
-// Receivable = official_usd × cost_price（cost_price 为 nil 视为 0）。
-// 按 official_usd 降序排列；无日志 → 空切片。
+// Receivable = Σ(每条 official_usd × 冻结成交价 cost_price_snapshot)，与结算总额口径一致、免疫改价。
+// CostPrice 显示为该渠道本单的实际加权单价（receivable/official_usd），与逐条快照自洽。
+// 按 official_usd 降序排列；无日志 → 空切片。仅回填 channel_name（不再活取现价）。
 func GetSettlementChannelBreakdown(settlementId int) ([]SettlementChannelRow, error) {
 	var rows []SettlementChannelRow
 	if err := LOG_DB.Model(&Log{}).
 		Select("channel_id AS channel_id, "+
 			"COUNT(*) AS requests, "+
 			"COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS tokens, "+
-			"COALESCE(SUM(official_usd), 0) AS official_usd").
+			"COALESCE(SUM(official_usd), 0) AS official_usd, "+
+			"COALESCE(SUM(official_usd * cost_price_snapshot), 0) AS receivable").
 		Where("type = ? AND settlement_id = ?", LogTypeConsume, settlementId).
 		Group("channel_id").
 		Order("official_usd desc").
@@ -89,38 +73,33 @@ func GetSettlementChannelBreakdown(settlementId int) ([]SettlementChannelRow, er
 		return []SettlementChannelRow{}, nil
 	}
 
-	// 回填渠道名与成本价（一次查询）
+	// 回填渠道名（一次查询）
 	channelIds := make([]int, 0, len(rows))
 	for _, r := range rows {
 		channelIds = append(channelIds, r.ChannelId)
 	}
 	type channelMeta struct {
-		Id        int
-		Name      string
-		CostPrice *float64
+		Id   int
+		Name string
 	}
 	var metas []channelMeta
 	if err := DB.Model(&Channel{}).
-		Select("id, name, cost_price").
+		Select("id, name").
 		Where("id IN ?", channelIds).
 		Scan(&metas).Error; err != nil {
 		return nil, err
 	}
-	metaById := make(map[int]channelMeta, len(metas))
+	nameById := make(map[int]string, len(metas))
 	for _, m := range metas {
-		metaById[m.Id] = m
+		nameById[m.Id] = m.Name
 	}
 
 	for i := range rows {
-		m, ok := metaById[rows[i].ChannelId]
-		if !ok {
-			continue
+		rows[i].ChannelName = nameById[rows[i].ChannelId]
+		// 实际加权单价（与冻结快照一致）：official × 本列 = receivable
+		if rows[i].OfficialUsd > 0 {
+			rows[i].CostPrice = rows[i].Receivable / rows[i].OfficialUsd
 		}
-		rows[i].ChannelName = m.Name
-		if m.CostPrice != nil {
-			rows[i].CostPrice = *m.CostPrice
-		}
-		rows[i].Receivable = rows[i].OfficialUsd * rows[i].CostPrice
 	}
 
 	return rows, nil

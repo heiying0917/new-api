@@ -2,12 +2,30 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
 )
+
+// validateSupplierChannelBaseURL 对供应商提交的 base_url 强制 SSRF 校验，
+// 阻断指向私网 / 环回 / 链路本地 / 云元数据(169.254.169.254) 等内部地址的渠道。
+// 供应商为半可信用户，这里强制开启保护、禁止私网，不依赖全局 fetch 设置。
+// 空 base_url 表示使用提供商默认公网端点，放行。
+func validateSupplierChannelBaseURL(baseURL *string) error {
+	if baseURL == nil {
+		return nil
+	}
+	u := strings.TrimSpace(*baseURL)
+	if u == "" {
+		return nil
+	}
+	// applyIPFilterForDomain=true：对域名 base_url 也解析 DNS 并逐个解析 IP 校验私网，
+	// 否则 http://metadata.attacker.com（A 记录指向 169.254.169.254）这类域名可绕过校验。
+	return common.ValidateURLWithFetchSetting(u, true, false, false, false, nil, nil, nil, true)
+}
 
 // SupplierListChannels 列出当前供应商自己的渠道（支持 keyword 搜索）
 func SupplierListChannels(c *gin.Context) {
@@ -29,19 +47,16 @@ func SupplierListChannels(c *gin.Context) {
 		return
 	}
 	// 为本页渠道补充未结算计费信息：official_usd（未结算官方计费）与 receivable（应收款）。
+	// 应收款按「每条日志冻结的成交价」累加，与结算口径一致、免疫事后改价。
 	ids := make([]int, 0, len(list))
 	for _, ch := range list {
 		ids = append(ids, ch.Id)
 	}
 	usdByChannel, _ := model.GetUnsettledOfficialUsdByChannels(ids)
+	receivableByChannel, _ := model.GetUnsettledReceivableByChannels(ids)
 	for _, ch := range list {
-		usd := usdByChannel[ch.Id]
-		ch.OfficialUsd = usd
-		if ch.CostPrice != nil {
-			ch.Receivable = usd * (*ch.CostPrice)
-		} else {
-			ch.Receivable = 0
-		}
+		ch.OfficialUsd = usdByChannel[ch.Id]
+		ch.Receivable = receivableByChannel[ch.Id]
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(list)
@@ -80,6 +95,10 @@ func SupplierAddChannel(c *gin.Context) {
 		common.ApiErrorMsg(c, "name, key and models are required")
 		return
 	}
+	if err := validateSupplierChannelBaseURL(ch.BaseURL); err != nil {
+		common.ApiErrorMsg(c, "base_url 不被允许（疑似指向内部地址）："+err.Error())
+		return
+	}
 	ch.Id = 0
 	ch.SupplierId = supplierId
 	ch.Status = common.ChannelStatusEnabled
@@ -113,6 +132,10 @@ func SupplierUpdateChannel(c *gin.Context) {
 	}
 	if patch.CostPrice != nil && *patch.CostPrice <= 0 {
 		common.ApiErrorMsg(c, "cost_price must be > 0")
+		return
+	}
+	if err := validateSupplierChannelBaseURL(patch.BaseURL); err != nil {
+		common.ApiErrorMsg(c, "base_url 不被允许（疑似指向内部地址）："+err.Error())
 		return
 	}
 	patch.SupplierId = supplierId

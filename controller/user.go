@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -47,6 +48,12 @@ func Login(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	// 账号维度防暴破预检（免疫 IP 轮换 / X-Forwarded-For 伪造）：先查缓存锁定态
+	if locked, retry := common.LoginLockStatus(username); locked {
+		common.ApiErrorMsg(c, loginLockedMessage(retry))
+		return
+	}
+
 	user := model.User{
 		Username: username,
 		Password: password,
@@ -55,15 +62,48 @@ func Login(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrDatabase):
-			common.SysLog(fmt.Sprintf("Login database error for user %s: %v", username, err))
+			// 不记录原始 username，避免日志注入 / CRLF
+			common.SysLog(fmt.Sprintf("Login database error: %v", err))
 			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+			return
 		case errors.Is(err, model.ErrUserEmptyCredentials):
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
 		default:
+			// 凭据错误（含账号不存在，走统一路径避免账号枚举）：记失败 + 渐进锁定。
+			// 账号存在时按「规范用户名」计数，使「用户名」与「邮箱」两种登录标识共享同一计数，
+			// 避免攻击者用 username + email 拿到双倍尝试预算。
+			privileged := user.Id != 0 && user.Role >= common.RoleAdminUser
+			throttleKey := username
+			if user.Id != 0 {
+				throttleKey = user.Username
+			}
+			common.RecordGlobalLoginFailure()
+			failCount, nowLocked, retry := common.RecordLoginFailure(throttleKey, privileged)
+			if nowLocked {
+				if user.Id != 0 {
+					model.PersistLoginLock(user.Id, failCount, time.Now().Unix()+int64(retry))
+				}
+				common.SysLog(fmt.Sprintf("login locked after %d failures (userId=%d, privileged=%v)", failCount, user.Id, privileged))
+				common.ApiErrorMsg(c, loginLockedMessage(retry))
+				return
+			}
 			common.ApiErrorI18n(c, i18n.MsgUserUsernameOrPasswordError)
+			return
 		}
+	}
+
+	// 凭据正确：DB 权威锁定兜底（缓存被清 / 重启后仍拦截）
+	if locked, retry := user.IsLoginLocked(); locked {
+		common.ApiErrorMsg(c, loginLockedMessage(retry))
 		return
 	}
+	// 成功：清零失败计数与锁定（按规范用户名 + 原始输入都清，确保两种标识都解锁）
+	common.ResetLoginFailure(user.Username)
+	if !strings.EqualFold(username, user.Username) {
+		common.ResetLoginFailure(username)
+	}
+	_ = model.ResetUserLoginLock(user.Id)
 
 	// 检查是否启用2FA
 	if model.IsTwoFAEnabled(user.Id) {
@@ -90,10 +130,23 @@ func Login(c *gin.Context) {
 	setupLogin(&user, c)
 }
 
+// loginLockedMessage 构造账号锁定提示文案。
+func loginLockedMessage(retrySec int) string {
+	if retrySec >= 60 {
+		return fmt.Sprintf("账号已被锁定，请约 %d 分钟后再试", (retrySec+59)/60)
+	}
+	if retrySec < 1 {
+		retrySec = 1
+	}
+	return fmt.Sprintf("账号已被锁定，请约 %d 秒后再试", retrySec)
+}
+
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context) {
 	model.UpdateUserLastLoginAt(user.Id)
 	session := sessions.Default(c)
+	// 防 session fixation：清掉任何 pre-auth 残留（pending_*/oauth_state/turnstile/aff 等）后再写身份
+	session.Clear()
 	session.Set("id", user.Id)
 	session.Set("username", user.Username)
 	session.Set("role", user.Role)
@@ -234,6 +287,13 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
 			return
 		}
+	}
+
+	// 注册后自动登录：无邮箱验证（或已通过验证）时直接建立会话进入控制台。
+	// setupLogin 会清理 pre-auth 残留并写入身份，返回结构与登录一致（含 data.id/role/...）。
+	if !common.EmailVerificationEnabled || user.VerificationCode != "" {
+		setupLogin(&insertedUser, c)
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -950,6 +1010,21 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		user.Role = common.RoleCommonUser
+	case "unlock":
+		// 解除登录暴破锁定：清零 DB 权威列 + 缓存计数（按用户名与邮箱两个标识）。
+		if err := model.ResetUserLoginLock(user.Id); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ResetLoginFailure(user.Username)
+		if user.Email != "" {
+			common.ResetLoginFailure(user.Email)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+		})
+		return
 	case "add_quota":
 		adminName := c.GetString("username")
 		adminId := c.GetInt("id")

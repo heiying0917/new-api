@@ -122,6 +122,30 @@ func GetUnsettledOfficialUsdByChannels(channelIds []int) (map[int]float64, error
 	return result, nil
 }
 
+// GetUnsettledReceivableByChannels 返回每个渠道未结算消费日志的应收款（¥），
+// 按「每条 official_usd × 冻结成交价 cost_price_snapshot」累加，与结算口径一致、免疫事后改价。
+func GetUnsettledReceivableByChannels(channelIds []int) (map[int]float64, error) {
+	result := make(map[int]float64)
+	if len(channelIds) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		ChannelId  int
+		Receivable float64
+	}
+	if err := LOG_DB.Model(&Log{}).
+		Select("channel_id, COALESCE(SUM(official_usd * cost_price_snapshot), 0) as receivable").
+		Where("type = ? AND settlement_id = ? AND channel_id IN ?", LogTypeConsume, 0, channelIds).
+		Group("channel_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		result[r.ChannelId] = r.Receivable
+	}
+	return result, nil
+}
+
 // MarketBid 一条匿名报价。
 type MarketBid struct {
 	Price float64 `json:"price"`

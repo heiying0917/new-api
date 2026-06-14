@@ -15,10 +15,10 @@ func TestGetSupplierPendingStat(t *testing.T) {
 	require.NoError(t, DB.Create(&Channel{Id: 2, Name: "b", Key: "k2", SupplierId: 7, CostPrice: &cp2, Models: "m", Group: "g"}).Error)
 	require.NoError(t, DB.Create(&Channel{Id: 3, Name: "c", Key: "k3", SupplierId: 9, CostPrice: &cp1, Models: "m", Group: "g"}).Error)
 	// consume logs: ch1 official 0.10 (×2.5=0.25), ch2 official 0.20 (×2.0=0.40); ch3 belongs to other supplier
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 1, OfficialUsd: 0.10, SettlementId: 0}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 2, OfficialUsd: 0.20, SettlementId: 0}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 1, OfficialUsd: 0.05, SettlementId: 5}).Error) // already settled, excluded
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 3, OfficialUsd: 1.00, SettlementId: 0}).Error) // other supplier
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 1, OfficialUsd: 0.10, CostPriceSnapshot: cp1, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 2, OfficialUsd: 0.20, CostPriceSnapshot: cp2, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 1, OfficialUsd: 0.05, CostPriceSnapshot: cp1, SettlementId: 5}).Error) // already settled, excluded
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 3, OfficialUsd: 1.00, CostPriceSnapshot: cp1, SettlementId: 0}).Error) // other supplier
 
 	stat, err := GetSupplierPendingStat(7)
 	require.NoError(t, err)
@@ -46,10 +46,10 @@ func TestGetSettlementChannelBreakdown(t *testing.T) {
 	require.NoError(t, DB.Create(&Channel{Id: 12, Name: "chan-B", Key: "k2", SupplierId: 7, CostPrice: &cp2, Models: "m", Group: "g"}).Error)
 
 	// ch11: 2 条, official 0.10+0.20=0.30, tokens (3+7)+(11+13)=34
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 11, OfficialUsd: 0.10, PromptTokens: 3, CompletionTokens: 7, SettlementId: 0}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 11, OfficialUsd: 0.20, PromptTokens: 11, CompletionTokens: 13, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 11, OfficialUsd: 0.10, CostPriceSnapshot: cp1, PromptTokens: 3, CompletionTokens: 7, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 11, OfficialUsd: 0.20, CostPriceSnapshot: cp1, PromptTokens: 11, CompletionTokens: 13, SettlementId: 0}).Error)
 	// ch12: 1 条, official 0.50, tokens 5+5=10  (official 更高 → 排第一)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 12, OfficialUsd: 0.50, PromptTokens: 5, CompletionTokens: 5, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 12, OfficialUsd: 0.50, CostPriceSnapshot: cp2, PromptTokens: 5, CompletionTokens: 5, SettlementId: 0}).Error)
 
 	s, err := CreateSettlement(7, "manual", 1000)
 	require.NoError(t, err)
@@ -93,9 +93,9 @@ func TestSettlementSnapshotRoundTrip(t *testing.T) {
 	require.NoError(t, DB.Create(&Channel{Id: 21, Name: "chan-A", Key: "k1", SupplierId: 7, CostPrice: &cp1, Models: "m", Group: "g"}).Error)
 	require.NoError(t, DB.Create(&Channel{Id: 22, Name: "chan-B", Key: "k2", SupplierId: 7, CostPrice: &cp2, Models: "m", Group: "g"}).Error)
 
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 21, OfficialUsd: 0.10, PromptTokens: 3, CompletionTokens: 7, SettlementId: 0}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 21, OfficialUsd: 0.20, PromptTokens: 1, CompletionTokens: 2, SettlementId: 0}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 22, OfficialUsd: 0.50, PromptTokens: 5, CompletionTokens: 5, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 21, OfficialUsd: 0.10, CostPriceSnapshot: cp1, PromptTokens: 3, CompletionTokens: 7, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 21, OfficialUsd: 0.20, CostPriceSnapshot: cp1, PromptTokens: 1, CompletionTokens: 2, SettlementId: 0}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 22, OfficialUsd: 0.50, CostPriceSnapshot: cp2, PromptTokens: 5, CompletionTokens: 5, SettlementId: 0}).Error)
 
 	// --- BEFORE: 待结算非零 ---
 	before, err := GetSupplierPendingStat(7)

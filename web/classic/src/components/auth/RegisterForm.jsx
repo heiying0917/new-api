@@ -239,10 +239,21 @@ const RegisterForm = () => {
           `/api/user/register?turnstile=${turnstileToken}`,
           inputs,
         );
-        const { success, message } = res.data;
+        const { success, message, data } = res.data;
         if (success) {
-          navigate('/login');
-          showSuccess('注册成功！');
+          if (data && data.id) {
+            // 后端已自动登录（无邮箱验证场景）→ 直接进入控制台
+            userDispatch({ type: 'login', payload: data });
+            localStorage.setItem('user', JSON.stringify(data));
+            setUserData(data);
+            updateAPI();
+            showSuccess('注册成功，已自动登录！');
+            navigate('/');
+          } else {
+            // 邮箱验证场景：仍跳转登录页
+            showSuccess('注册成功！');
+            navigate('/login');
+          }
         } else {
           showError(message);
         }

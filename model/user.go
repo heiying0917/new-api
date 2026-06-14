@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -54,6 +55,10 @@ type User struct {
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	// 登录防暴破：失败计数与硬锁定到期（unix 秒）的权威持久化列。
+	// 即使 Redis flush / 进程重启，锁定仍生效；管理员可经 ManageUser(action=unlock) 清零。
+	LoginFailCount   int `json:"login_fail_count" gorm:"type:int;default:0;column:login_fail_count"`
+	LoginLockedUntil int64 `json:"login_locked_until" gorm:"default:0;column:login_locked_until"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -62,6 +67,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Group:    user.Group,
 		Quota:    user.Quota,
 		Status:   user.Status,
+		Role:     user.Role,
 		Username: user.Username,
 		Setting:  user.Setting,
 		Email:    user.Email,
@@ -613,6 +619,55 @@ func (user *User) ValidateAndFill() (err error) {
 		return ErrInvalidCredentials
 	}
 	return nil
+}
+
+// IsLoginLocked 返回数据库权威锁定态及剩余秒数（重启 / Redis flush 后仍生效）。
+func (user *User) IsLoginLocked() (bool, int) {
+	if user.LoginLockedUntil <= 0 {
+		return false, 0
+	}
+	now := time.Now().Unix()
+	if user.LoginLockedUntil > now {
+		return true, int(user.LoginLockedUntil - now)
+	}
+	return false, 0
+}
+
+// PersistLoginLock 将硬锁定持久化到用户行（权威兜底 + 管理员可解锁）。
+// 失败仅记日志，不阻断登录流程（缓存层已生效）。
+func PersistLoginLock(userId, failCount int, lockedUntilUnix int64) {
+	if userId <= 0 {
+		return
+	}
+	if err := DB.Model(&User{}).Where("id = ?", userId).
+		Updates(map[string]interface{}{
+			"login_fail_count":   failCount,
+			"login_locked_until": lockedUntilUnix,
+		}).Error; err != nil {
+		common.SysLog("failed to persist login lock: " + err.Error())
+	}
+}
+
+// ResetUserLoginLock 清零某用户的登录失败/锁定列（登录成功或管理员解锁时调用）。
+func ResetUserLoginLock(userId int) error {
+	if userId <= 0 {
+		return nil
+	}
+	return DB.Model(&User{}).Where("id = ?", userId).
+		Updates(map[string]interface{}{
+			"login_fail_count":   0,
+			"login_locked_until": 0,
+		}).Error
+}
+
+// ResetAllLoginLocks 清空所有用户的登录锁定（UNLOCK_ALL_ON_START 启动级逃生通道）。
+func ResetAllLoginLocks() (int64, error) {
+	res := DB.Model(&User{}).Where("login_locked_until > ? OR login_fail_count > ?", 0, 0).
+		Updates(map[string]interface{}{
+			"login_fail_count":   0,
+			"login_locked_until": 0,
+		})
+	return res.RowsAffected, res.Error
 }
 
 func (user *User) FillUserById() error {
