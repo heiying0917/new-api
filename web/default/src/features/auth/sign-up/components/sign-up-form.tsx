@@ -160,7 +160,7 @@ export function SignUpForm({
       const res = await register({
         username: data.username,
         password: data.password,
-        phone: data.phone,
+        phone: data.phone || '',
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
