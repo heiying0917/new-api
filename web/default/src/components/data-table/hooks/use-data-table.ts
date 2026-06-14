@@ -187,7 +187,7 @@ export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
       columnVisibility,
       rowSelection,
       expanded,
-      columnFilters: options.columnFilters,
+      columnFilters: options.columnFilters ?? [],
       globalFilter: options.globalFilter,
       pagination,
     },
