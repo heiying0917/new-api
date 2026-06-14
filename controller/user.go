@@ -164,7 +164,8 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
-	if user.Phone == "" || len(user.Phone) > 20 {
+	// 暂不强制手机号：仅当填写且超长时校验，可留空
+	if len(user.Phone) > 20 {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": "invalid phone"})
 		return
 	}

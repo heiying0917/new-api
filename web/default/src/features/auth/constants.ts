@@ -33,7 +33,7 @@ export const loginFormSchema = z.object({
 export const registerFormSchema = z
   .object({
     username: z.string().min(1, 'Please enter your username'),
-    phone: z.string().min(1, 'Phone is required').max(20, 'Phone is too long'),
+    phone: z.string().max(20, 'Phone is too long').optional().or(z.literal('')),
     email: z.string().optional(),
     password: z
       .string()
