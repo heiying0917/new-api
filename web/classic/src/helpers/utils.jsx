@@ -46,6 +46,17 @@ export function isRoot() {
   return user.role >= 100;
 }
 
+export function isSupplier() {
+  let user = localStorage.getItem('user');
+  if (!user) return false;
+  try {
+    user = JSON.parse(user);
+  } catch {
+    return false;
+  }
+  return user && user.role === 5; // STRICT: exactly supplier
+}
+
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
   if (!system_name) return 'New API';

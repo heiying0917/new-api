@@ -52,6 +52,8 @@ const UserArea = ({
   }
 
   if (userState.user) {
+    // 供应商（role===5）不展示令牌管理 / 钱包管理
+    const isSupplier = userState.user?.role === 5;
     return (
       <div className='relative' ref={dropdownRef}>
         <Dropdown
@@ -73,34 +75,38 @@ const UserArea = ({
                   <span>{t('个人设置')}</span>
                 </div>
               </Dropdown.Item>
-              <Dropdown.Item
-                onClick={() => {
-                  navigate('/console/token');
-                }}
-                className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
-              >
-                <div className='flex items-center gap-2'>
-                  <IconKey
-                    size='small'
-                    className='text-gray-500 dark:text-gray-400'
-                  />
-                  <span>{t('令牌管理')}</span>
-                </div>
-              </Dropdown.Item>
-              <Dropdown.Item
-                onClick={() => {
-                  navigate('/console/topup');
-                }}
-                className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
-              >
-                <div className='flex items-center gap-2'>
-                  <IconCreditCard
-                    size='small'
-                    className='text-gray-500 dark:text-gray-400'
-                  />
-                  <span>{t('钱包管理')}</span>
-                </div>
-              </Dropdown.Item>
+              {!isSupplier && (
+                <Dropdown.Item
+                  onClick={() => {
+                    navigate('/console/token');
+                  }}
+                  className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
+                >
+                  <div className='flex items-center gap-2'>
+                    <IconKey
+                      size='small'
+                      className='text-gray-500 dark:text-gray-400'
+                    />
+                    <span>{t('令牌管理')}</span>
+                  </div>
+                </Dropdown.Item>
+              )}
+              {!isSupplier && (
+                <Dropdown.Item
+                  onClick={() => {
+                    navigate('/console/topup');
+                  }}
+                  className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-blue-500 dark:hover:!text-white'
+                >
+                  <div className='flex items-center gap-2'>
+                    <IconCreditCard
+                      size='small'
+                      className='text-gray-500 dark:text-gray-400'
+                    />
+                    <span>{t('钱包管理')}</span>
+                  </div>
+                </Dropdown.Item>
+              )}
               <Dropdown.Item
                 onClick={logout}
                 className='!px-3 !py-1.5 !text-sm !text-semi-color-text-0 hover:!bg-semi-color-fill-1 dark:!text-gray-200 dark:hover:!bg-red-500 dark:hover:!text-white'

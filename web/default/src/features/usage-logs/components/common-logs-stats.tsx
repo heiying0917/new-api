@@ -22,8 +22,9 @@ import { useTranslation } from 'react-i18next'
 import { formatLogQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useIsSupplier } from '@/hooks/use-supplier'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getLogStats, getUserLogStats } from '../api'
+import { getLogStats, getUserLogStats, getSupplierLogsStat } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
 import { buildApiParams } from '../lib/utils'
 import { useUsageLogsContext } from './usage-logs-provider'
@@ -49,11 +50,12 @@ function StatBadge(props: {
 export function CommonLogsStats() {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
+  const isSupplier = useIsSupplier()
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['usage-logs-stats', isAdmin, searchParams],
+    queryKey: ['usage-logs-stats', isAdmin, isSupplier, searchParams],
     queryFn: async () => {
       const params = buildApiParams({
         page: 1,
@@ -63,9 +65,11 @@ export function CommonLogsStats() {
         isAdmin,
       })
 
-      const result = isAdmin
-        ? await getLogStats(params)
-        : await getUserLogStats(params)
+      const result = isSupplier
+        ? await getSupplierLogsStat(params)
+        : isAdmin
+          ? await getLogStats(params)
+          : await getUserLogStats(params)
 
       return result.success
         ? result.data || DEFAULT_LOG_STATS

@@ -29,6 +29,7 @@ export const DEFAULT_ADMIN_CONFIG = {
   chat: {
     enabled: true,
     playground: true,
+    playgroundAdmin: true,
     chat: true,
   },
   console: {
@@ -52,6 +53,8 @@ export const DEFAULT_ADMIN_CONFIG = {
     redemption: true,
     user: true,
     subscription: true,
+    suppliers: true,
+    settlement_review: true,
     setting: true,
   },
 };
@@ -288,6 +291,29 @@ export const useSidebar = () => {
     );
   };
 
+  // 操练场可见性（区分管理员与普通用户）
+  // 读取合并后的 chat 配置（admin 配置 + 用户配置），并根据角色判定
+  const isPlaygroundVisible = (role) => {
+    const adminChat = adminConfig?.chat || {};
+    const userChat = (userConfig && userConfig.chat) || {};
+
+    const chatEnabled =
+      adminChat.enabled !== false &&
+      (userConfig ? userChat.enabled !== false : true);
+    if (!chatEnabled) return false;
+
+    const mergedValue = (key) => {
+      const adminAllowed = adminChat[key] !== false;
+      const userAllowed = userConfig ? userChat[key] !== false : true;
+      return adminAllowed && userAllowed;
+    };
+
+    if (typeof role === 'number' && role >= 10) {
+      return mergedValue('playgroundAdmin');
+    }
+    return mergedValue('playground');
+  };
+
   return {
     loading,
     adminConfig,
@@ -296,6 +322,7 @@ export const useSidebar = () => {
     isModuleVisible,
     hasSectionVisibleModules,
     getVisibleModules,
+    isPlaygroundVisible,
     refreshUserConfig,
   };
 };

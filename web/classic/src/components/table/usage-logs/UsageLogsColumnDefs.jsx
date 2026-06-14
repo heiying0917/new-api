@@ -481,6 +481,7 @@ export const getLogsColumns = ({
   showUserInfoFunc,
   openChannelAffinityUsageCacheModal,
   isAdminUser,
+  isSupplierUser = false,
   billingDisplayMode = 'price',
 }) => {
   return [
@@ -518,7 +519,7 @@ export const getLogsColumns = ({
           }
         }
 
-        return isAdminUser &&
+        return (isAdminUser || isSupplierUser) &&
           (record.type === 0 ||
             record.type === 2 ||
             record.type === 5 ||

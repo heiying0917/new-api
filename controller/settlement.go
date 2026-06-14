@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -74,6 +75,27 @@ func SupplierGetSettlementLogs(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+// SupplierGetSettlementBreakdown returns per-channel aggregation for a settlement owned by the calling supplier.
+func SupplierGetSettlementBreakdown(c *gin.Context) {
+	supplierId := c.GetInt("id")
+	id, _ := strconv.Atoi(c.Param("id"))
+	s, err := model.GetSettlementById(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if s.SupplierId != supplierId {
+		common.ApiErrorMsg(c, "forbidden: not your settlement")
+		return
+	}
+	rows, err := model.GetSettlementChannelBreakdown(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
+}
+
 // SupplierCancelSettlement cancels a pending settlement owned by the calling supplier.
 func SupplierCancelSettlement(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -102,18 +124,66 @@ func SupplierExportSettlement(c *gin.Context) {
 
 // ─── Admin endpoints ──────────────────────────────────────────────────────────
 
-// AdminListSettlements returns paginated settlements; optional ?status=N filter.
+// AdminListSettlements returns paginated settlements; optional ?status=N, ?supplier_id=N
+// and ?keyword= filters. keyword fuzzy-matches the supplier's username/email; when no
+// supplier matches the keyword, an empty page is returned without querying settlements.
 func AdminListSettlements(c *gin.Context) {
 	status, _ := strconv.Atoi(c.Query("status"))
+	supplierId, _ := strconv.Atoi(c.Query("supplier_id"))
+	keyword := c.Query("keyword")
 	pageInfo := common.GetPageQuery(c)
-	list, total, err := model.ListSettlements(status, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+
+	var supplierIds []int
+	if strings.TrimSpace(keyword) != "" {
+		ids, _ := model.GetSupplierIdsByKeyword(keyword)
+		if len(ids) == 0 {
+			// no supplier matches the keyword → empty page, skip the settlement query
+			pageInfo.SetTotal(0)
+			pageInfo.SetItems([]*model.Settlement{})
+			common.ApiSuccess(c, pageInfo)
+			return
+		}
+		supplierIds = ids
+	} else if supplierId > 0 {
+		supplierIds = []int{supplierId}
+	}
+
+	list, total, err := model.ListSettlements(status, supplierIds, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	backfillSettlementSupplierNames(list)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(list)
 	common.ApiSuccess(c, pageInfo)
+}
+
+// backfillSettlementSupplierNames 批量按 supplier_id 回填账单的 SupplierName（admin 列表用）。
+func backfillSettlementSupplierNames(list []*model.Settlement) {
+	idSet := make(map[int]struct{}, len(list))
+	for _, s := range list {
+		if s.SupplierId > 0 {
+			idSet[s.SupplierId] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	names, err := model.GetUsernamesByIds(ids)
+	if err != nil {
+		common.SysError("failed to backfill settlement supplier names: " + err.Error())
+		return
+	}
+	for _, s := range list {
+		if name, ok := names[s.SupplierId]; ok {
+			s.SupplierName = name
+		}
+	}
 }
 
 // AdminGetSettlement returns a single settlement by ID.
@@ -139,6 +209,17 @@ func AdminGetSettlementLogs(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
+}
+
+// AdminGetSettlementBreakdown returns per-channel aggregation for a settlement (no ownership check).
+func AdminGetSettlementBreakdown(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	rows, err := model.GetSettlementChannelBreakdown(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
 }
 
 type confirmSettlementBody struct {

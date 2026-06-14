@@ -23,6 +23,9 @@ import { useTranslation } from 'react-i18next'
 import { useSearch } from '@/context/search-provider'
 import { useTheme } from '@/context/theme-provider'
 import { useSidebarData } from '@/hooks/use-sidebar-data'
+import { isPlaygroundVisible } from '@/lib/nav-modules'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   Command,
   CommandDialog,
@@ -43,10 +46,29 @@ export function CommandMenu() {
   const { open, setOpen } = useSearch()
   const { pathname } = useLocation()
   const sidebarData = useSidebarData()
+  const userRole = useAuthStore((s) => s.auth.user?.role)
 
   // Use the active nested sidebar view's nav groups when one matches
   // the current URL; otherwise fall back to the root navigation.
-  const navGroups = getNavGroupsForPath(pathname, t) ?? sidebarData.navGroups
+  const baseGroups = getNavGroupsForPath(pathname, t) ?? sidebarData.navGroups
+
+  // Mirror the sidebar's role-aware gating so the command palette never
+  // surfaces routes the user can't actually reach: supplier-hidden items
+  // (wallet / api-keys / task-logs) and the role-gated playground.
+  const navGroups = React.useMemo(() => {
+    const isSupplier = userRole === ROLE.SUPPLIER
+    const playgroundVisible = isPlaygroundVisible(userRole)
+    return baseGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (isSupplier && item.hiddenForSupplier) return false
+          if (item.url === '/playground' && !playgroundVisible) return false
+          return true
+        }),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [baseGroups, userRole])
 
   const runCommand = React.useCallback(
     (command: () => unknown) => {

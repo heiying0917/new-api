@@ -1048,6 +1048,29 @@ func GetUsernameById(id int, fromDB bool) (username string, err error) {
 	return username, nil
 }
 
+// GetUsernamesByIds 批量按用户 id 查 username，返回 id->username 映射。
+// ids 为空时返回空 map（不执行 IN ()）。仅查正向（未软删）用户。
+func GetUsernamesByIds(ids []int) (map[int]string, error) {
+	result := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		Id       int
+		Username string
+	}
+	if err := DB.Model(&User{}).
+		Select("id, username").
+		Where("id IN ?", ids).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		result[r.Id] = r.Username
+	}
+	return result, nil
+}
+
 func IsLinuxDOIdAlreadyTaken(linuxDOId string) bool {
 	var user User
 	err := DB.Unscoped().Where("linux_do_id = ?", linuxDOId).First(&user).Error

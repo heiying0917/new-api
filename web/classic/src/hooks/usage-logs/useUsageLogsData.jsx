@@ -24,6 +24,7 @@ import {
   API,
   getTodayStartTimestamp,
   isAdmin,
+  isSupplier,
   showError,
   showSuccess,
   timestamp2string,
@@ -77,13 +78,19 @@ export const useLogsData = () => {
 
   // User and admin
   const isAdminUser = isAdmin();
+  // Supplier role: scoped to its own channels' logs, consumer identity hidden
+  const isSupplierUser = isSupplier();
   // Role-specific storage key to prevent different roles from overwriting each other
   const STORAGE_KEY = isAdminUser
     ? 'logs-table-columns-admin'
-    : 'logs-table-columns-user';
+    : isSupplierUser
+      ? 'logs-table-columns-supplier'
+      : 'logs-table-columns-user';
   const BILLING_DISPLAY_MODE_STORAGE_KEY = isAdminUser
     ? 'logs-billing-display-mode-admin'
-    : 'logs-billing-display-mode-user';
+    : isSupplierUser
+      ? 'logs-billing-display-mode-supplier'
+      : 'logs-billing-display-mode-user';
 
   // Statistics state
   const [stat, setStat] = useState({
@@ -112,9 +119,11 @@ export const useLogsData = () => {
   const getDefaultColumnVisibility = () => {
     return {
       [COLUMN_KEYS.TIME]: true,
-      [COLUMN_KEYS.CHANNEL]: isAdminUser,
+      // Suppliers see channel column (scoped to their own channels), like admins.
+      [COLUMN_KEYS.CHANNEL]: isAdminUser || isSupplierUser,
+      // Hide consumer identity columns from suppliers.
       [COLUMN_KEYS.USERNAME]: isAdminUser,
-      [COLUMN_KEYS.TOKEN]: true,
+      [COLUMN_KEYS.TOKEN]: !isSupplierUser,
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.MODEL]: true,
@@ -123,7 +132,8 @@ export const useLogsData = () => {
       [COLUMN_KEYS.COMPLETION]: true,
       [COLUMN_KEYS.COST]: true,
       [COLUMN_KEYS.RETRY]: isAdminUser,
-      [COLUMN_KEYS.IP]: true,
+      // IP is the consumer's IP — hide it from suppliers.
+      [COLUMN_KEYS.IP]: !isSupplierUser,
       [COLUMN_KEYS.DETAILS]: true,
     };
   };
@@ -140,7 +150,14 @@ export const useLogsData = () => {
       const parsed = JSON.parse(savedColumns);
       const merged = { ...defaults, ...parsed };
 
-      if (!isAdminUser) {
+      if (isSupplierUser) {
+        // Suppliers: never expose consumer identity, always keep channel.
+        merged[COLUMN_KEYS.USERNAME] = false;
+        merged[COLUMN_KEYS.TOKEN] = false;
+        merged[COLUMN_KEYS.RETRY] = false;
+        merged[COLUMN_KEYS.IP] = false;
+        merged[COLUMN_KEYS.CHANNEL] = true;
+      } else if (!isAdminUser) {
         merged[COLUMN_KEYS.CHANNEL] = false;
         merged[COLUMN_KEYS.USERNAME] = false;
         merged[COLUMN_KEYS.RETRY] = false;
@@ -206,7 +223,19 @@ export const useLogsData = () => {
     const updatedColumns = {};
 
     allKeys.forEach((key) => {
-      if (
+      if (isSupplierUser) {
+        // Suppliers: identity columns stay hidden; channel follows the toggle.
+        if (
+          key === COLUMN_KEYS.USERNAME ||
+          key === COLUMN_KEYS.TOKEN ||
+          key === COLUMN_KEYS.RETRY ||
+          key === COLUMN_KEYS.IP
+        ) {
+          updatedColumns[key] = false;
+        } else {
+          updatedColumns[key] = checked;
+        }
+      } else if (
         (key === COLUMN_KEYS.CHANNEL ||
           key === COLUMN_KEYS.USERNAME ||
           key === COLUMN_KEYS.RETRY) &&
@@ -310,12 +339,29 @@ export const useLogsData = () => {
     }
   };
 
+  const getLogSupplierStat = async () => {
+    const { start_timestamp, end_timestamp } = getFormValues();
+    let localStartTimestamp = Date.parse(start_timestamp) / 1000;
+    let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+    let url = `/api/supplier/self/logs/stat?start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+    url = encodeURI(url);
+    let res = await API.get(url);
+    const { success, message, data } = res.data;
+    if (success) {
+      setStat(data);
+    } else {
+      showError(message);
+    }
+  };
+
   const handleEyeClick = async () => {
     if (loadingStat) {
       return;
     }
     setLoadingStat(true);
-    if (isAdminUser) {
+    if (isSupplierUser) {
+      await getLogSupplierStat();
+    } else if (isAdminUser) {
       await getLogStat();
     } else {
       await getLogSelfStat();
@@ -383,7 +429,7 @@ export const useLogsData = () => {
       let other = getLogOther(logs[i].other);
       let expandDataLocal = [];
 
-      if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if ((isAdminUser || isSupplierUser) && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
@@ -751,7 +797,9 @@ export const useLogsData = () => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    if (isAdminUser) {
+    if (isSupplierUser) {
+      url = `/api/supplier/self/logs?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&model=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+    } else if (isAdminUser) {
       url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
     } else {
       url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
@@ -845,6 +893,7 @@ export const useLogsData = () => {
     logType,
     stat,
     isAdminUser,
+    isSupplierUser,
 
     // Form state
     formApi,

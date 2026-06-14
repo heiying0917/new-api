@@ -170,6 +170,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			supplierMeRoute.GET("/pending", controller.SupplierPending)
 			supplierMeRoute.GET("/market-price", controller.SupplierMarketPrice)
+			supplierMeRoute.GET("/overview", controller.SupplierOverview)
+			supplierMeRoute.GET("/dashboard", controller.SupplierDashboard)
+			supplierMeRoute.GET("/realtime", controller.SupplierRealtime)
+			supplierMeRoute.GET("/logs", controller.SupplierListLogs)
+			supplierMeRoute.GET("/logs/stat", controller.SupplierLogsStat)
 		}
 
 		settlementSelfRoute := apiRouter.Group("/supplier/self/settlement")
@@ -179,6 +184,7 @@ func SetApiRouter(router *gin.Engine) {
 			settlementSelfRoute.GET("/", controller.SupplierListSettlements)
 			settlementSelfRoute.GET("/:id", controller.SupplierGetSettlement)
 			settlementSelfRoute.GET("/:id/logs", controller.SupplierGetSettlementLogs)
+			settlementSelfRoute.GET("/:id/breakdown", controller.SupplierGetSettlementBreakdown)
 			settlementSelfRoute.POST("/:id/cancel", controller.SupplierCancelSettlement)
 			settlementSelfRoute.GET("/:id/export", controller.SupplierExportSettlement)
 		}
@@ -189,6 +195,7 @@ func SetApiRouter(router *gin.Engine) {
 			settlementAdminRoute.GET("/", controller.AdminListSettlements)
 			settlementAdminRoute.GET("/:id", controller.AdminGetSettlement)
 			settlementAdminRoute.GET("/:id/logs", controller.AdminGetSettlementLogs)
+			settlementAdminRoute.GET("/:id/breakdown", controller.AdminGetSettlementBreakdown)
 			settlementAdminRoute.POST("/:id/confirm", controller.AdminConfirmSettlement)
 			settlementAdminRoute.POST("/:id/cancel", controller.AdminCancelSettlement)
 			settlementAdminRoute.GET("/:id/export", controller.AdminExportSettlement)

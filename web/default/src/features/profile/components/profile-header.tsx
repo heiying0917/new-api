@@ -20,6 +20,7 @@ import { Activity, BarChart3, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
+import { useIsSupplier } from '@/hooks/use-supplier'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/status-badge'
@@ -37,6 +38,7 @@ interface ProfileHeaderProps {
 
 export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
   const { t } = useTranslation()
+  const isSupplier = useIsSupplier()
 
   if (loading) {
     return (
@@ -83,20 +85,30 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
       value: formatQuota(profile.quota),
       description: t('Remaining quota'),
       icon: WalletCards,
+      moneyRelated: true,
     },
     {
       label: t('Total Usage'),
       value: formatQuota(profile.used_quota),
       description: t('Total consumed quota'),
       icon: BarChart3,
+      moneyRelated: true,
     },
     {
       label: t('API Requests'),
       value: formatCompactNumber(profile.request_count),
       description: t('Total requests made'),
       icon: Activity,
+      moneyRelated: false,
     },
-  ]
+  ].filter((item) => !isSupplier || !item.moneyRelated)
+
+  const statsGridCols =
+    stats.length === 1
+      ? 'grid-cols-1'
+      : stats.length === 2
+        ? 'grid-cols-2'
+        : 'grid-cols-3'
 
   return (
     <div className='bg-card overflow-hidden rounded-lg border'>
@@ -144,7 +156,9 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
         </div>
       </div>
       <div className='border-t'>
-        <div className='divide-border/60 grid grid-cols-3 divide-x'>
+        <div
+          className={`divide-border/60 grid ${statsGridCols} divide-x`}
+        >
           {stats.map((item) => (
             <div key={item.label} className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
               <div className='flex items-center gap-2'>

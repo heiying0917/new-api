@@ -19,8 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useContext, useEffect } from 'react';
 import { getRelativeTime } from '../../helpers';
+import { isSupplier } from '../../helpers/utils';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
+
+import SupplierOverview from '../supplier-overview';
 
 import DashboardHeader from './DashboardHeader';
 import StatsCards from './StatsCards';
@@ -53,6 +56,14 @@ import {
 } from '../../helpers/dashboard';
 
 const Dashboard = () => {
+  // ========== 供应商概览分支 ==========
+  // 供应商(role===5)展示专属概览页，常规用户与管理员不受影响。
+  // isSupplier() 读取自 localStorage，对同一用户会话期间保持稳定，
+  // 因此在所有 Hook 调用之前进行分支不会违反 Hooks 规则。
+  if (isSupplier()) {
+    return <SupplierOverview />;
+  }
+
   // ========== Context ==========
   const [userState, userDispatch] = useContext(UserContext);
   const [statusState, statusDispatch] = useContext(StatusContext);

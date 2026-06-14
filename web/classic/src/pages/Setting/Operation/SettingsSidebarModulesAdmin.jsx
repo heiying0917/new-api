@@ -43,6 +43,7 @@ export default function SettingsSidebarModulesAdmin(props) {
     chat: {
       enabled: true,
       playground: true,
+      playgroundAdmin: true,
       chat: true,
     },
     console: {
@@ -104,6 +105,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       chat: {
         enabled: true,
         playground: true,
+        playgroundAdmin: true,
         chat: true,
       },
       console: {
@@ -174,11 +176,15 @@ export default function SettingsSidebarModulesAdmin(props) {
     if (props.options && props.options.SidebarModulesAdmin) {
       try {
         const modules = JSON.parse(props.options.SidebarModulesAdmin);
+        // 兼容旧配置：缺省时默认开启「游乐场（管理员可见）」
+        if (modules?.chat && modules.chat.playgroundAdmin === undefined) {
+          modules.chat.playgroundAdmin = true;
+        }
         setSidebarModulesAdmin(modules);
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
-          chat: { enabled: true, playground: true, chat: true },
+          chat: { enabled: true, playground: true, playgroundAdmin: true, chat: true },
           console: {
             enabled: true,
             detail: true,
@@ -215,6 +221,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'playground',
           title: t('操练场'),
           description: t('AI模型测试环境'),
+        },
+        {
+          key: 'playgroundAdmin',
+          title: t('游乐场（管理员可见）'),
+          description: t('控制管理员是否可见游乐场'),
         },
         { key: 'chat', title: t('聊天'), description: t('聊天会话管理') },
       ],

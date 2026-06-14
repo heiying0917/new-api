@@ -69,6 +69,33 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
+// backfillChannelSupplierNames 批量按 supplier_id 回填渠道的 SupplierName（admin 列表用）。
+func backfillChannelSupplierNames(channels []*model.Channel) {
+	idSet := make(map[int]struct{}, len(channels))
+	for _, ch := range channels {
+		if ch.SupplierId > 0 {
+			idSet[ch.SupplierId] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	names, err := model.GetUsernamesByIds(ids)
+	if err != nil {
+		common.SysError("failed to backfill channel supplier names: " + err.Error())
+		return
+	}
+	for _, ch := range channels {
+		if name, ok := names[ch.SupplierId]; ok {
+			ch.SupplierName = name
+		}
+	}
+}
+
 func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	if statusFilter == common.ChannelStatusEnabled {
 		return query.Where("status = ?", common.ChannelStatusEnabled)
@@ -160,6 +187,7 @@ func GetAllChannels(c *gin.Context) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
+	backfillChannelSupplierNames(channelData)
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
 	var results []struct {
@@ -366,6 +394,7 @@ func SearchChannels(c *gin.Context) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
+	backfillChannelSupplierNames(pagedData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

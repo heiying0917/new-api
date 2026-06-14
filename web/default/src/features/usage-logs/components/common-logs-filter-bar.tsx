@@ -23,6 +23,7 @@ import { type Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useIsSupplier } from '@/hooks/use-supplier'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -71,6 +72,7 @@ export function CommonLogsFilterBar<TData>(
   const queryClient = useQueryClient()
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
+  const isSupplier = useIsSupplier()
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
 
@@ -167,7 +169,7 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const hasExpandedFilters =
-    !!filters.token ||
+    (!isSupplier && !!filters.token) ||
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
@@ -178,7 +180,7 @@ export function CommonLogsFilterBar<TData>(
     !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
 
   const expandedFilterCount = [
-    filters.token,
+    isSupplier ? undefined : filters.token,
     isAdmin ? filters.username : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
@@ -281,15 +283,17 @@ export function CommonLogsFilterBar<TData>(
   )
   const advancedFilters = (
     <>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Token Name')}
-          type={sensitiveType}
-          value={filters.token || ''}
-          onChange={(e) => handleChange('token', e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
+      {!isSupplier && (
+        <LogsFilterField>
+          <LogsFilterInput
+            placeholder={t('Token Name')}
+            type={sensitiveType}
+            value={filters.token || ''}
+            onChange={(e) => handleChange('token', e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        </LogsFilterField>
+      )}
       {isAdmin && (
         <LogsFilterField>
           <LogsFilterInput

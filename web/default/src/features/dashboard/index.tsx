@@ -25,6 +25,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
+import { useIsSupplier } from '@/hooks/use-supplier'
+import { SupplierOverview } from '@/features/supplier-dashboard/components/supplier-overview'
+import { SupplierDataDashboard } from '@/features/supplier-dashboard/components/supplier-data-dashboard'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
@@ -147,6 +150,7 @@ export function Dashboard() {
   const navigate = useNavigate()
   const params = route.useParams()
   const userRole = useAuthStore((state) => state.auth.user?.role)
+  const isSupplier = useIsSupplier()
   const activeSection = (params.section ??
     DASHBOARD_DEFAULT_SECTION) as DashboardSectionId
 
@@ -185,6 +189,10 @@ export function Dashboard() {
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  const titleKey =
+    isSupplier && activeSection !== 'overview'
+      ? 'Supplier data dashboard'
+      : meta.titleKey
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
@@ -204,7 +212,7 @@ export function Dashboard() {
   const showSectionTabs =
     activeSection !== 'overview' && visibleSections.length > 1
   const modelActions =
-    activeSection === 'models' ? (
+    activeSection === 'models' && !isSupplier ? (
       <>
         <ModelsChartPreferences
           preferences={chartPreferences}
@@ -220,7 +228,7 @@ export function Dashboard() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t(titleKey)}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
           {activeSection !== 'overview' && (
@@ -245,59 +253,70 @@ export function Dashboard() {
               )}
             </div>
           )}
-          {activeSection === 'overview' && <OverviewDashboard />}
-          {activeSection === 'models' && (
-            <>
+          {activeSection === 'overview' &&
+            (isSupplier ? <SupplierOverview /> : <OverviewDashboard />)}
+          {activeSection === 'models' &&
+            (isSupplier ? (
               <FadeIn>
-                <Suspense fallback={<LogStatCardsFallback />}>
-                  <LazyLogStatCards
-                    filters={modelFilters}
-                    onDataUpdate={handleDataUpdate}
-                  />
-                </Suspense>
+                <SupplierDataDashboard />
               </FadeIn>
-              {isAdmin && (
-                <FadeIn delay={0.05}>
-                  <Suspense fallback={<PerformanceOverviewFallback />}>
-                    <LazyPerformanceOverview />
+            ) : (
+              <>
+                <FadeIn>
+                  <Suspense fallback={<LogStatCardsFallback />}>
+                    <LazyLogStatCards
+                      filters={modelFilters}
+                      onDataUpdate={handleDataUpdate}
+                    />
                   </Suspense>
                 </FadeIn>
-              )}
-              <FadeIn delay={0.1}>
+                {isAdmin && (
+                  <FadeIn delay={0.05}>
+                    <Suspense fallback={<PerformanceOverviewFallback />}>
+                      <LazyPerformanceOverview />
+                    </Suspense>
+                  </FadeIn>
+                )}
+                <FadeIn delay={0.1}>
+                  <Suspense fallback={<ModelChartsFallback />}>
+                    <LazyConsumptionDistributionChart
+                      data={modelData}
+                      loading={dataLoading}
+                      defaultChartType={
+                        chartPreferences.consumptionDistributionChart
+                      }
+                      timeGranularity={
+                        modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
+                      }
+                    />
+                  </Suspense>
+                </FadeIn>
+                <FadeIn delay={0.15}>
+                  <Suspense fallback={<ModelChartsFallback />}>
+                    <LazyModelCharts
+                      data={modelData}
+                      loading={dataLoading}
+                      defaultChartTab={chartPreferences.modelAnalyticsChart}
+                      timeGranularity={
+                        modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
+                      }
+                    />
+                  </Suspense>
+                </FadeIn>
+              </>
+            ))}
+          {activeSection === 'users' &&
+            (isAdmin ? (
+              <FadeIn>
                 <Suspense fallback={<ModelChartsFallback />}>
-                  <LazyConsumptionDistributionChart
-                    data={modelData}
-                    loading={dataLoading}
-                    defaultChartType={
-                      chartPreferences.consumptionDistributionChart
-                    }
-                    timeGranularity={
-                      modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
-                    }
-                  />
+                  <LazyUserCharts />
                 </Suspense>
               </FadeIn>
-              <FadeIn delay={0.15}>
-                <Suspense fallback={<ModelChartsFallback />}>
-                  <LazyModelCharts
-                    data={modelData}
-                    loading={dataLoading}
-                    defaultChartTab={chartPreferences.modelAnalyticsChart}
-                    timeGranularity={
-                      modelFilters.time_granularity || DEFAULT_TIME_GRANULARITY
-                    }
-                  />
-                </Suspense>
+            ) : isSupplier ? (
+              <FadeIn>
+                <SupplierDataDashboard />
               </FadeIn>
-            </>
-          )}
-          {activeSection === 'users' && (
-            <FadeIn>
-              <Suspense fallback={<ModelChartsFallback />}>
-                <LazyUserCharts />
-              </Suspense>
-            </FadeIn>
-          )}
+            ) : null)}
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>

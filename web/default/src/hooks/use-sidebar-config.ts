@@ -94,7 +94,11 @@ const mergeWithDefaultSidebarModules = (
  * Mapping from URL to configuration keys
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
-  '/playground': { section: 'chat', module: 'playground' },
+  // NOTE: '/playground' is intentionally NOT mapped here. Playground visibility
+  // is role-aware (separate `chat.playground` / `chat.playgroundAdmin` toggles)
+  // and is gated authoritatively in `use-sidebar-view.ts` via
+  // `isPlaygroundVisible(userRole)`. Mapping it here would gate every role on
+  // `chat.playground` only, hiding it from admins when `playground === false`.
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },

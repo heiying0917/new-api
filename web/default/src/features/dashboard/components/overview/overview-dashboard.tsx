@@ -57,7 +57,6 @@ import {
   useApiInfo,
   useDashboardContentVisibility,
 } from '../../hooks/use-status-data'
-import { SupplierOverviewCard } from '@/features/supplier-dashboard/components/supplier-overview-card'
 import { AnnouncementsPanel } from './announcements-panel'
 import { ApiInfoPanel } from './api-info-panel'
 import { FAQPanel } from './faq-panel'
@@ -739,8 +738,6 @@ export function OverviewDashboard() {
           </CardStaggerItem>
         </CardStaggerContainer>
       )}
-
-      <SupplierOverviewCard />
 
       <SummaryCards />
 

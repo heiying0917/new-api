@@ -65,4 +65,20 @@ export function AdminRoute({ children }) {
   return <Navigate to='/forbidden' replace />;
 }
 
+export function SupplierRoute({ children }) {
+  const raw = localStorage.getItem('user');
+  if (!raw) {
+    return <Navigate to='/login' state={{ from: history.location }} />;
+  }
+  try {
+    const user = JSON.parse(raw);
+    if (user && typeof user.role === 'number' && user.role === 5) {
+      return children;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return <Navigate to='/console' replace />;
+}
+
 export { PrivateRoute };

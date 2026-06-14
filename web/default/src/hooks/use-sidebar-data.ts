@@ -86,6 +86,7 @@ export function useSidebarData(): SidebarData {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
+            hiddenForSupplier: true,
           },
           {
             title: t('Usage Logs'),
@@ -98,6 +99,7 @@ export function useSidebarData(): SidebarData {
             activeUrls: ['/usage-logs/drawing'],
             configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
             icon: ListTodo,
+            hiddenForSupplier: true,
           },
         ],
       },
@@ -109,6 +111,7 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+            hiddenForSupplier: true,
           },
           {
             title: t('My Channels'),

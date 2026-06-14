@@ -32,6 +32,7 @@ const ColumnSelectorModal = ({
   setBillingDisplayMode,
   COLUMN_KEYS,
   isAdminUser,
+  isSupplierUser,
   copyText,
   showUserInfoFunc,
   t,
@@ -51,6 +52,7 @@ const ColumnSelectorModal = ({
     copyText,
     showUserInfoFunc,
     isAdminUser,
+    isSupplierUser,
     billingDisplayMode,
   });
 
@@ -103,9 +105,21 @@ const ColumnSelectorModal = ({
         style={{ border: '1px solid var(--semi-color-border)' }}
       >
         {allColumns.map((column) => {
+          // Suppliers: hide consumer identity + admin-only retry; keep channel toggle.
+          if (
+            isSupplierUser &&
+            (column.key === COLUMN_KEYS.USERNAME ||
+              column.key === COLUMN_KEYS.TOKEN ||
+              column.key === COLUMN_KEYS.RETRY ||
+              column.key === COLUMN_KEYS.IP)
+          ) {
+            return null;
+          }
+
           // Skip admin-only columns for non-admin users
           if (
             !isAdminUser &&
+            !isSupplierUser &&
             (column.key === COLUMN_KEYS.CHANNEL ||
               column.key === COLUMN_KEYS.USERNAME ||
               column.key === COLUMN_KEYS.RETRY)

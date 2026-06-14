@@ -25,7 +25,7 @@ import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
-import { isAdmin, isRoot, showError } from '../../helpers';
+import { isAdmin, isRoot, isSupplier, showError } from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
@@ -49,6 +49,12 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  supplier_overview: '/console',
+  supplier_dashboard: '/console/supplier/dashboard',
+  supplier_channels: '/console/supplier/channels',
+  supplier_settlements: '/console/supplier/settlements',
+  suppliers: '/console/suppliers',
+  settlement_review: '/console/settlement-review',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -57,8 +63,21 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const {
     isModuleVisible,
     hasSectionVisibleModules,
+    isPlaygroundVisible,
     loading: sidebarLoading,
   } = useSidebar();
+
+  // 读取当前用户角色（用于角色相关的菜单可见性判断）
+  const getCurrentUserRole = () => {
+    const raw = localStorage.getItem('user');
+    if (!raw) return 0;
+    try {
+      const user = JSON.parse(raw);
+      return typeof user?.role === 'number' ? user.role : 0;
+    } catch {
+      return 0;
+    }
+  };
 
   const showSkeleton = useMinimumLoadingTime(sidebarLoading, 200);
 
@@ -75,14 +94,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'detail',
         to: '/detail',
         className:
-          localStorage.getItem('enable_data_export') === 'true'
-            ? ''
-            : 'tableHiddle',
+          isSupplier() ||
+          localStorage.getItem('enable_data_export') !== 'true'
+            ? 'tableHiddle'
+            : '',
       },
       {
         text: t('令牌管理'),
         itemKey: 'token',
         to: '/token',
+        className: isSupplier() ? 'tableHiddle' : '',
       },
       {
         text: t('使用日志'),
@@ -94,16 +115,18 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'midjourney',
         to: '/midjourney',
         className:
-          localStorage.getItem('enable_drawing') === 'true'
-            ? ''
-            : 'tableHiddle',
+          isSupplier() || localStorage.getItem('enable_drawing') !== 'true'
+            ? 'tableHiddle'
+            : '',
       },
       {
         text: t('任务日志'),
         itemKey: 'task',
         to: '/task',
         className:
-          localStorage.getItem('enable_task') === 'true' ? '' : 'tableHiddle',
+          isSupplier() || localStorage.getItem('enable_task') !== 'true'
+            ? 'tableHiddle'
+            : '',
       },
     ];
 
@@ -128,11 +151,14 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('钱包管理'),
         itemKey: 'topup',
         to: '/topup',
+        className: isSupplier() ? 'tableHiddle' : '',
       },
       {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
+        // 供应商在供应商区域已有"个人设置"，此处隐藏避免重复 itemKey
+        className: isSupplier() ? 'tableHiddle' : '',
       },
     ];
 
@@ -144,6 +170,41 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
     return filteredItems;
   }, [t, isModuleVisible]);
+
+  const supplierItems = useMemo(() => {
+    return [
+      {
+        text: t('概览'),
+        itemKey: 'supplier_overview',
+        to: '/console',
+      },
+      {
+        text: t('数据看板'),
+        itemKey: 'supplier_dashboard',
+        to: '/console/supplier/dashboard',
+      },
+      {
+        text: t('使用日志'),
+        itemKey: 'log',
+        to: '/log',
+      },
+      {
+        text: t('我的渠道'),
+        itemKey: 'supplier_channels',
+        to: '/console/supplier/channels',
+      },
+      {
+        text: t('账单结算'),
+        itemKey: 'supplier_settlements',
+        to: '/console/supplier/settlements',
+      },
+      {
+        text: t('个人设置'),
+        itemKey: 'personal',
+        to: '/personal',
+      },
+    ];
+  }, [t]);
 
   const adminItems = useMemo(() => {
     const items = [
@@ -184,6 +245,18 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
+        text: t('供应商管理'),
+        itemKey: 'suppliers',
+        to: '/console/suppliers',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('结算审核'),
+        itemKey: 'settlement_review',
+        to: '/console/settlement-review',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
         text: t('系统设置'),
         itemKey: 'setting',
         to: '/setting',
@@ -216,12 +289,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
     // 根据配置过滤项目
     const filteredItems = items.filter((item) => {
+      if (item.itemKey === 'playground') {
+        // 操练场可见性区分管理员与普通用户
+        return isPlaygroundVisible(getCurrentUserRole());
+      }
       const configVisible = isModuleVisible('chat', item.itemKey);
       return configVisible;
     });
 
     return filteredItems;
-  }, [chatItems, t, isModuleVisible]);
+  }, [chatItems, t, isModuleVisible, isPlaygroundVisible]);
 
   // 更新路由映射，添加聊天路由
   const updateRouterMapWithChats = (chats) => {
@@ -453,8 +530,8 @@ const SiderBar = ({ onNavigate = () => {} }) => {
             </div>
           )}
 
-          {/* 控制台区域 */}
-          {hasSectionVisibleModules('console') && (
+          {/* 控制台区域（供应商使用"供应商"区域，隐藏避免重复） */}
+          {!isSupplier() && hasSectionVisibleModules('console') && (
             <>
               <Divider className='sidebar-divider' />
               <div>
@@ -466,8 +543,8 @@ const SiderBar = ({ onNavigate = () => {} }) => {
             </>
           )}
 
-          {/* 个人中心区域 */}
-          {hasSectionVisibleModules('personal') && (
+          {/* 个人中心区域（供应商使用"供应商"区域，隐藏避免空标题） */}
+          {!isSupplier() && hasSectionVisibleModules('personal') && (
             <>
               <Divider className='sidebar-divider' />
               <div>
@@ -475,6 +552,19 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                   <div className='sidebar-group-label'>{t('个人中心')}</div>
                 )}
                 {financeItems.map((item) => renderNavItem(item))}
+              </div>
+            </>
+          )}
+
+          {/* 供应商区域 - 仅供应商（role === 5）可见，按角色而非模块配置门控 */}
+          {isSupplier() && (
+            <>
+              <Divider className='sidebar-divider' />
+              <div>
+                {!collapsed && (
+                  <div className='sidebar-group-label'>{t('供应商')}</div>
+                )}
+                {supplierItems.map((item) => renderNavItem(item))}
               </div>
             </>
           )}

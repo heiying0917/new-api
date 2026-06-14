@@ -21,6 +21,7 @@ import { useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { ROLE } from '@/lib/roles'
+import { isPlaygroundVisible } from '@/lib/nav-modules'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import { useSidebarConfig } from './use-sidebar-config'
@@ -51,14 +52,24 @@ export function useSidebarView(): ResolvedSidebarView {
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
+    const isSupplier = userRole === ROLE.SUPPLIER
+    const playgroundVisible = isPlaygroundVisible(userRole)
     return configFilteredRoot
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => ({
         ...group,
         items: group.items.filter(
           (item) =>
-            item.minRole === undefined ||
-            (userRole !== undefined && userRole >= item.minRole)
+            (item.minRole === undefined ||
+              (userRole !== undefined && userRole >= item.minRole)) &&
+            !(item.hiddenForSupplier && isSupplier) &&
+            // Role-aware playground gate: admins follow `playgroundAdmin`,
+            // everyone else follows `playground` (see isPlaygroundVisible).
+            !(
+              'url' in item &&
+              item.url === '/playground' &&
+              !playgroundVisible
+            )
         ),
       }))
       .filter((group) => group.items.length > 0)

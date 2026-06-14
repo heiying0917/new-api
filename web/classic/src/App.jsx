@@ -21,7 +21,7 @@ import React, { lazy, Suspense, useContext, useMemo } from 'react';
 import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers';
+import { AuthRedirect, PrivateRoute, AdminRoute, SupplierRoute } from './helpers';
 import RegisterForm from './components/auth/RegisterForm';
 import LoginForm from './components/auth/LoginForm';
 import NotFound from './pages/NotFound';
@@ -55,6 +55,11 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const SupplierDashboard = lazy(() => import('./pages/SupplierDashboard'));
+const SupplierChannels = lazy(() => import('./pages/SupplierChannels'));
+const SupplierSettlements = lazy(() => import('./pages/SupplierSettlements'));
+const Suppliers = lazy(() => import('./pages/Suppliers'));
+const SettlementReview = lazy(() => import('./pages/SettlementReview'));
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -375,6 +380,56 @@ function App() {
                 <Chat2Link />
               </Suspense>
             </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/supplier/dashboard'
+          element={
+            <SupplierRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SupplierDashboard />
+              </Suspense>
+            </SupplierRoute>
+          }
+        />
+        <Route
+          path='/console/supplier/channels'
+          element={
+            <SupplierRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SupplierChannels />
+              </Suspense>
+            </SupplierRoute>
+          }
+        />
+        <Route
+          path='/console/supplier/settlements'
+          element={
+            <SupplierRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SupplierSettlements />
+              </Suspense>
+            </SupplierRoute>
+          }
+        />
+        <Route
+          path='/console/suppliers'
+          element={
+            <AdminRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <Suppliers />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/settlement-review'
+          element={
+            <AdminRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SettlementReview />
+              </Suspense>
+            </AdminRoute>
           }
         />
         <Route path='*' element={<NotFound />} />

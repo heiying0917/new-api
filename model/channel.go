@@ -38,6 +38,7 @@ type Channel struct {
 	Balance            float64  `json:"balance"` // in USD
 	BalanceUpdatedTime int64    `json:"balance_updated_time" gorm:"bigint"`
 	SupplierId         int      `json:"supplier_id" gorm:"index;default:0"`
+	SupplierName       string   `json:"supplier_name" gorm:"-"` // transient: 供应商用户名（admin 列表回填，不入库）
 	CostPrice          *float64 `json:"cost_price" gorm:"default:0"` // 成本价 ¥/$（X元=1刀）
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
@@ -64,6 +65,10 @@ type Channel struct {
 	// transient dispatch fields (populated by InitChannelCache, never persisted)
 	SupplierPriority int  `json:"-" gorm:"-"`
 	SupplierEnabled  bool `json:"-" gorm:"-"`
+
+	// transient billing fields (populated by SupplierListChannels, never persisted)
+	OfficialUsd float64 `json:"official_usd" gorm:"-"` // 该渠道未结算的官方计费(USD)
+	Receivable  float64 `json:"receivable" gorm:"-"`   // 应收款 = official_usd × cost_price
 }
 
 type ChannelInfo struct {

@@ -17,13 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { isSidebarModuleEnabled } from '@/lib/nav-modules'
+import { isPlaygroundVisible } from '@/lib/nav-modules'
+import { useAuthStore } from '@/stores/auth-store'
 import { Main } from '@/components/layout'
 import { Playground } from '@/features/playground'
 
 export const Route = createFileRoute('/_authenticated/playground/')({
   beforeLoad: () => {
-    if (!isSidebarModuleEnabled('chat', 'playground')) {
+    const role = useAuthStore.getState().auth.user?.role
+    if (!isPlaygroundVisible(role)) {
       throw redirect({ to: '/dashboard' })
     }
   },

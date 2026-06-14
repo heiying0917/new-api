@@ -2,6 +2,8 @@ package model
 
 import (
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -26,6 +28,25 @@ func GetSupplierByUserId(userId int) (*Supplier, error) {
 	return &s, err
 }
 
+// GetSupplierIdsByKeyword 模糊匹配供应商用户名/邮箱，返回匹配的供应商用户 id 列表。
+// 仅匹配 role=RoleSupplierUser 的用户（排除非供应商）。
+// keyword 为空/纯空白 → 返回 nil（调用方视为"无关键词过滤"）。
+func GetSupplierIdsByKeyword(keyword string) ([]int, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	like := "%" + keyword + "%"
+	var ids []int
+	if err := DB.Model(&User{}).
+		Where("role = ?", common.RoleSupplierUser).
+		Where("username LIKE ? OR email LIKE ?", like, like).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // SupplierListItem 供应商管理页列表项 = User 基本信息 + Supplier 资料
 type SupplierListItem struct {
 	UserId          int    `json:"user_id"`
@@ -38,6 +59,8 @@ type SupplierListItem struct {
 	SettlementMode  string `json:"settlement_mode"`
 	SettlementCycle string `json:"settlement_cycle"`
 	Remark          string `json:"remark"`
+	PendingCNY      float64 `json:"pending_cny"` // 待结算应付人民币 = GetSupplierPendingStat.PayableCNY
+	SettledCNY      float64 `json:"settled_cny"` // 已结算人民币总额 = Σ settled settlements.computed_cny
 }
 
 // CreateSupplierProfile 为供应商用户创建资料，幂等。
@@ -155,6 +178,21 @@ func querySuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int
 			it.Remark = s.Remark
 		}
 		items = append(items, it)
+	}
+	// 回填每个供应商的待结算应付(PendingCNY)与已结算总额(SettledCNY)。
+	// 列表页规模小，逐个查询可接受（复用既有聚合函数，避免跨库 JOIN）。
+	now := time.Now().Unix()
+	for _, it := range items {
+		pending, err := GetSupplierPendingStat(it.UserId)
+		if err != nil {
+			return nil, 0, err
+		}
+		it.PendingCNY = pending.PayableCNY
+		settled, err := GetSupplierSettledStats(it.UserId, now)
+		if err != nil {
+			return nil, 0, err
+		}
+		it.SettledCNY = settled.Total
 	}
 	return items, total, nil
 }

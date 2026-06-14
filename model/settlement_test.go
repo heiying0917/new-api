@@ -86,7 +86,7 @@ func TestListAndDetail(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, list, 1)
-	applied, atotal, _ := ListSettlements(SettlementStatusApplied, 0, 20)
+	applied, atotal, _ := ListSettlements(SettlementStatusApplied, nil, 0, 20)
 	require.Equal(t, int64(1), atotal)
 	require.Len(t, applied, 1)
 	logs, ltotal, _ := GetSettlementLogs(s.Id, 0, 20)

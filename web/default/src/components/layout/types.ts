@@ -29,6 +29,8 @@ type BaseNavItem = {
   activeUrls?: (LinkProps['to'] | (string & {}))[]
   configUrls?: (LinkProps['to'] | (string & {}))[]
   minRole?: number
+  /** When true, hide this item from suppliers (role === ROLE.SUPPLIER) */
+  hiddenForSupplier?: boolean
 }
 
 /**

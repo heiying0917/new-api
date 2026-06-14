@@ -88,6 +88,12 @@ export function SidebarModulesSection({
         title: t('Playground'),
         description: t('Experiment with prompts and models in real time.'),
       },
+      playgroundAdmin: {
+        title: t('Playground (admin visibility)'),
+        description: t(
+          'Show the playground to administrators independently of the user-facing toggle.'
+        ),
+      },
       chat: {
         title: t('Chat'),
         description: t('Access previous conversations and start new ones.'),

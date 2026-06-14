@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useIsSupplier } from '@/hooks/use-supplier'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import {
   DataTablePage,
@@ -61,6 +62,7 @@ interface UsageLogsTableProps {
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
+  const isSupplier = useIsSupplier()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
 
@@ -107,6 +109,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       'logs',
       logCategory,
       isAdmin,
+      isSupplier,
       pagination.pageIndex + 1,
       pagination.pageSize,
       columnFilters,
@@ -117,6 +120,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       const result = await fetchLogsByCategory({
         logCategory,
         isAdmin,
+        isSupplier,
         page: pagination.pageIndex + 1,
         pageSize: pagination.pageSize,
         searchParams,
@@ -139,7 +143,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const logs = data?.items || []
-  const columns = useColumnsByCategory(logCategory, isAdmin)
+  const columns = useColumnsByCategory(logCategory, isAdmin, isSupplier)
   const isLoadingData = isLoading || (isFetching && !data)
 
   const { table } = useDataTable({

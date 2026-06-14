@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getStatus } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
@@ -205,6 +206,47 @@ export function isSidebarModuleEnabled(
     if (sectionConfig.enabled === false) return false
     if (sectionConfig[module] === false) return false
     return true
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Role-aware playground visibility.
+ *
+ * The playground has two independent admin toggles in the
+ * `SidebarModulesAdmin.chat` config:
+ *   - `playground`      — controls visibility for non-admin users (role < ADMIN,
+ *                         which includes suppliers, role 5).
+ *   - `playgroundAdmin` — controls visibility for admins (role >= ADMIN).
+ *
+ * Both default to `true` (and are treated as `true` when absent) to preserve
+ * the historical behaviour for configs saved before `playgroundAdmin` existed.
+ * The chat SECTION being disabled (`chat.enabled === false`) hides the
+ * playground for everyone, matching the precedence used elsewhere.
+ */
+export function isPlaygroundVisible(role: number | undefined): boolean {
+  const status = getCachedStatus()
+  if (!status) return true
+
+  const raw = status.SidebarModulesAdmin
+  if (!raw || String(raw).trim() === '') return true
+
+  try {
+    const parsed = JSON.parse(String(raw)) as Record<
+      string,
+      Record<string, boolean>
+    >
+    const chat = parsed.chat
+    if (!chat) return true
+
+    const chatEnabled = chat.enabled !== false
+    if (!chatEnabled) return false
+
+    if (role !== undefined && role >= ROLE.ADMIN) {
+      return chat.playgroundAdmin !== false
+    }
+    return chat.playground !== false
   } catch {
     return true
   }

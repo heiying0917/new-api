@@ -17,45 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-export const supportedLanguages = [
-  'zh-CN',
-  'zh-TW',
-  'en',
-  'fr',
-  'ru',
-  'ja',
-  'vi',
-];
+// 本项目仅支持简体中文（zh-CN）。
+export const supportedLanguages = ['zh-CN'];
 
-export const normalizeLanguage = (language) => {
-  if (!language) {
-    return language;
-  }
-
-  const normalized = language.trim().replace(/_/g, '-');
-  const lower = normalized.toLowerCase();
-
-  if (
-    lower === 'zh' ||
-    lower === 'zh-cn' ||
-    lower === 'zh-sg' ||
-    lower.startsWith('zh-hans')
-  ) {
-    return 'zh-CN';
-  }
-
-  if (
-    lower === 'zh-tw' ||
-    lower === 'zh-hk' ||
-    lower === 'zh-mo' ||
-    lower.startsWith('zh-hant')
-  ) {
-    return 'zh-TW';
-  }
-
-  const matchedLanguage = supportedLanguages.find(
-    (supportedLanguage) => supportedLanguage.toLowerCase() === lower,
-  );
-
-  return matchedLanguage || normalized;
-};
+// 任何输入都归一化为 zh-CN（已移除其他语言）。
+export const normalizeLanguage = () => 'zh-CN';

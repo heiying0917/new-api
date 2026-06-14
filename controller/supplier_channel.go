@@ -28,6 +28,21 @@ func SupplierListChannels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 为本页渠道补充未结算计费信息：official_usd（未结算官方计费）与 receivable（应收款）。
+	ids := make([]int, 0, len(list))
+	for _, ch := range list {
+		ids = append(ids, ch.Id)
+	}
+	usdByChannel, _ := model.GetUnsettledOfficialUsdByChannels(ids)
+	for _, ch := range list {
+		usd := usdByChannel[ch.Id]
+		ch.OfficialUsd = usd
+		if ch.CostPrice != nil {
+			ch.Receivable = usd * (*ch.CostPrice)
+		} else {
+			ch.Receivable = 0
+		}
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(list)
 	common.ApiSuccess(c, pageInfo)

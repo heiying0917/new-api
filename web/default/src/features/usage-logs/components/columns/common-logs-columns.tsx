@@ -260,7 +260,10 @@ function buildDetailSegments(
   return segments
 }
 
-export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
+export function useCommonLogsColumns(
+  isAdmin: boolean,
+  hideConsumerIdentity = false
+): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
     {
@@ -299,7 +302,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     },
   ]
 
-  if (isAdmin) {
+  if (isAdmin || hideConsumerIdentity) {
     columns.push(
       {
         id: 'channel',
@@ -405,124 +408,129 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           )
         },
         meta: { label: t('Channel') },
-      },
-      {
-        id: 'user',
-        accessorFn: (row) => row.username,
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('User')} />
-        ),
-        cell: function UserCell({ row }) {
-          const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
-            useUsageLogsContext()
-          const log = row.original
-
-          if (!log.username) return null
-
-          return (
-            <button
-              type='button'
-              className='flex items-center gap-1.5 text-left'
-              onClick={(e) => {
-                e.stopPropagation()
-                setSelectedUserId(log.user_id)
-                setUserInfoDialogOpen(true)
-              }}
-            >
-              <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
-                <AvatarFallback
-                  className={cn(
-                    'text-[11px] font-semibold',
-                    !sensitiveVisible && 'bg-muted text-muted-foreground'
-                  )}
-                  style={
-                    sensitiveVisible
-                      ? getUserAvatarStyle(log.username)
-                      : undefined
-                  }
-                >
-                  {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
-                </AvatarFallback>
-              </Avatar>
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className='text-muted-foreground max-w-[100px] truncate text-sm hover:underline' />
-                    }
-                  >
-                    {sensitiveVisible ? log.username : '••••'}
-                  </TooltipTrigger>
-                  {sensitiveVisible && log.username.length > 12 && (
-                    <TooltipContent side='top'>{log.username}</TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
-            </button>
-          )
-        },
-        meta: { label: t('User') },
       }
     )
   }
 
-  columns.push({
-    accessorKey: 'token_name',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title={t('Token')} />
-    ),
-    cell: function TokenNameCell({ row }) {
-      const { sensitiveVisible } = useUsageLogsContext()
-      const log = row.original
-      if (!isDisplayableLogType(log.type)) return null
+  if (isAdmin) {
+    columns.push({
+      id: 'user',
+      accessorFn: (row) => row.username,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('User')} />
+      ),
+      cell: function UserCell({ row }) {
+        const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
+          useUsageLogsContext()
+        const log = row.original
 
-      const tokenName = log.token_name
-      if (!tokenName) return null
+        if (!log.username) return null
 
-      const other = parseLogOther(log.other)
-      const displayName = sensitiveVisible ? tokenName : '••••'
-      let group = log.group
-      if (!group) group = other?.group || ''
+        return (
+          <button
+            type='button'
+            className='flex items-center gap-1.5 text-left'
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedUserId(log.user_id)
+              setUserInfoDialogOpen(true)
+            }}
+          >
+            <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
+              <AvatarFallback
+                className={cn(
+                  'text-[11px] font-semibold',
+                  !sensitiveVisible && 'bg-muted text-muted-foreground'
+                )}
+                style={
+                  sensitiveVisible
+                    ? getUserAvatarStyle(log.username)
+                    : undefined
+                }
+              >
+                {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
+              </AvatarFallback>
+            </Avatar>
+            <TooltipProvider delay={300}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className='text-muted-foreground max-w-[100px] truncate text-sm hover:underline' />
+                  }
+                >
+                  {sensitiveVisible ? log.username : '••••'}
+                </TooltipTrigger>
+                {sensitiveVisible && log.username.length > 12 && (
+                  <TooltipContent side='top'>{log.username}</TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          </button>
+        )
+      },
+      meta: { label: t('User') },
+    })
+  }
 
-      const metaParts: string[] = []
-      const groupRatioText = getGroupRatioText(other)
-      if (group) {
-        metaParts.push(sensitiveVisible ? group : '••••')
-      }
-      if (groupRatioText) metaParts.push(groupRatioText)
+  if (!hideConsumerIdentity) {
+    columns.push({
+      accessorKey: 'token_name',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Token')} />
+      ),
+      cell: function TokenNameCell({ row }) {
+        const { sensitiveVisible } = useUsageLogsContext()
+        const log = row.original
+        if (!isDisplayableLogType(log.type)) return null
 
-      return (
-        <div className='flex max-w-[200px] flex-col gap-0.5'>
-          <TooltipProvider delay={300}>
-            <Tooltip>
-              <TooltipTrigger render={<div className='max-w-full' />}>
-                <StatusBadge
-                  label={displayName}
-                  icon={KeyRound}
-                  copyText={sensitiveVisible ? tokenName : undefined}
-                  size='sm'
-                  showDot={false}
-                  className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
-                />
-              </TooltipTrigger>
-              {sensitiveVisible && tokenName.length > 16 && (
-                <TooltipContent side='top' className='max-w-xs break-all'>
-                  {tokenName}
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
-          {metaParts.length > 0 && (
-            <span className='text-muted-foreground/60 truncate [font-family:var(--font-body)] !text-xs'>
-              {metaParts.join(' · ')}
-            </span>
-          )}
-        </div>
-      )
-    },
-    meta: { label: t('Token') },
-    size: 160,
-  })
+        const tokenName = log.token_name
+        if (!tokenName) return null
+
+        const other = parseLogOther(log.other)
+        const displayName = sensitiveVisible ? tokenName : '••••'
+        let group = log.group
+        if (!group) group = other?.group || ''
+
+        const metaParts: string[] = []
+        const groupRatioText = getGroupRatioText(other)
+        if (group) {
+          metaParts.push(sensitiveVisible ? group : '••••')
+        }
+        if (groupRatioText) metaParts.push(groupRatioText)
+
+        return (
+          <div className='flex max-w-[200px] flex-col gap-0.5'>
+            <TooltipProvider delay={300}>
+              <Tooltip>
+                <TooltipTrigger render={<div className='max-w-full' />}>
+                  <StatusBadge
+                    label={displayName}
+                    icon={KeyRound}
+                    copyText={sensitiveVisible ? tokenName : undefined}
+                    size='sm'
+                    showDot={false}
+                    className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
+                  />
+                </TooltipTrigger>
+                {sensitiveVisible && tokenName.length > 16 && (
+                  <TooltipContent side='top' className='max-w-xs break-all'>
+                    {tokenName}
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+            {metaParts.length > 0 && (
+              <span className='text-muted-foreground/60 truncate [font-family:var(--font-body)] !text-xs'>
+                {metaParts.join(' · ')}
+              </span>
+            )}
+          </div>
+        )
+      },
+      meta: { label: t('Token') },
+      size: 160,
+    })
+  }
 
   columns.push(
     {

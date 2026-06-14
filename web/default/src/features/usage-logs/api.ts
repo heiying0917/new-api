@@ -83,6 +83,32 @@ export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
 ) => fetchLogStats('/api/log', params, false)
 
+// Supplier channel-scoped logs (restricted to the supplier's OWN channels).
+// Consumer identity (username/token_name) is blanked server-side.
+export const getSupplierLogs = (
+  params: Omit<GetLogsParams, 'username' | 'channel'> = {}
+) => {
+  const queryParams = buildQueryParams({
+    p: params.p || 1,
+    page_size: params.page_size || 20,
+    ...params,
+  })
+  return api
+    .get(`/api/supplier/self/logs?${queryParams}`)
+    .then((res) => res.data as GetLogsResponse)
+}
+
+export const getSupplierLogsStat = (
+  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
+) => {
+  const queryParams = buildQueryParams(
+    params as unknown as Record<string, unknown>
+  )
+  return api
+    .get(`/api/supplier/self/logs/stat?${queryParams}`)
+    .then((res) => res.data as GetLogStatsResponse)
+}
+
 export async function getUserInfo(
   userId: number
 ): Promise<{ success: boolean; message?: string; data?: UserInfo }> {

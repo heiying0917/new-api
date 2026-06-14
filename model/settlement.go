@@ -26,6 +26,9 @@ type Settlement struct {
 	LogCount       int64   `json:"log_count"`
 	CreatedAt      int64   `json:"created_at" gorm:"autoCreateTime"`
 	SettledAt      int64   `json:"settled_at"`
+
+	// transient: 供应商用户名（admin 列表回填，不入库）
+	SupplierName string `json:"supplier_name" gorm:"-"`
 }
 
 // CreateSettlement 把供应商所有未结算消费日志原子打包成一张待审核账单。
@@ -153,12 +156,17 @@ func GetSettlementsBySupplier(supplierId, startIdx, num int) ([]*Settlement, int
 	return list, total, err
 }
 
-func ListSettlements(status, startIdx, num int) ([]*Settlement, int64, error) {
+// ListSettlements 分页列出账单，可选按状态(status!=0)与供应商集合(supplierIds 非空)过滤。
+// supplierIds 为 nil 或空 → 不按供应商过滤（"全部"）；非空 → WHERE supplier_id IN (?)。
+func ListSettlements(status int, supplierIds []int, startIdx, num int) ([]*Settlement, int64, error) {
 	var list []*Settlement
 	var total int64
 	q := DB.Model(&Settlement{})
 	if status != 0 {
 		q = q.Where("status = ?", status)
+	}
+	if len(supplierIds) > 0 {
+		q = q.Where("supplier_id IN ?", supplierIds)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err

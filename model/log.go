@@ -514,6 +514,113 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	return stat, nil
 }
 
+// GetSupplierLogs returns paginated logs restricted to channel_id IN channelIds.
+// Mirrors GetAllLogs but: forces channel_id IN (channelIds); supports filters logType
+// (0/LogTypeUnknown = all), startTimestamp, endTimestamp, modelName; NO username/tokenName
+// filters. Backfills ChannelName. Empty channelIds => (empty slice, 0, nil) WITHOUT
+// running IN ().
+func GetSupplierLogs(channelIds []int, logType int, startTimestamp int64, endTimestamp int64, modelName string, startIdx int, num int) (logs []*Log, total int64, err error) {
+	if len(channelIds) == 0 {
+		return []*Log{}, 0, nil
+	}
+
+	tx := LOG_DB.Where("logs.channel_id IN ?", channelIds)
+	if logType != LogTypeUnknown {
+		tx = tx.Where("logs.type = ?", logType)
+	}
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+		return nil, 0, err
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", endTimestamp)
+	}
+
+	err = tx.Model(&Log{}).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Backfill ChannelName (mirrors GetAllLogs).
+	respChannelIds := types.NewSet[int]()
+	for _, log := range logs {
+		if log.ChannelId != 0 {
+			respChannelIds.Add(log.ChannelId)
+		}
+	}
+	if respChannelIds.Len() > 0 {
+		var channels []struct {
+			Id   int    `gorm:"column:id"`
+			Name string `gorm:"column:name"`
+		}
+		if common.MemoryCacheEnabled {
+			for _, channelId := range respChannelIds.Items() {
+				if cacheChannel, cErr := CacheGetChannel(channelId); cErr == nil {
+					channels = append(channels, struct {
+						Id   int    `gorm:"column:id"`
+						Name string `gorm:"column:name"`
+					}{Id: channelId, Name: cacheChannel.Name})
+				}
+			}
+		} else {
+			if err = DB.Table("channels").Select("id, name").Where("id IN ?", respChannelIds.Items()).Find(&channels).Error; err != nil {
+				return logs, total, err
+			}
+		}
+		channelMap := make(map[int]string, len(channels))
+		for _, channel := range channels {
+			channelMap[channel.Id] = channel.Name
+		}
+		for i := range logs {
+			logs[i].ChannelName = channelMap[logs[i].ChannelId]
+		}
+	}
+
+	return logs, total, nil
+}
+
+// SumSupplierStat aggregates consume stats for channel_id IN channelIds.
+// Quota = SUM(quota) over [startTimestamp, endTimestamp] (0 = unbounded on that side);
+// Rpm/Tpm over the last 60 seconds for the same channels. Only type=LogTypeConsume.
+// Empty channelIds => zero Stat (no IN () executed).
+func SumSupplierStat(channelIds []int, startTimestamp int64, endTimestamp int64) (Stat, error) {
+	var stat Stat
+	if len(channelIds) == 0 {
+		return stat, nil
+	}
+
+	quotaQuery := LOG_DB.Table("logs").
+		Select("COALESCE(SUM(quota), 0)").
+		Where("type = ? AND channel_id IN ?", LogTypeConsume, channelIds)
+	if startTimestamp != 0 {
+		quotaQuery = quotaQuery.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		quotaQuery = quotaQuery.Where("created_at <= ?", endTimestamp)
+	}
+	var quota int
+	if err := quotaQuery.Row().Scan(&quota); err != nil {
+		return Stat{}, err
+	}
+	stat.Quota = quota
+
+	last60 := time.Now().Add(-60 * time.Second).Unix()
+	if err := LOG_DB.Table("logs").
+		Select("COUNT(*) as rpm, COALESCE(SUM(prompt_tokens + completion_tokens), 0) as tpm").
+		Where("type = ? AND channel_id IN ? AND created_at >= ?", LogTypeConsume, channelIds, last60).
+		Scan(&stat).Error; err != nil {
+		return Stat{}, err
+	}
+
+	return stat, nil
+}
+
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
 	tx := LOG_DB.Table("logs").Select("ifnull(sum(prompt_tokens),0) + ifnull(sum(completion_tokens),0)")
 	if username != "" {
