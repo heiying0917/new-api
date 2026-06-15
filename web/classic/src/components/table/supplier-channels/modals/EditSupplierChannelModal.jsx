@@ -33,7 +33,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconSave, IconClose, IconServer, IconCreditCard } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
-import { showError, selectFilter } from '../../../../helpers';
+import { showError, selectFilter, getChannelIcon } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import { CHANNEL_OPTIONS } from '../../../../constants';
 
@@ -64,13 +64,65 @@ const EditSupplierChannelModal = (props) => {
   const [loading, setLoading] = useState(false);
   const isEdit = editingChannel?.id !== undefined;
 
+  // 渲染带 logo 的类型下拉项，与管理员端创建渠道体验对齐
+  const renderTypeOption = (renderProps) => {
+    const {
+      disabled,
+      selected,
+      label,
+      value,
+      focused,
+      className,
+      style,
+      onMouseEnter,
+      onClick,
+    } = renderProps;
+
+    const optionClassName = [
+      'flex items-center gap-3 px-3 py-2 transition-all duration-200 rounded-lg mx-2 my-1',
+      focused && 'bg-blue-50 shadow-sm',
+      selected &&
+        'bg-blue-100 text-blue-700 shadow-lg ring-2 ring-blue-200 ring-opacity-50',
+      disabled && 'opacity-50 cursor-not-allowed',
+      !disabled && 'hover:bg-gray-50 hover:shadow-md cursor-pointer',
+      className,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return (
+      <div
+        style={style}
+        className={optionClassName}
+        onClick={() => !disabled && onClick()}
+        onMouseEnter={() => onMouseEnter()}
+      >
+        <div className='flex items-center gap-3 w-full'>
+          <div className='flex-shrink-0 w-5 h-5 flex items-center justify-center'>
+            {getChannelIcon(value)}
+          </div>
+          <div className='flex-1 min-w-0'>
+            <span className='text-sm font-medium truncate'>{label}</span>
+          </div>
+          {selected && (
+            <div className='flex-shrink-0 text-blue-600'>
+              <svg width='16' height='16' viewBox='0 0 16 16' fill='currentColor'>
+                <path d='M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z' />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const getInitValues = () => ({
     name: '',
     type: 1,
     key: '',
     base_url: '',
     models: [],
-    groups: ['default'],
+    groups: [],
     cost_price: undefined,
   });
 
@@ -87,9 +139,7 @@ const EditSupplierChannelModal = (props) => {
           key: '',
           base_url: data.base_url || '',
           models: splitToArray(data.models),
-          groups: splitToArray(data.group).length
-            ? splitToArray(data.group)
-            : ['default'],
+          groups: splitToArray(data.group),
           cost_price: data.cost_price ?? undefined,
         };
         formApiRef.current?.setValues(values);
@@ -257,6 +307,7 @@ const EditSupplierChannelModal = (props) => {
                     placeholder={t('请选择类型')}
                     optionList={CHANNEL_OPTIONS}
                     filter={selectFilter}
+                    renderOptionItem={renderTypeOption}
                     rules={[{ required: true, message: t('请选择类型') }]}
                     style={{ width: '100%' }}
                   />
@@ -315,11 +366,19 @@ const EditSupplierChannelModal = (props) => {
                   <Form.Select
                     field='groups'
                     label={t('分组')}
-                    placeholder={t('请输入分组，默认为 default')}
+                    placeholder={t('请选择或输入分组')}
                     multiple
                     allowCreate
                     filter
                     defaultActiveFirstOption={false}
+                    rules={[
+                      {
+                        required: true,
+                        type: 'array',
+                        min: 1,
+                        message: t('请至少选择一个分组'),
+                      },
+                    ]}
                     style={{ width: '100%' }}
                   />
                 </Col>

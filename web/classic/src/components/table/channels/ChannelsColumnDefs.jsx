@@ -83,6 +83,17 @@ const renderType = (type, record = {}, t) => {
     </Tag>
   );
 
+  // 中转 Key 标识：供应商渠道填写了自定义 API 地址即视为中转，管理员一眼可辨
+  const isRelay =
+    Number(record?.supplier_id) > 0 && (record?.base_url || '').trim() !== '';
+  const relayTag = isRelay ? (
+    <Tooltip content={t('该渠道由供应商填写了自定义 API 地址，为中转 Key')}>
+      <Tag color='orange' type='light' shape='circle'>
+        {t('中转')}
+      </Tag>
+    </Tooltip>
+  ) : null;
+
   let ionetMeta = null;
   if (record?.other_info) {
     try {
@@ -95,7 +106,7 @@ const renderType = (type, record = {}, t) => {
     }
   }
 
-  if (!ionetMeta) {
+  if (!ionetMeta && !relayTag) {
     return typeTag;
   }
 
@@ -111,31 +122,34 @@ const renderType = (type, record = {}, t) => {
   return (
     <Space spacing={6}>
       {typeTag}
-      <Tooltip
-        content={
-          <div className='max-w-xs'>
-            <div className='text-xs text-gray-600'>
-              {t('来源于 IO.NET 部署')}
-            </div>
-            {ionetMeta?.deployment_id && (
-              <div className='text-xs text-gray-500 mt-1'>
-                {t('部署 ID')}: {ionetMeta.deployment_id}
+      {relayTag}
+      {ionetMeta && (
+        <Tooltip
+          content={
+            <div className='max-w-xs'>
+              <div className='text-xs text-gray-600'>
+                {t('来源于 IO.NET 部署')}
               </div>
-            )}
-          </div>
-        }
-      >
-        <span>
-          <Tag
-            color='purple'
-            type='light'
-            className='cursor-pointer'
-            onClick={handleNavigate}
-          >
-            IO.NET
-          </Tag>
-        </span>
-      </Tooltip>
+              {ionetMeta?.deployment_id && (
+                <div className='text-xs text-gray-500 mt-1'>
+                  {t('部署 ID')}: {ionetMeta.deployment_id}
+                </div>
+              )}
+            </div>
+          }
+        >
+          <span>
+            <Tag
+              color='purple'
+              type='light'
+              className='cursor-pointer'
+              onClick={handleNavigate}
+            >
+              IO.NET
+            </Tag>
+          </span>
+        </Tooltip>
+      )}
     </Space>
   );
 };

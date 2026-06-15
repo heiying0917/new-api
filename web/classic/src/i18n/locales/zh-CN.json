@@ -1,5 +1,9 @@
 {
   "translation": {
+    "中转": "中转",
+    "该渠道由供应商填写了自定义 API 地址，为中转 Key": "该渠道由供应商填写了自定义 API 地址，为中转 Key",
+    "请选择或输入分组": "请选择或输入分组",
+    "请至少选择一个分组": "请至少选择一个分组",
     " + Web搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}_other": " + Web搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}",
     " + 图片生成调用 {{symbol}}{{price}} / 1次 * {{ratioType}} {{ratio}}": " + 图片生成调用 {{symbol}}{{price}} / 1次 * {{ratioType}} {{ratio}}",
     " + 文件搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}_other": " + 文件搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}",

@@ -28,19 +28,29 @@ const CHANNEL_TYPE_MAP = CHANNEL_OPTIONS.reduce((acc, opt) => {
 }, {});
 
 // Render channel type as a colored tag using the shared CHANNEL_OPTIONS list
-const renderType = (type) => {
+const renderType = (type, record, t) => {
   const opt = CHANNEL_TYPE_MAP[type];
-  if (!opt) {
-    return (
-      <Tag color='grey' shape='circle' size='small'>
-        {type}
-      </Tag>
-    );
-  }
-  return (
+  const typeTag = opt ? (
     <Tag color={opt.color || 'grey'} shape='circle' size='small'>
       {opt.label}
     </Tag>
+  ) : (
+    <Tag color='grey' shape='circle' size='small'>
+      {type}
+    </Tag>
+  );
+  // 供应商列表中的渠道均属当前供应商，填了自定义 API 地址即视为中转 Key
+  const isRelay = (record?.base_url || '').trim() !== '';
+  if (!isRelay) {
+    return typeTag;
+  }
+  return (
+    <Space spacing={4}>
+      {typeTag}
+      <Tag color='orange' type='light' shape='circle' size='small'>
+        {t('中转')}
+      </Tag>
+    </Space>
   );
 };
 
@@ -98,7 +108,7 @@ export const getSupplierChannelsColumns = ({ t, onEdit, onDelete }) => {
     {
       title: t('类型'),
       dataIndex: 'type',
-      render: (text) => renderType(text),
+      render: (text, record) => renderType(text, record, t),
     },
     {
       title: t('分组'),
