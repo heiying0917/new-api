@@ -175,6 +175,9 @@ func SetApiRouter(router *gin.Engine) {
 			supplierMeRoute.GET("/realtime", controller.SupplierRealtime)
 			supplierMeRoute.GET("/logs", controller.SupplierListLogs)
 			supplierMeRoute.GET("/logs/stat", controller.SupplierLogsStat)
+			supplierMeRoute.GET("/groups", controller.GetGroups)
+			supplierMeRoute.POST("/fetch_models", controller.SupplierFetchModels)
+			supplierMeRoute.GET("/fetch_models/:id", controller.SupplierFetchUpstreamModels)
 		}
 
 		settlementSelfRoute := apiRouter.Group("/supplier/self/settlement")
@@ -302,7 +305,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/batch", controller.DeleteChannelBatch)
 			channelRoute.POST("/fix", controller.FixChannelsAbilities)
 			channelRoute.GET("/fetch_models/:id", controller.FetchUpstreamModels)
-			channelRoute.POST("/fetch_models", middleware.RootAuth(), controller.FetchModels)
+			channelRoute.POST("/fetch_models", controller.FetchModels)
 			channelRoute.POST("/codex/oauth/start", controller.StartCodexOAuth)
 			channelRoute.POST("/codex/oauth/complete", controller.CompleteCodexOAuth)
 			channelRoute.POST("/:id/codex/oauth/start", controller.StartCodexOAuthForChannel)

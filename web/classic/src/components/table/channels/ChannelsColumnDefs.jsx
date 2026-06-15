@@ -492,9 +492,11 @@ export const getChannelsColumns = ({
     },
     {
       key: COLUMN_KEYS.SUPPLIER,
-      title: t('供应商'),
-      dataIndex: 'supplier_name',
-      render: (text, record, index) => <span>{record.supplier_name || '-'}</span>,
+      title: t('创建者'),
+      dataIndex: 'created_by_name',
+      render: (text, record, index) => (
+        <span>{record.created_by_name || record.supplier_name || '-'}</span>
+      ),
     },
     {
       key: COLUMN_KEYS.TYPE,

@@ -39,6 +39,8 @@ type Channel struct {
 	BalanceUpdatedTime int64    `json:"balance_updated_time" gorm:"bigint"`
 	SupplierId         int      `json:"supplier_id" gorm:"index;default:0"`
 	SupplierName       string   `json:"supplier_name" gorm:"-"` // transient: 供应商用户名（admin 列表回填，不入库）
+	CreatedBy          int      `json:"created_by" gorm:"index;default:0"` // 创建者 user_id（管理员或供应商）
+	CreatedByName      string   `json:"created_by_name" gorm:"-"`          // transient: 创建者用户名（admin 列表回填，不入库）
 	CostPrice          *float64 `json:"cost_price" gorm:"default:0"` // 成本价 ¥/$（X元=1刀）
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`

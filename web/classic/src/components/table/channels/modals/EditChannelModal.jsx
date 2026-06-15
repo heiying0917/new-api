@@ -164,6 +164,7 @@ const EditChannelModal = (props) => {
   const { t } = useTranslation();
   const channelId = props.editingChannel.id;
   const isEdit = channelId !== undefined;
+  const isSupplierMode = props.apiMode === 'supplier';
   const [loading, setLoading] = useState(isEdit);
   const isMobile = useIsMobile();
   const handleCancel = () => {
@@ -188,6 +189,8 @@ const EditChannelModal = (props) => {
     weight: 0,
     tag: '',
     multi_key_mode: 'random',
+    // 供应商成本价（管理员模式不渲染，值保持默认无害）
+    cost_price: undefined,
     // 渠道额外设置的默认值
     force_format: false,
     thinking_to_content: false,
@@ -821,7 +824,11 @@ const EditChannelModal = (props) => {
 
   const loadChannel = async () => {
     setLoading(true);
-    let res = await API.get(`/api/channel/${channelId}`);
+    let res = await API.get(
+      isSupplierMode
+        ? `/api/supplier/channel/${channelId}`
+        : `/api/channel/${channelId}`,
+    );
     if (res === undefined) {
       return;
     }
@@ -1059,9 +1066,13 @@ const EditChannelModal = (props) => {
 
     if (isEdit) {
       // 如果是编辑模式，使用已有的 channelId 获取模型列表
-      const res = await API.get('/api/channel/fetch_models/' + channelId, {
-        skipErrorHandler: true,
-      });
+      const res = await API.get(
+        (isSupplierMode ? '/api/supplier/self/fetch_models/' : '/api/channel/fetch_models/') +
+          channelId,
+        {
+          skipErrorHandler: true,
+        },
+      );
       if (res && res.data && res.data.success) {
         models.push(...res.data.data);
       } else {
@@ -1075,7 +1086,9 @@ const EditChannelModal = (props) => {
       } else {
         try {
           const res = await API.post(
-            '/api/channel/fetch_models',
+            isSupplierMode
+              ? '/api/supplier/self/fetch_models'
+              : '/api/channel/fetch_models',
             {
               base_url: inputs['base_url'],
               type: inputs['type'],
@@ -1150,6 +1163,10 @@ const EditChannelModal = (props) => {
   const fetchModels = async () => {
     try {
       let res = await API.get(`/api/channel/models`);
+      if (!res?.data?.data || !Array.isArray(res.data.data)) {
+        // 供应商等无权限访问该管理员接口时优雅降级（仍可手动输入模型）
+        return;
+      }
       const localModelOptions = res.data.data.map((model) => {
         const id = (model.id || '').trim();
         return {
@@ -1174,7 +1191,9 @@ const EditChannelModal = (props) => {
 
   const fetchGroups = async () => {
     try {
-      let res = await API.get(`/api/group/`);
+      let res = await API.get(
+        isSupplierMode ? '/api/supplier/self/groups' : '/api/group/',
+      );
       if (res === undefined) {
         return;
       }
@@ -1854,6 +1873,14 @@ const EditChannelModal = (props) => {
     delete localInputs.upstream_model_update_last_detected_models;
     delete localInputs.upstream_model_update_ignored_models;
 
+    if (isSupplierMode) {
+      const cp = Number(localInputs.cost_price);
+      if (!Number.isFinite(cp) || cp <= 0) {
+        showError(t('成本价必须大于 0'));
+        return;
+      }
+    }
+
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
     localInputs.models = localInputs.models.join(',');
@@ -1864,7 +1891,15 @@ const EditChannelModal = (props) => {
       mode = multiToSingle ? 'multi_to_single' : 'batch';
     }
 
-    if (isEdit) {
+    if (isSupplierMode) {
+      const supplierPayload = { ...localInputs };
+      if (isEdit) {
+        supplierPayload.id = parseInt(channelId);
+        res = await API.put('/api/supplier/channel/', supplierPayload);
+      } else {
+        res = await API.post('/api/supplier/channel/', supplierPayload);
+      }
+    } else if (isEdit) {
       res = await API.put(`/api/channel/`, {
         ...localInputs,
         id: parseInt(channelId),
@@ -2665,6 +2700,25 @@ const EditChannelModal = (props) => {
                       onChange={(value) => handleInputChange('name', value)}
                       autoComplete='new-password'
                     />
+
+                    {isSupplierMode && (
+                      <Form.InputNumber
+                        field='cost_price'
+                        label={t('成本价')}
+                        prefix='¥'
+                        placeholder={t('请输入成本价')}
+                        min={0}
+                        step={0.1}
+                        extraText={t('供应商渠道必填，用于结算')}
+                        rules={[
+                          { required: true, message: t('请输入成本价') },
+                        ]}
+                        onChange={(value) =>
+                          handleInputChange('cost_price', value)
+                        }
+                        style={{ width: '100%' }}
+                      />
+                    )}
 
                     {inputs.type === 33 && (
                       <>

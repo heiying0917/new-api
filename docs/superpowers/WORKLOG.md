@@ -157,3 +157,56 @@
     截图：`v7-type-dropdown-logo` / `v7-group-required` / `v7-relay-tag-supplier2` / `v7-relay-tag-admin`。
   - **环境踩坑**：本地有两个 pg 容器——应用实连 compose 网络的 `postgres`(postgres:15, 库 new-api, root/123456)，另一个 `new-api-xy-pg-local`(bridge, 库 new_api_dev) 与应用无关；起初误操作了后者导致改密不生效，定位后切到正确库。验证用的临时改动（tksupplier1/tkadmin 密码、渠道 base_url，及误操作容器的 test）均已逐项 SQL 还原核对，**零残留**。
 - **提交状态**：代码 `e5cb70a8` 已提交（feat/tokenki-p1a-supplier-backend 分支）+ 已本地部署 + 端到端验证通过。**未 push**（用户本次只要求「提交 + 本地部署」）。
+
+### [2026-06-15] v6 供应商招募首页文案重写（纯 classic 前端文案，**未提交**）
+- **背景（用户需求）**：首页文案重新优化，突出"全球最专业的官 Key 托管平台、为全球数百家企业提供 AI 大模型服务、接收各种官 Key（含 Claude / AWS / OpenRouter / OpenAI）、自助上传、数据加密隔离、透明计费、实时多币种结算"；**删除"账号防暴破"那段**，其余重新优化整理 + 创意丰富用词。
+- **做了什么**：在保留既有版块结构（Hero / 核心优势 / 托管流程 / 安全保障 / 渠道 / CTA）前提下重写全部文案：
+  - **Hero**：eyebrow 改「全球最专业的官方 Key 托管平台」；标题「托管你的官方 Key,接入全球 AI 算力市场」；副文案覆盖 数百家企业 + Claude/AWS/OpenRouter/OpenAI + 自助上传 + 加密隔离 + 透明计量 + 多币种实时结算；stats 微调（数百家·全球企业客户 / 全天候·订单不间断 / 多币种·实时结算 / 端到端·加密隔离）；收益示意面板新增 OpenRouter 行（¥6,540），累计金额 27,710→34,250 同步。
+  - **核心优势**：4 卡重写为 订单充沛额度不闲置 / 全渠道托管自助秒级接入 / 数据加密隔离安全有保障 / 透明计费多币种实时结算。
+  - **托管流程**：步骤1 改「自助上传官方 Key」（含 OpenRouter）；步骤3「透明实时计量」；步骤4「多币种实时结算」。
+  - **安全保障**：**删除**「账号级登录防暴破、可吊销会话、SSRF 校验」那条，替换为「额度自主可控：自助上传、随时启停托管，对官方 Key 始终拥有完全掌控权」；另三条加密隔离/透明计费防套现/原子幂等结算文案润色。
+  - **渠道**：徽章列表加入 OpenRouter；标题「主流官方渠道,一处托管统一接单」。
+  - **CTA**：改「现在就自助上传你的官方 Key,让闲置额度持续生息」。
+- **改了哪些文件**（均 `web/classic/src/pages/Home/landing/`，纯文案，无逻辑/无后端改动）：`Hero.jsx`、`Advantages.jsx`、`Process.jsx`、`Security.jsx`、`Channels.jsx`、`CtaBand.jsx`。
+- **i18n 说明**：classic 仅 zh-CN，且这些文案的 i18n key 即中文串本身（不在 `zh-CN.json` 中，i18next 缺失即回退渲染 key），故**无需改 locale 文件**。
+- **验证**：文案均为合法 JS 单引号字符串（无内部单引号冲突）；未跑 build（待用户确认后再 build/部署）。
+- **提交状态**：**未提交、未 build、未部署**（等用户指令）。
+
+### [2026-06-15] v6 首页 Hero 右侧面板改版 + 数字滚动动画（classic 前端，**未提交**）
+- **背景（用户第二轮需求）**：① 右侧"收益示意"面板金额改大、以**美元**计，四行分别约 800/400/100/80 万刀**依次降低**；② 面板标题改「正在托管的 Key」；③ 去掉所有"示意"字样；④ 底部累计金额必须为四行**精确求和**；⑤ 页面加载后数字做**滚动(count-up)动画**。另：用户反馈"没看到改后的效果"→ 本轮跑起来实测给看。
+- **做了什么**（`web/classic/src/pages/Home/landing/Hero.jsx` 重写 + `landing.css` 微调）：
+  - 金额改 USD 且降序：Claude `$8,247,360` / AWS Bedrock `$4,612,980` / OpenRouter `$1,358,420` / OpenAI `$842,170`；累计 = 代码 `reduce` 求和 = **`$15,060,930`**（精确）。
+  - 面板顶部标题 `我的托管渠道`→`正在托管的 Key`；**删除** `示意` 徽章；底部标签 `本周期累计收益(示意)`→`累计托管收益`；aria-label 同步。
+  - 新增 `useCountUp` hook（requestAnimationFrame + easeOutCubic，setTimeout 错峰 delay=index*140ms，无 Date.now/Math.random）+ `AnimatedAmount` 组件（`$` 前缀 + `toLocaleString('en-US')` 千分位）；各行与累计均 0→目标值滚动。
+  - `landing.css`：`.landing-panel__amt` / `.landing-panel__total-amt` 加 `font-variant-numeric: tabular-nums` + `font-feature-settings:'tnum'` 防滚动抖动。
+- **改了哪些文件**：`web/classic/src/pages/Home/landing/Hero.jsx`、`web/classic/src/pages/Home/landing/landing.css`。
+- **预览方式（不动容器/不重建二进制）**：临时给 `web/classic/rsbuild.config.ts` 加一行 `process.env.DEV_PROXY_TARGET ||` 代理覆盖（**预览辅助，待还原**）；后台 `DEV_PROXY_TARGET=http://localhost:5001 bunx rsbuild dev --port 8090`（同源代理到正在运行的后端容器 `localhost:5001`，dist 是 embed 进 Go 二进制的，故走 dev 而非重建）。
+- **验证（Playwright 实测 localhost:8090）**：
+  - 截图 `home-hero-final.png`：Hero 文案 + 右侧面板渲染正确，标题「正在托管的 Key」、无"示意"、四行 USD 降序、累计 `$15,060,930`。
+  - 滚动动画用 MutationObserver 采样累计金额：**97 帧** `$0 → $466,690 → $923,639 → … → $15,060,913 → $15,060,930`，缓动收敛、终值精确。
+  - 落地页渲染前提 `home_page_content===''` 已确认；端口 3000 被无关项目 new-api-xy 占用故用 8090；清理了上次会话遗留的 Playwright Chrome(锁住 MCP profile，PID 49288)。
+- **提交状态**：**未提交、未 build 生产、未部署**；`rsbuild.config.ts` 的临时代理行 + 8090 dev server 待用户看完后还原/停止。
+
+### [2026-06-15] v6 首页改动正式部署到本地容器 5001（用户「没看到」→ 重建二进制部署）
+- **原因**：用户在 `localhost:5001` 看不到改动——5001 容器跑的是旧 Go 二进制（前端 dist 经 `main.go` `//go:embed` 编进二进制，dev 改源码不会进 5001）。Playwright 实测确认：8090(dev)=新文案、5001(容器)=旧文案(`面向供应商·官方额度变现`/`我的托管渠道示意`)。
+- **做了什么**（重建+本地部署，**未 commit/未 push**）：
+  1. `bun run build` 两个前端（清 `node_modules/.cache`）：`web/default/dist` + `web/classic/dist`（main.go 同时 embed 两者，缺一 go build 失败）。
+  2. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=juhe-0dc44cd8-homecopy'" -o /tmp/new-api-juhe .`（纯 Go sqlite `glebarez/sqlite`，无 CGO，darwin→linux/arm64 直接交叉编译；产物 ELF aarch64 87MB）。
+  3. `docker cp /tmp/new-api-juhe new-api:/new-api` + `docker restart new-api`。
+- **验证（Playwright 实测 localhost:5001）**：容器 ready(版本 `juhe-0dc44cd8-homecopy`)；DOM 取值确认 eyebrow=`全球最专业的官方 Key 托管平台`、title=`托管你的官方 Key,接入全球 AI 算力市场`、panelHead=`正在托管的 Key`(无示意)、累计=`$15,060,930`、四行 USD 降序、渠道徽章含 OpenRouter、`防暴破`文本=false(已删)；整页截图逐版块正常、页脚 `© 2026 Token Ki · 提供方 New API` 品牌保留。重启后旧会话过期(`/login?expired=true`)，清 localStorage 后落地页正常(公开页)。
+- **收尾**：临时的 `rsbuild.config.ts` 代理行已还原；8090 dev server 已停；截图工件已删。
+- **注意**：工作树另含**非本次**的未提交改动(`controller/channel.go`/`controller/supplier_channel.go`/`model/channel.go`/`router/api-router.go`/table 组件/`zh-CN.json`)——本次构建从工作树取材，故部署的二进制一并包含；未触碰这些文件。
+- **提交状态**：首页改动 = 本地容器 5001 已生效；**未 commit、未 push**。
+
+### [2026-06-15] v6 首页 Hero 文案再调整（用户第三轮）+ 重新部署 5001
+- **用户给定文案**：eyebrow=`企业级官 Key 托管平台`；title=`专业的官 Key 托管平台,一键接入全球 AI 算力市场`；sub=`TokenKi 平台为全球数百家企业提供稳定 AI 算力,支持 Claude、AWS、OpenRouter、OpenAI 等官 Key 托管。一键上传,加密存储,透明计费,多币种实时结算,让每一位供应商都能获得高额收益。`
+- **做了什么**：改 `web/classic/src/pages/Home/landing/Hero.jsx` 三处文案（基于用户/linter 已改过的当前版本之上）；按全页排版规范轻规范化（官Key→官 Key、AI 前后空格、半角逗号）；`TokenKi` 按用户原文保留。右侧 USD 面板/数字滚动等上轮改动未动。
+- **部署**：`bun run build`(classic，清缓存) → `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build`(VER=`juhe-0dc44cd8-homecopy2`) → `docker cp /new-api` → `docker restart`。
+- **验证**：Playwright DOM 实测 5001 三处文案=新值；线上 JS chunk(`/static/js/async/8411.4358d7a294.js`) grep 4 条新串各命中 1 次、旧串`全球最专业...`已从构建消失；截图确认 Hero 呈现。期间 Playwright 浏览器 profile 被遗留 chrome 锁住，kill 进程+删 Singleton* 锁后恢复。
+- **提交状态**：5001 容器已生效；**未 commit、未 push**。
+
+### [2026-06-15] 首页面板标题微调 + 重新部署
+- **改动**：`Hero.jsx` 面板标题 + aria-label `正在托管的 Key` → `已托管的官 Key`（2 处，replace_all）。
+- **部署**：classic build(VER `juhe-0dc44cd8-homecopy3`) → 交叉编译 → docker cp /new-api → restart。
+- **验证**：线上新 chunk `8411.b0e6c0874c.js`(hash 变=新构建) 含 `已托管的官 Key`(命中1)，旧 `正在托管的 Key` 已从 dist 消失；截图确认面板顶部已变。
+- **提交状态**：5001 已生效；**未 commit、未 push**。

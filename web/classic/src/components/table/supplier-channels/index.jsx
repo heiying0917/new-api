@@ -22,7 +22,7 @@ import { Button, Form, Typography } from '@douyinfe/semi-ui';
 import { IconSearch, IconPlus } from '@douyinfe/semi-icons';
 import CardPro from '../../common/ui/CardPro';
 import SupplierChannelsTable from './SupplierChannelsTable';
-import EditSupplierChannelModal from './modals/EditSupplierChannelModal';
+import EditChannelModal from '../channels/modals/EditChannelModal';
 import { useSupplierChannelsData } from '../../../hooks/supplier-channels/useSupplierChannelsData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -43,6 +43,7 @@ function SupplierChannelsPage() {
     editingChannel,
     setEditingChannel,
     closeEdit,
+    refresh,
     searchChannels,
     getChannel,
     createChannel,
@@ -79,13 +80,12 @@ function SupplierChannelsPage() {
 
   return (
     <>
-      <EditSupplierChannelModal
+      <EditChannelModal
         visible={showEdit}
         editingChannel={editingChannel}
         handleClose={closeEdit}
-        getChannel={getChannel}
-        createChannel={createChannel}
-        updateChannel={updateChannel}
+        refresh={refresh}
+        apiMode='supplier'
       />
 
       <CardPro

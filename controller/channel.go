@@ -69,12 +69,15 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
-// backfillChannelSupplierNames 批量按 supplier_id 回填渠道的 SupplierName（admin 列表用）。
+// backfillChannelSupplierNames 批量回填渠道的 SupplierName（供应商）与 CreatedByName（创建者），admin 列表用。
 func backfillChannelSupplierNames(channels []*model.Channel) {
 	idSet := make(map[int]struct{}, len(channels))
 	for _, ch := range channels {
 		if ch.SupplierId > 0 {
 			idSet[ch.SupplierId] = struct{}{}
+		}
+		if ch.CreatedBy > 0 {
+			idSet[ch.CreatedBy] = struct{}{}
 		}
 	}
 	if len(idSet) == 0 {
@@ -86,12 +89,15 @@ func backfillChannelSupplierNames(channels []*model.Channel) {
 	}
 	names, err := model.GetUsernamesByIds(ids)
 	if err != nil {
-		common.SysError("failed to backfill channel supplier names: " + err.Error())
+		common.SysError("failed to backfill channel supplier/creator names: " + err.Error())
 		return
 	}
 	for _, ch := range channels {
 		if name, ok := names[ch.SupplierId]; ok {
 			ch.SupplierName = name
+		}
+		if name, ok := names[ch.CreatedBy]; ok {
+			ch.CreatedByName = name
 		}
 	}
 }
@@ -631,6 +637,7 @@ func AddChannel(c *gin.Context) {
 	}
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
+	addChannelRequest.Channel.CreatedBy = c.GetInt("id") // 记录创建该渠道的管理员
 	keys := make([]string, 0)
 	switch addChannelRequest.Mode {
 	case "multi_to_single":
@@ -1035,16 +1042,77 @@ func FetchModels(c *gin.Context) {
 		return
 	}
 
-	baseURL := req.BaseURL
+	fetchModelsByParams(c, req.BaseURL, req.Type, req.Key)
+}
+
+// SupplierFetchModels 供应商新建渠道时探测上游模型列表。
+// 强制 SSRF 校验（禁私网/环回/云元数据），与供应商建渠道 base_url 校验一致。
+func SupplierFetchModels(c *gin.Context) {
+	var req struct {
+		BaseURL string `json:"base_url"`
+		Type    int    `json:"type"`
+		Key     string `json:"key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request",
+		})
+		return
+	}
+	if err := validateSupplierChannelBaseURL(&req.BaseURL); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "base_url 不被允许（疑似指向内部地址）：" + err.Error(),
+		})
+		return
+	}
+	fetchModelsByParams(c, req.BaseURL, req.Type, req.Key)
+}
+
+// SupplierFetchUpstreamModels 供应商编辑已有渠道时探测模型列表（仅限本人渠道）。
+func SupplierFetchUpstreamModels(c *gin.Context) {
+	supplierId := c.GetInt("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(id, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if channel.SupplierId != supplierId {
+		common.ApiErrorMsg(c, "forbidden: not your channel")
+		return
+	}
+	ids, err := fetchChannelUpstreamModelIDs(channel)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("获取模型列表失败: %s", err.Error()),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    ids,
+	})
+}
+
+// fetchModelsByParams 用给定 base_url/type/key 探测上游模型列表（管理员与供应商共用核心）。
+func fetchModelsByParams(c *gin.Context, baseURL string, channelType int, key string) {
 	if baseURL == "" {
-		baseURL = constant.ChannelBaseURLs[req.Type]
+		baseURL = constant.ChannelBaseURLs[channelType]
 	}
 
 	// remove line breaks and extra spaces.
-	key := strings.TrimSpace(req.Key)
+	key = strings.TrimSpace(key)
 	key = strings.Split(key, "\n")[0]
 
-	if req.Type == constant.ChannelTypeOllama {
+	if channelType == constant.ChannelTypeOllama {
 		models, err := ollama.FetchOllamaModels(baseURL, key)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
@@ -1066,7 +1134,7 @@ func FetchModels(c *gin.Context) {
 		return
 	}
 
-	if req.Type == constant.ChannelTypeGemini {
+	if channelType == constant.ChannelTypeGemini {
 		models, err := gemini.FetchGeminiModels(baseURL, key, "")
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{

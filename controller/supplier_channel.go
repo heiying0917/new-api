@@ -101,6 +101,7 @@ func SupplierAddChannel(c *gin.Context) {
 	}
 	ch.Id = 0
 	ch.SupplierId = supplierId
+	ch.CreatedBy = supplierId // 供应商建的渠道，创建者即本人
 	ch.Status = common.ChannelStatusEnabled
 	if ch.Group == "" {
 		ch.Group = "default"
@@ -139,6 +140,7 @@ func SupplierUpdateChannel(c *gin.Context) {
 		return
 	}
 	patch.SupplierId = supplierId
+	patch.CreatedBy = existing.CreatedBy // 创建者不可篡改
 	if err := patch.Update(); err != nil {
 		common.ApiError(c, err)
 		return
