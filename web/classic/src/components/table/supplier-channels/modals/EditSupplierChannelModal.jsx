@@ -333,8 +333,9 @@ const EditSupplierChannelModal = (props) => {
                 <Col span={24}>
                   <Form.Input
                     field='base_url'
-                    label={t('代理地址')}
-                    placeholder={t('可选，部分渠道需要填写代理地址')}
+                    label={t('API 地址')}
+                    placeholder={t('选填，填写自定义 API 地址；留空则直连官方')}
+                    extraText={t('填写后该渠道将被标记为「中转」，留空表示官方直连官key')}
                     showClear
                   />
                 </Col>
