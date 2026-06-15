@@ -255,3 +255,19 @@
 - **验证（Playwright 实测 5001）**：DOM favicon 链含 `/logo.png`（png）+`/logo.svg`+`/favicon.ico`，三者服务端均 200、`favicon.ico` 53883B image/x-icon=Facet；顶栏 `headerHasFacet=true`、`headerHasRoundImg=false`（圆形 img 已消除）、全页 2 个 facet-tile（顶栏+Hero）均圆角方一致；截图确认顶栏左上小 logo 与 Hero 大 logo 形状统一。
 - **注意**：浏览器选项卡 favicon 缓存顽固，用户需硬刷新（Cmd+Shift+R）才会看到新 icon。
 - **提交状态**：5001 本地容器已生效；**未 commit、未 push**。
+
+### [2026-06-16] Hero logo 布局微调（内容偏下修复，**未提交**）
+- **用户反馈**：加 logo 后左侧 Hero 内容上方间距太大、整体偏下，与右侧面板失衡。
+- **根因**：大 logo（64px + 20px 下边距）把左列内容下推约 84px；`.landing-hero__grid` 为 `align-items:center`，左列变高后 eyebrow/标题相对右侧面板偏下（eyebrow 顶 282 vs 面板顶 255）。
+- **改**：`Hero.jsx` logo `size 64→44`、`marginBottom 20→8`；`landing.css` `.landing-hero` 顶部留白 `6rem→4.5rem` 补偿。
+- **验证（Playwright 实测 5001）**：logo=44px，eyebrow 顶(195) ≈ 面板顶(198) 齐平，左右两列重新对齐平衡；部署 `juhe-v9facet4`。
+- **改动文件**：`web/classic/src/pages/Home/landing/Hero.jsx`、`web/classic/src/pages/Home/landing/landing.css`（均 logo 相关）。
+- **提交状态**：5001 已生效；**未 commit、未 push**。
+
+### [2026-06-16] Hero 文案调整（标题 + eyebrow，**未提交**）
+- **标题**：「专业的官 Key 托管平台,一键接入全球 AI 算力市场」→「企业级官 Key 托管平台,一键接入全球 AI 算力市场」（用户指定；保持全站排版规范：官 Key 大写带空格、半角逗号、AI 前后空格）。
+- **eyebrow**：发现新标题前半与原 eyebrow「企业级官 Key 托管平台」一字不差重复，建议后用户选 A → eyebrow 改为「端到端加密 · 供应商严格隔离」（差异化安全卖点，与标题互补不撞词）。
+- **部署**：classic build → go build（VER `juhe-v9facet6`）→ docker cp → restart。
+- **验证（Playwright 实测 5001）**：eyebrow=「端到端加密 · 供应商严格隔离」、title=「企业级官 Key 托管平台,一键接入全球 AI 算力市场」，不再重复。
+- **改动文件**：`web/classic/src/pages/Home/landing/Hero.jsx`。
+- **提交状态**：5001 已生效；**未 commit、未 push**。

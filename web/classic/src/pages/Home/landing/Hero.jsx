@@ -78,12 +78,12 @@ const Hero = () => {
       <div className='landing-hero__bg' aria-hidden='true' />
       <div className='landing-container landing-hero__grid'>
         <div className='landing-hero__copy'>
-          <div className='landing-hero__logo' style={{ marginBottom: '20px' }}>
-            <FacetLogo size={64} animate='auto' />
+          <div className='landing-hero__logo' style={{ marginBottom: '8px' }}>
+            <FacetLogo size={44} animate='auto' />
           </div>
-          <span className='landing-eyebrow'>{t('企业级官 Key 托管平台')}</span>
+          <span className='landing-eyebrow'>{t('专业加密 · 安全托管')}</span>
           <h1 className='landing-hero__title'>
-            {t('专业的官 Key 托管平台,一键接入全球 AI 算力市场')}
+            {t('企业级官 Key 托管平台,一键接入全球 AI 算力市场')}
           </h1>
           <p className='landing-hero__sub'>
             {t(
