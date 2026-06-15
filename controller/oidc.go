@@ -154,6 +154,9 @@ func OidcAuth(c *gin.Context) {
 			} else {
 				user.DisplayName = "OIDC User"
 			}
+			// 显式设定角色/状态，杜绝依赖 GORM 默认值；OAuth 新用户一律普通用户（与 GitHub/WeChat/LinuxDo 一致）
+			user.Role = common.RoleCommonUser
+			user.Status = common.UserStatusEnabled
 			err := user.Insert(0)
 			if err != nil {
 				c.JSON(http.StatusOK, gin.H{

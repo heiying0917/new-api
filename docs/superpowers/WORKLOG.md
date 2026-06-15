@@ -113,6 +113,21 @@
 - **踩坑记录**：① Docker 首次 `--build` 缓存了 go build 层（前端 `go:embed` 进二进制，改动没生效）；`--no-cache` 重建失败 → 改用本地交叉编译 + `docker cp` 部署，绕开 Docker 构建。② **classic 用 rsbuild,其持久缓存 `node_modules/.cache` 漏编 RegisterForm**（登录新、注册旧的诡异不一致根因）；`rm -rf node_modules/.cache` 后入口哈希变化、注册改动才真正编入。**正式 Docker 镜像构建是全新容器、`bun install` 全新,无此缓存问题。**
 - **交付状态**：运行容器已是新代码（cp 二进制存活于容器可写层，`docker restart` 可保持；若 `docker compose up` 重建容器需重新 build 镜像）。`HomeSupplierStats` 已清空=定性默认。**未 git commit / 未 push / 未重建发布镜像**——等用户验收后明确指令。
 
+---
 
+## 2026-06-15 · 提权面安全审计 + 纵深防御（应用户「确保无法注入提权」要求）
 
+### [2026-06-15] 越权/提权审计（3 路对抗 agent + 本人逐行复核，结论：无提权路径）
+- **背景**：用户转来同行被盗 key 案例——「`PUT /api/channel/` 只要 `AdminAuth()`(role≥10)，对方把管理员账号发给客户 → 客户改 base_url 收割上游 key」(CWE-862)。要求确认我们供应商(role=5)无法拿别人 key、无法提权。
+- **做了什么**：① 亲手扒鉴权链（`middleware/auth.go` `authHelper`：role 从缓存实时回查、`role<minRole` 拒）；② 供应商自助控制器逐函数核对归属（`controller/supplier_channel.go` 每个写/读先 `GetChannelById` 再 `SupplierId != 自己 → forbidden`；列表/搜索 `model/channel.go:1138/1152` `Where(supplier_id=?)`+`.Omit("key")`）；③ 派 3 个只读 agent 分别扫 OAuth/passkey 建号 role、所有 role≥5 可达的 users 写入口、raw SQL 注入 + 全部 Insert/Update 调用方。
+- **结论（三方独立一致）**：**当前不存在任何注入/旁路提权路径**。`Register`/`UpdateSelf`/`CreateUser` 均用字段白名单 `cleanUser`（role 硬编码或 DB 校验封顶）；`UpdateUser` 走 `Edit` 白名单 map（不含 role/status）；`ManageUser` 的 `promote` 仅超管、`canManageTargetRole` 封顶；供应商可达路径 SQL 全参数化、`ORDER BY` 走 `channelSortColumns` 白名单。**唯一铁律仍是运营层：供应商/客户账号一律 role=5，绝不发 role≥10。**
 
+### [2026-06-15] 纵深防御代码 + 回归测试（**未提交**）
+- **做了什么**：
+  - **修一处卫生缺口**：`controller/discord.go`、`controller/oidc.go` 新建 OAuth 用户此前没显式设角色（靠 GORM `default:1` 兜底，fail-safe 但隐式）→ 显式 `user.Role = common.RoleCommonUser` + `user.Status = common.UserStatusEnabled`，与 GitHub/WeChat/LinuxDo 一致。
+  - **加 4 个回归测试**把「注入提权被拒」永久钉死：
+    - `model/user_privesc_test.go`：`TestEdit_DoesNotEscalateRoleStatusQuota`（Edit 白名单不改 role/status/quota）、`TestUpdate_CleanStructLeavesPrivilegeFieldsIntact`（复刻 UpdateSelf 的 cleanUser→Update 机制，零值字段被 GORM 跳过）。
+    - `controller/user_privesc_test.go`：`TestRegister_IgnoresInjectedRoleStatusQuota`（httptest+session 端到端 POST `{"role":100,"status":1,"quota":999999,"group":"root"}` → 落库恒为供应商(5)/默认额度/非 root 分组）、`TestCanManageTargetRole`（角色层级不变式）。
+- **改了哪些文件**：`controller/discord.go`、`controller/oidc.go`、`model/user_privesc_test.go`（新增）、`controller/user_privesc_test.go`（新增）。
+- **验证**：`go build ./controller/... ./model/...` 通过；4 个新测试全过；`go test ./model/ ./controller/` = 122 passed / 1 failed（`TestListModelsTokenLimitIncludesTieredBillingModel`，隔离 `-count=1` 单跑亦 nil 指针 panic，**预先存在、与本次无关**）/ 2 skipped，**零新增失败**。
+- **未做（用户当前未要求）**：D 密钥读时打码 / E 官key 静态加密（属「降低泄露后果」，非提权面）；恶意供应商把自己渠道 base_url 指向外部服务器截获终端请求体（市场固有风险，靠准入审核兜底，SSRF 已堵内网）。**未 commit / 未 push。**
