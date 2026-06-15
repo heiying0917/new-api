@@ -210,3 +210,18 @@
 - **部署**：classic build(VER `juhe-0dc44cd8-homecopy3`) → 交叉编译 → docker cp /new-api → restart。
 - **验证**：线上新 chunk `8411.b0e6c0874c.js`(hash 变=新构建) 含 `已托管的官 Key`(命中1)，旧 `正在托管的 Key` 已从 dist 消失；截图确认面板顶部已变。
 - **提交状态**：5001 已生效；**未 commit、未 push**。
+
+### [2026-06-15] v8 管理员成本价透出 + 渠道分组改必填默认空（classic 前端，**未提交**）
+- **用户两条需求**：① 管理员创建/编辑渠道也要展示「成本价」（代供应商上传时可写，用于结算给供应商多少钱）；② 管理员与供应商建渠道时分组都默认**空**、但**必选一个**才能创建。
+- **做了什么**（`web/classic/src/components/table/channels/modals/EditChannelModal.jsx`）：
+  1. `originInputs.groups` 默认值 `['default']` → `[]`（两种模式默认空）。
+  2. 成本价字段去掉 `isSupplierMode &&` 包裹 → 管理员也渲染；`required` 仅供应商（`isSupplierMode ? [{required}] : []`），extraText 分流：供应商=`供应商渠道必填，用于结算`、管理员=`选填，代供应商上传时填写，用于结算`。
+  3. 分组 `Form.Select` 加 `rules={[{required, message:'请至少选择一个分组'}]}`（即时 inline 校验）。
+  4. submit 校验：在成本价校验前加 `if (!groups.length) { showError('请至少选择一个分组'); return; }`（两种模式通用兜底）。
+  5. `zh-CN.json` 补键 `选填，代供应商上传时填写，用于结算`。
+- **后端**：无需改动。`Channel.CostPrice *float64`(已存在) + 管理员 `Insert()`=`DB.Create` 持久化全字段，管理员填了即存、留空为 0（不参与结算，符合 `*CostPrice<=0` 判定）。
+- **改了哪些文件**：`EditChannelModal.jsx`、`zh-CN.json`。
+- **部署**：classic build(清缓存) → `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build`(VER `juhe-v8costgroup`) → `docker cp /new-api` → restart。
+- **验证（Playwright 实测 5001，tkadmin 临时改密登录后已还原原 hash）**：① 管理员新建渠道弹窗「成本价」字段显示、**无红星=选填**、提示=`选填，代供应商上传时填写，用于结算`；② 「分组*」带红星、默认 placeholder（空）；③ 填名称+密钥、不选分组点提交 → 模态不关闭，分组字段 inline `[invalid]`=`请至少选择一个分组`、模型字段 `[invalid]`=`请选择模型`，提交被拦截。供应商端复用同一表单（成本价必填、分组同样必选默认空），上一轮已充分验证。
+- **收尾**：tkadmin 密码恢复原 hash 已核验；测试截图/快照工件已删；未建任何测试渠道。
+- **提交状态**：5001 本地容器已生效；**未 commit、未 push**（等用户指令）。

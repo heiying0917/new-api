@@ -184,12 +184,12 @@ const EditChannelModal = (props) => {
     models: [],
     auto_ban: 1,
     test_model: '',
-    groups: ['default'],
+    groups: [],
     priority: 0,
     weight: 0,
     tag: '',
     multi_key_mode: 'random',
-    // 供应商成本价（管理员模式不渲染，值保持默认无害）
+    // 成本价：供应商必填、管理员选填（代供应商上传时填写），用于结算
     cost_price: undefined,
     // 渠道额外设置的默认值
     force_format: false,
@@ -1873,6 +1873,11 @@ const EditChannelModal = (props) => {
     delete localInputs.upstream_model_update_last_detected_models;
     delete localInputs.upstream_model_update_ignored_models;
 
+    if (!localInputs.groups || localInputs.groups.length === 0) {
+      showError(t('请至少选择一个分组'));
+      return;
+    }
+
     if (isSupplierMode) {
       const cp = Number(localInputs.cost_price);
       if (!Number.isFinite(cp) || cp <= 0) {
@@ -2701,24 +2706,28 @@ const EditChannelModal = (props) => {
                       autoComplete='new-password'
                     />
 
-                    {isSupplierMode && (
-                      <Form.InputNumber
-                        field='cost_price'
-                        label={t('成本价')}
-                        prefix='¥'
-                        placeholder={t('请输入成本价')}
-                        min={0}
-                        step={0.1}
-                        extraText={t('供应商渠道必填，用于结算')}
-                        rules={[
-                          { required: true, message: t('请输入成本价') },
-                        ]}
-                        onChange={(value) =>
-                          handleInputChange('cost_price', value)
-                        }
-                        style={{ width: '100%' }}
-                      />
-                    )}
+                    <Form.InputNumber
+                      field='cost_price'
+                      label={t('成本价')}
+                      prefix='¥'
+                      placeholder={t('请输入成本价')}
+                      min={0}
+                      step={0.1}
+                      extraText={
+                        isSupplierMode
+                          ? t('供应商渠道必填，用于结算')
+                          : t('选填，代供应商上传时填写，用于结算')
+                      }
+                      rules={
+                        isSupplierMode
+                          ? [{ required: true, message: t('请输入成本价') }]
+                          : []
+                      }
+                      onChange={(value) =>
+                        handleInputChange('cost_price', value)
+                      }
+                      style={{ width: '100%' }}
+                    />
 
                     {inputs.type === 33 && (
                       <>
@@ -3639,6 +3648,7 @@ const EditChannelModal = (props) => {
                     placeholder={t('请选择可以使用该渠道的分组')}
                     multiple
                     allowAdditions
+                    rules={[{ required: true, message: t('请至少选择一个分组') }]}
                     additionLabel={t(
                       '请在系统设置页面编辑分组倍率以添加新的分组：',
                     )}
