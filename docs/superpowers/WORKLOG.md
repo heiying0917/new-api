@@ -83,6 +83,36 @@
 - **结论**：P0 + B + C **已彻底检查 + 测试**（静态/单测/对抗审查/端到端），发现的问题已修。D、E 按用户指示暂不做。
 - **备注**：tksupplier1 旧测试账号 test12345 登录失败（密码漂移，非代码问题——管理员同路径正常）；如需可重置。
 
+---
+
+## 2026-06-15 · v6 首页重做 + 登录注册 Tab 焦点
+
+### [2026-06-15] v6 设计阶段：调研 + 多版 mockup + 设计方案（brainstorm，未改生产码）
+- **做了什么**：
+  - 调研 classic 主题：布局壳 `PageLayout`（全局固定 HeaderBar + 仅 /console 的 SiderBar + 全局 FooterBar）、`Home/index.jsx` 空内容分支=待替换的硬编码网关落地页、`StatusContext`←`/api/status` 状态通道、全站 Semi 令牌配色（无自定义主题包=Semi 默认蓝）、`context/Theme` 明暗跟随系统机制（`auto`+`prefers-color-scheme`）、设置页 `OtherSetting.jsx`。
+  - 出 3 版整页 mockup（A 深色高端 / B 浅色 SaaS / C 科技渐变）→ 用户选 **B**。
+  - 用 Playwright 从运行容器抓控制台真实 Semi 令牌（浅 `#0064FA`/深 `#54A9FF` 等）→ 精修 B（b2：真实令牌、浅+深、跟随系统+手动切换、克制蓝→靛蓝渐变）。
+  - 出主色对比版（b3：当前蓝/深宝蓝/靛紫/祖母绿 实时切换）→ 用户选 **深宝蓝 Sapphire**（浅 `#2052CC`/深 `#7AA2FF`）作**全局主色**（首页+控制台一起换）。
+  - 敲定：可配数字=后台可配 + 未配置时定性默认（不编造）；文案接 i18next；Tab 修复并入；落地页复用全局 Header/Footer（不自建 nav/footer，品牌红线自动保留）。
+- **产出**：设计方案 `docs/superpowers/specs/2026-06-15-v6-home-redesign-design.md`；mockup `docs/superpowers/mockups/2026-06-15-home-v6/`（version-b2-refined / version-b3-primary-compare 等）。
+- **下一步**：用户审 spec → 写实现计划 `plans/2026-06-15-v6-home-redesign.md` → 落地实现 + 测试。
+
+### [2026-06-15 上午] v6 实现 + 浏览器充分验证（代码完成，**未提交**）
+- **做了什么**：按实现计划落地全部 6 个任务（多 agent + 本人）。
+  - 全局主色 → 深宝蓝 Sapphire：`index.css` 覆盖 Semi `--semi-color-primary/link` 系列（浅 `#2052CC`/深 `#7AA2FF`，两套），首页与控制台统一、明暗跟随系统。
+  - 供应商招募落地页：新增 `web/classic/src/pages/Home/landing/`（`SupplierLanding/Hero/Advantages/Process/Security/Channels/CtaBand.jsx` + `landing.css`，全程 Semi 令牌取色、i18n、响应式），替换 `Home/index.jsx` 空内容分支；复用全局 Header/Footer（品牌红线 `New API` 自动保留）。
+  - 可配数字：后端 `model/option.go` 注册 `HomeSupplierStats`、`controller/misc.go` GetStatus 只读透出；前端 Hero 解析、未配置回退定性默认（不编造数字）；`OtherSetting.jsx` 新增编辑卡片（JSON 校验 + 复用 updateOption）。
+  - Tab 焦点：classic `LoginForm/RegisterForm` 用受控 `type` + 自定义后缀眼睛（`tabIndex=-1`）替换 Semi `mode='password'`；default `password-input.tsx` 眼睛加 `tabIndex=-1`。
+- **改了哪些文件**：`web/classic/src/index.css`、`pages/Home/index.jsx` + `pages/Home/landing/*`（新增 8 文件）、`components/settings/OtherSetting.jsx`、`components/auth/{LoginForm,RegisterForm}.jsx`、`web/default/src/components/password-input.tsx`、`controller/misc.go`、`model/option.go`。
+- **验证（运行容器 localhost:5001，本地交叉编译 linux/arm64 内嵌前端 + docker cp 部署）**：
+  - 落地页：浅色/深色/移动端(390) Playwright 截图逐板块核对，全部 OK；信任条未配置时回退定性默认。
+  - 主色：登录页/Dashboard/设置页 均为 Sapphire；明暗跟随系统正常。
+  - Tab：登录页 `用户名→密码→继续`、注册页 `用户名→密码→确认密码→提交`，眼睛 `tabIndex=-1` 被跳过、鼠标点击仍可切明文（程序化核验 `modebtnDivs=0`、自定义眼睛 tabIndex=-1）。
+  - 可配数字：管理员设置写入 JSON → 首页信任条实时联动（800+/99.9%/T+1/全链路）→ 清空回退默认，端到端打通。
+  - 后端回归：`go build ./...` 通过；`go test ./model/ ./controller/` 118 passed，唯一失败 `TestListModelsTokenLimitIncludesTieredBillingModel` 为**预先存在**、与本次无关。
+- **踩坑记录**：① Docker 首次 `--build` 缓存了 go build 层（前端 `go:embed` 进二进制，改动没生效）；`--no-cache` 重建失败 → 改用本地交叉编译 + `docker cp` 部署，绕开 Docker 构建。② **classic 用 rsbuild,其持久缓存 `node_modules/.cache` 漏编 RegisterForm**（登录新、注册旧的诡异不一致根因）；`rm -rf node_modules/.cache` 后入口哈希变化、注册改动才真正编入。**正式 Docker 镜像构建是全新容器、`bun install` 全新,无此缓存问题。**
+- **交付状态**：运行容器已是新代码（cp 二进制存活于容器可写层，`docker restart` 可保持；若 `docker compose up` 重建容器需重新 build 镜像）。`HomeSupplierStats` 已清空=定性默认。**未 git commit / 未 push / 未重建发布镜像**——等用户验收后明确指令。
+
 
 
 

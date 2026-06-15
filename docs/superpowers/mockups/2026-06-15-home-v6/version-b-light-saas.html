@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TokenKi — 官方 Key 托管平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f8fafc;
+    --bg-tint: #f5f7ff;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #64748b;
+    --line: #e6e9f0;
+    --line-soft: #eef1f6;
+    --primary: #4f46e5;
+    --primary-2: #2563eb;
+    --primary-ink: #4338ca;
+    --primary-soft: #eef2ff;
+    --accent: #ede9fe;
+    --white: #ffffff;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 12px 28px rgba(15, 23, 42, 0.07);
+    --shadow-lg: 0 10px 30px rgba(79, 70, 229, 0.10), 0 24px 60px rgba(15, 23, 42, 0.10);
+    --radius: 16px;
+    --radius-lg: 22px;
+    --maxw: 1180px;
+    --sans: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  .container { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--sans); font-weight: 600; font-size: 15px;
+    border-radius: 11px; padding: 12px 22px; cursor: pointer;
+    border: 1px solid transparent; transition: all .18s ease; white-space: nowrap;
+    letter-spacing: .2px;
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, #5b54ea, var(--primary));
+    color: #fff; box-shadow: 0 6px 16px rgba(79, 70, 229, .28), inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(79, 70, 229, .36), inset 0 1px 0 rgba(255,255,255,.2); }
+  .btn-secondary {
+    background: #fff; color: var(--ink); border-color: var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-secondary:hover { border-color: #cdd3e0; background: var(--bg-soft); transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--ink-2); padding: 9px 14px; }
+  .btn-ghost:hover { color: var(--ink); background: var(--bg-soft); }
+  .btn-lg { font-size: 16px; padding: 15px 28px; border-radius: 13px; }
+
+  /* ---------- Header ---------- */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255, 255, 255, .82);
+    backdrop-filter: saturate(180%) blur(14px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 70px; }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand-mark {
+    width: 38px; height: 38px; border-radius: 11px;
+    background: linear-gradient(140deg, #6366f1, #4f46e5 55%, #3b82f6);
+    display: grid; place-items: center; box-shadow: 0 6px 16px rgba(79,70,229,.3);
+    flex-shrink: 0;
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+  .brand-name { font-weight: 800; font-size: 19px; letter-spacing: -.3px; }
+  .brand-tag { font-size: 11px; color: var(--ink-3); font-weight: 500; letter-spacing: .3px; }
+
+  .nav-links { display: flex; align-items: center; gap: 4px; }
+  .nav-links a {
+    font-size: 14.5px; font-weight: 500; color: var(--ink-2);
+    padding: 8px 14px; border-radius: 9px; transition: all .15s ease;
+  }
+  .nav-links a:hover { color: var(--ink); background: var(--bg-soft); }
+  .nav-actions { display: flex; align-items: center; gap: 8px; }
+  .nav-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+
+  .mobile-only { display: none; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative; overflow: hidden;
+    padding: 92px 0 80px;
+    background:
+      radial-gradient(900px 400px at 80% -8%, rgba(99, 102, 241, .12), transparent 60%),
+      radial-gradient(700px 360px at 5% 0%, rgba(37, 99, 235, .08), transparent 55%),
+      linear-gradient(180deg, #ffffff, #fbfcff);
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(15,23,42,.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(15,23,42,.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(700px 460px at 50% 30%, #000 30%, transparent 75%);
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--line);
+    color: var(--primary-ink); font-weight: 600; font-size: 13px;
+    padding: 6px 14px 6px 10px; border-radius: 999px; box-shadow: var(--shadow-sm);
+    margin-bottom: 24px;
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.16); }
+
+  h1.hero-title {
+    font-size: 50px; line-height: 1.12; font-weight: 800; letter-spacing: -1px;
+    color: var(--ink); margin-bottom: 22px;
+  }
+  h1.hero-title .grad {
+    background: linear-gradient(100deg, #4f46e5, #2563eb 50%, #06b6d4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: 17.5px; color: var(--ink-2); line-height: 1.72; max-width: 560px; margin-bottom: 34px; }
+  .hero-sub .en { color: var(--ink); font-weight: 600; }
+  .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; }
+
+  /* stat bar */
+  .statbar {
+    margin-top: 46px; display: grid; grid-template-columns: repeat(4, 1fr);
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow-md); overflow: hidden;
+  }
+  .stat { padding: 20px 22px; border-right: 1px solid var(--line-soft); }
+  .stat:last-child { border-right: none; }
+  .stat-num { font-size: 24px; font-weight: 800; color: var(--ink); letter-spacing: -.5px; }
+  .stat-num.tx { font-size: 19px; }
+  .stat-label { font-size: 13px; color: var(--ink-3); margin-top: 3px; font-weight: 500; }
+
+  /* hero visual panel */
+  .hero-visual {
+    position: relative;
+    background: linear-gradient(165deg, #ffffff, #f6f8ff);
+    border: 1px solid var(--line); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg); padding: 26px; overflow: hidden;
+  }
+  .hero-visual::after {
+    content: ""; position: absolute; top: -40%; right: -30%; width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(99,102,241,.16), transparent 70%); pointer-events: none;
+  }
+  .panel-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .panel-title { font-weight: 700; font-size: 15px; }
+  .panel-badge { font-size: 11.5px; font-weight: 600; color: #16a34a; background: #ecfdf5; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+  .panel-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; }
+
+  .key-row {
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+    background: #fff; border: 1px solid var(--line); border-radius: 13px;
+    margin-bottom: 12px; box-shadow: var(--shadow-sm); position: relative; z-index: 1;
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .key-row:hover { transform: translateX(3px); box-shadow: var(--shadow-md); }
+  .key-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; }
+  .key-meta { flex: 1; min-width: 0; }
+  .key-name { font-weight: 700; font-size: 14.5px; }
+  .key-sub { font-size: 12px; color: var(--ink-3); font-family: "Inter", monospace; }
+  .key-val { text-align: right; }
+  .key-val b { font-size: 14.5px; font-weight: 700; }
+  .key-val span { display: block; font-size: 11.5px; color: #16a34a; font-weight: 600; }
+
+  .panel-foot {
+    margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line);
+    display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1;
+  }
+  .panel-foot .lbl { font-size: 12.5px; color: var(--ink-3); }
+  .panel-foot .amt { font-size: 22px; font-weight: 800; color: var(--primary-ink); letter-spacing: -.5px; }
+
+  /* ---------- Section scaffolding ---------- */
+  section { position: relative; }
+  .sec-pad { padding: 92px 0; }
+  .sec-tint { background: var(--bg-soft); border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+
+  .sec-head { text-align: center; max-width: 720px; margin: 0 auto 56px; }
+  .sec-kicker {
+    display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--primary); margin-bottom: 14px;
+  }
+  .sec-title { font-size: 36px; font-weight: 800; letter-spacing: -.6px; line-height: 1.2; }
+  .sec-desc { font-size: 16.5px; color: var(--ink-3); margin-top: 14px; }
+
+  /* ---------- Advantage cards ---------- */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 28px 24px; box-shadow: var(--shadow-sm);
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 100%;
+    background: linear-gradient(90deg, var(--primary), #2563eb); opacity: 0; transition: opacity .2s ease;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: #d8dcea; }
+  .card:hover::before { opacity: 1; }
+  .card-ic {
+    width: 50px; height: 50px; border-radius: 13px; display: grid; place-items: center;
+    background: var(--primary-soft); color: var(--primary); margin-bottom: 18px;
+    border: 1px solid #e0e3fb;
+  }
+  .card-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; letter-spacing: -.2px; }
+  .card-body { font-size: 14.5px; color: var(--ink-3); line-height: 1.7; }
+
+  /* ---------- Steps ---------- */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; counter-reset: step; }
+  .step {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 30px 24px 26px; position: relative; box-shadow: var(--shadow-sm);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .step:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  .step-num {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(150deg, #6366f1, #4f46e5); color: #fff;
+    font-weight: 800; font-size: 18px; display: grid; place-items: center;
+    box-shadow: 0 6px 14px rgba(79,70,229,.3); margin-bottom: 18px;
+  }
+  .step-title { font-size: 16.5px; font-weight: 700; margin-bottom: 9px; }
+  .step-title .en { font-weight: 700; }
+  .step-body { font-size: 14px; color: var(--ink-3); line-height: 1.7; }
+  .step-arrow { position: absolute; top: 48px; right: -22px; color: #c7cde0; z-index: 2; }
+  .step:last-child .step-arrow { display: none; }
+
+  /* ---------- Security ---------- */
+  .sec-split { display: grid; grid-template-columns: .9fr 1.1fr; gap: 56px; align-items: center; }
+  .sec-split .sec-head { text-align: left; margin: 0; }
+  .sec-split .sec-kicker { }
+  .sec-split .sec-title { font-size: 34px; }
+  .shield-wrap { display: grid; place-items: center; }
+  .shield-card {
+    width: 100%; max-width: 380px; background: linear-gradient(165deg, #ffffff, #f4f6ff);
+    border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 40px;
+    box-shadow: var(--shadow-lg); text-align: center; position: relative; overflow: hidden;
+  }
+  .shield-card::after {
+    content: ""; position: absolute; bottom: -60px; left: -40px; width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(37,99,235,.12), transparent 70%);
+  }
+  .shield-ic {
+    width: 92px; height: 92px; margin: 0 auto 22px; border-radius: 24px;
+    background: linear-gradient(150deg, #4f46e5, #2563eb); display: grid; place-items: center;
+    box-shadow: 0 14px 30px rgba(79,70,229,.35); position: relative; z-index: 1;
+  }
+  .shield-card h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; position: relative; z-index: 1; }
+  .shield-card p { font-size: 14px; color: var(--ink-3); position: relative; z-index: 1; }
+  .shield-tags { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 20px; position: relative; z-index: 1; }
+  .shield-tags span { font-size: 12px; font-weight: 600; color: var(--primary-ink); background: var(--primary-soft); border: 1px solid #e0e3fb; padding: 5px 12px; border-radius: 999px; }
+
+  .sec-list { display: flex; flex-direction: column; gap: 16px; }
+  .sec-item {
+    display: flex; gap: 16px; align-items: flex-start;
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; box-shadow: var(--shadow-sm); transition: all .18s ease;
+  }
+  .sec-item:hover { border-color: #d8dcea; box-shadow: var(--shadow-md); transform: translateX(3px); }
+  .sec-check {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    background: #ecfdf5; border: 1px solid #bbf7d0; color: #16a34a;
+    display: grid; place-items: center;
+  }
+  .sec-item p { font-size: 15px; color: var(--ink-2); line-height: 1.6; font-weight: 500; }
+
+  /* ---------- Providers ---------- */
+  .providers { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
+  .prov-badge {
+    display: flex; align-items: center; gap: 14px;
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 26px; box-shadow: var(--shadow-sm); min-width: 230px;
+    transition: all .2s ease;
+  }
+  .prov-badge:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: #d8dcea; }
+  .prov-mark {
+    width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+    flex-shrink: 0; font-weight: 800; color: #fff; font-size: 19px;
+  }
+  .prov-meta b { display: block; font-size: 15.5px; font-weight: 700; }
+  .prov-meta span { font-size: 12.5px; color: var(--ink-3); }
+  .prov-more {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-tint); border: 1px dashed #c7cdf0; border-radius: 14px;
+    padding: 18px 26px; color: var(--primary-ink); font-weight: 600; font-size: 14.5px; min-width: 200px;
+  }
+
+  /* ---------- Bottom CTA ---------- */
+  .cta-band {
+    position: relative; overflow: hidden;
+    background: linear-gradient(140deg, #4338ca, #4f46e5 45%, #2563eb);
+    border-radius: 28px; padding: 64px 56px; text-align: center;
+    box-shadow: 0 30px 70px rgba(67,56,202,.35);
+  }
+  .cta-band::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.07) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(600px 300px at 50% 0%, #000, transparent 80%);
+  }
+  .cta-band::after {
+    content: ""; position: absolute; top: -120px; right: -80px; width: 360px; height: 360px;
+    background: radial-gradient(circle, rgba(255,255,255,.16), transparent 70%);
+  }
+  .cta-band h2 { position: relative; font-size: 34px; font-weight: 800; color: #fff; letter-spacing: -.6px; line-height: 1.3; max-width: 760px; margin: 0 auto 28px; }
+  .cta-band .btn-white {
+    position: relative; background: #fff; color: var(--primary-ink);
+    box-shadow: 0 10px 28px rgba(0,0,0,.18);
+  }
+  .cta-band .btn-white:hover { transform: translateY(-2px); box-shadow: 0 16px 36px rgba(0,0,0,.24); }
+
+  /* ---------- Footer ---------- */
+  footer { background: var(--bg-soft); border-top: 1px solid var(--line); padding: 64px 0 32px; }
+  .foot-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 40px; }
+  .foot-brand .brand { margin-bottom: 16px; }
+  .foot-brand p { font-size: 14px; color: var(--ink-3); max-width: 300px; line-height: 1.7; }
+  .foot-col h4 { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 16px; letter-spacing: .3px; }
+  .foot-col a { display: block; font-size: 14px; color: var(--ink-3); padding: 6px 0; transition: color .15s ease; }
+  .foot-col a:hover { color: var(--primary); }
+  .foot-bottom {
+    margin-top: 48px; padding-top: 26px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;
+  }
+  .copyright { font-size: 13.5px; color: var(--ink-3); }
+  .foot-socials { display: flex; gap: 10px; }
+  .foot-socials a {
+    width: 36px; height: 36px; border-radius: 10px; background: #fff; border: 1px solid var(--line);
+    display: grid; place-items: center; color: var(--ink-3); transition: all .15s ease;
+  }
+  .foot-socials a:hover { color: var(--primary); border-color: #c7cdf0; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 980px) {
+    .hero-inner { grid-template-columns: 1fr; gap: 44px; }
+    .hero-visual { max-width: 480px; }
+    .sec-split { grid-template-columns: 1fr; gap: 40px; }
+    .grid-4, .steps { grid-template-columns: repeat(2, 1fr); }
+    .step-arrow { display: none !important; }
+    .foot-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+  }
+  @media (max-width: 720px) {
+    .container { padding: 0 20px; }
+    .nav-links { display: none; }
+    .desktop-only { display: none; }
+    .mobile-only { display: inline-flex; }
+    h1.hero-title { font-size: 36px; }
+    .hero-sub { font-size: 16px; }
+    .hero { padding: 60px 0 56px; }
+    .sec-pad { padding: 64px 0; }
+    .sec-title { font-size: 28px; }
+    .statbar { grid-template-columns: 1fr 1fr; }
+    .stat:nth-child(2) { border-right: none; }
+    .grid-4, .steps { grid-template-columns: 1fr; }
+    .cta-band { padding: 44px 26px; }
+    .cta-band h2 { font-size: 26px; }
+    .foot-grid { grid-template-columns: 1fr 1fr; }
+    .foot-brand { grid-column: 1 / -1; }
+    .sec-head { margin-bottom: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header>
+  <div class="container nav">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L4 6.5v6c0 4.6 3.2 8.4 8 9.5 4.8-1.1 8-4.9 8-9.5v-6L12 2z" fill="#fff" opacity=".95"/>
+          <path d="M9 12.2l2 2 4-4.4" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">TokenKi</span>
+        <span class="brand-tag">官方 Key 托管平台</span>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a href="#advantage">平台优势</a>
+      <a href="#flow">托管流程</a>
+      <a href="#security">安全保障</a>
+      <a href="#settle">结算</a>
+    </nav>
+
+    <div class="nav-actions">
+      <a class="btn btn-ghost desktop-only" href="#">登录</a>
+      <div class="nav-sep desktop-only"></div>
+      <a class="btn btn-primary" href="#">成为供应商</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="container hero-inner">
+    <div class="hero-copy">
+      <span class="eyebrow"><span class="dot"></span>面向供应商 · 官方额度变现</span>
+      <h1 class="hero-title">托管你的官方 Key,<br/><span class="grad">接入全球订单</span></h1>
+      <p class="hero-sub">
+        我们为全球数百家企业稳定供应 AI 大模型 token,订单量充足。把你闲置的
+        <span class="en">Claude / AWS / OpenAI</span> 官方额度托管给 TokenKi——安全隔离、实时计量、多币种快速结算。
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="#">成为供应商
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a class="btn btn-secondary btn-lg" href="#">登录控制台</a>
+      </div>
+
+      <div class="statbar">
+        <div class="stat">
+          <div class="stat-num">500+</div>
+          <div class="stat-label">企业客户</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num tx">持续充足</div>
+          <div class="stat-label">订单供给</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">多币种 T+1</div>
+          <div class="stat-label">快速结算</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num tx">端到端加密</div>
+          <div class="stat-label">隔离存储</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hero visual:收益面板 -->
+    <div class="hero-visual">
+      <div class="panel-top">
+        <div class="panel-title">我的托管渠道</div>
+        <div class="panel-badge"><span class="dot"></span>实时计量中</div>
+      </div>
+
+      <div class="key-row">
+        <div class="key-ic" style="background:linear-gradient(150deg,#f0e6dd,#e8d5c4);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3l3.2 6.5 7.1 1-5.1 5 1.2 7.1L12 18.9 5.6 22.6l1.2-7.1-5.1-5 7.1-1L12 3z" fill="#c2613f"/></svg>
+        </div>
+        <div class="key-meta">
+          <div class="key-name">Claude (Anthropic)</div>
+          <div class="key-sub">sk-ant-•••• 已加密</div>
+        </div>
+        <div class="key-val"><b>¥ 12,480</b><span>↑ 接单中</span></div>
+      </div>
+
+      <div class="key-row">
+        <div class="key-ic" style="background:linear-gradient(150deg,#fde9d3,#fbd3a8);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 16l9-11 9 11-9 4-9-4z" fill="#ec912d"/><path d="M3 16l9 4 9-4" stroke="#b85c00" stroke-width="1.4" fill="none"/></svg>
+        </div>
+        <div class="key-meta">
+          <div class="key-name">AWS Bedrock</div>
+          <div class="key-sub">AKIA•••• 已加密</div>
+        </div>
+        <div class="key-val"><b>¥ 8,920</b><span>↑ 接单中</span></div>
+      </div>
+
+      <div class="key-row">
+        <div class="key-ic" style="background:linear-gradient(150deg,#d6f5ec,#bdeede);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#10a37f"/><path d="M8 12l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="key-meta">
+          <div class="key-name">OpenAI</div>
+          <div class="key-sub">sk-•••• 已加密</div>
+        </div>
+        <div class="key-val"><b>¥ 6,310</b><span>↑ 接单中</span></div>
+      </div>
+
+      <div class="panel-foot">
+        <span class="lbl">本周期累计收益(待结算)</span>
+        <span class="amt">¥ 27,710</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 核心优势 ============ -->
+<section class="sec-pad" id="advantage">
+  <div class="container">
+    <div class="sec-head">
+      <span class="sec-kicker">核心优势</span>
+      <h2 class="sec-title">为什么把官方 Key 托管给我们</h2>
+      <p class="sec-desc">真实的全球需求、严格的安全隔离、透明的结算口径——让闲置的官方额度持续创造收益。</p>
+    </div>
+
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-ic">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="card-title">订单量充足,Key 不闲置</div>
+        <p class="card-body">平台聚合全球数百家企业的真实需求,你的官方额度持续接单,稳定产生收益。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-ic">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="17" r="1" fill="currentColor"/></svg>
+        </div>
+        <div class="card-title">多种官方 Key 托管</div>
+        <p class="card-body">支持 Claude(Anthropic)、AWS Bedrock、OpenAI 等主流官方渠道,一处托管、统一接单。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-ic">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15" r="1.6" fill="currentColor"/></svg>
+        </div>
+        <div class="card-title">关键数据隔离加密</div>
+        <p class="card-body">官方 Key 加密存储,供应商之间严格隔离、互不可见;遵循最小可见原则。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-ic">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="card-title">多币种快速结算</div>
+        <p class="card-body">按实际消耗实时计量,成交价逐笔冻结(不受事后改价影响),支持多币种、快速回款。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 托管流程 ============ -->
+<section class="sec-pad sec-tint" id="flow">
+  <div class="container">
+    <div class="sec-head">
+      <span class="sec-kicker">托管流程</span>
+      <h2 class="sec-title">四步开始,简单透明</h2>
+      <p class="sec-desc">从接入官方凭证到收到结算款,每个环节都清晰可对账。</p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">接入官方 Key</div>
+        <p class="step-body">提交你的 <strong class="en">Claude / AWS / OpenAI</strong> 官方凭证,加密入库。</p>
+        <svg class="step-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">平台智能分发</div>
+        <p class="step-body">全球企业订单按规则分发到你的渠道,真实流量、稳定调用。</p>
+        <svg class="step-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">实时计量计费</div>
+        <p class="step-body">每笔调用按官方口径计量,成交价即时快照,账目清晰可对账。</p>
+        <svg class="step-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-title">多币种结算</div>
+        <p class="step-body">按周期生成结算单,核对无误后快速打款,支持多币种。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 安全保障 ============ -->
+<section class="sec-pad" id="security">
+  <div class="container sec-split">
+    <div>
+      <div class="sec-head">
+        <span class="sec-kicker">安全保障</span>
+        <h2 class="sec-title">把安全做到供应商<br/>敢托付的程度</h2>
+        <p class="sec-desc">从加密存储到资金账本,每一层都为保护你的官方凭证与收益而设计。</p>
+      </div>
+      <div class="shield-wrap" style="margin-top:8px;">
+        <div class="shield-card">
+          <div class="shield-ic">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 6v6c0 5 3.4 8.5 8 9.8 4.6-1.3 8-4.8 8-9.8V6l-8-4z" fill="#fff" opacity=".95"/><path d="M8.5 12.3l2.4 2.4 4.6-5" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>端到端加密 · 严格隔离</h3>
+          <p>官方 Key 全程加密,供应商之间互不可见</p>
+          <div class="shield-tags">
+            <span>加密存储</span><span>幂等结算</span><span>资金账本</span><span>SSRF 校验</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-list">
+      <div class="sec-item">
+        <div class="sec-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <p>端到端加密存储,供应商之间数据严格隔离、互不可见</p>
+      </div>
+      <div class="sec-item">
+        <div class="sec-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <p>防套现结算:成交价逐笔快照,事后改价不影响已结算金额</p>
+      </div>
+      <div class="sec-item">
+        <div class="sec-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <p>原子幂等结算 + 资金账本,杜绝重复打款、全程可审计对账</p>
+      </div>
+      <div class="sec-item">
+        <div class="sec-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <p>账号级登录防暴破、可吊销会话、SSRF 校验等纵深防护</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 支持的官方渠道 ============ -->
+<section class="sec-pad sec-tint" id="settle">
+  <div class="container">
+    <div class="sec-head">
+      <span class="sec-kicker">支持的官方渠道</span>
+      <h2 class="sec-title">主流官方渠道,统一接单</h2>
+      <p class="sec-desc">一处托管,覆盖你手中的主流官方额度,并持续接入更多渠道。</p>
+    </div>
+
+    <div class="providers">
+      <div class="prov-badge">
+        <div class="prov-mark" style="background:linear-gradient(150deg,#d4763f,#b8542b);">C</div>
+        <div class="prov-meta"><b>Claude</b><span>Anthropic</span></div>
+      </div>
+      <div class="prov-badge">
+        <div class="prov-mark" style="background:linear-gradient(150deg,#f0972f,#cf6d12);">AB</div>
+        <div class="prov-meta"><b>AWS Bedrock</b><span>Amazon</span></div>
+      </div>
+      <div class="prov-badge">
+        <div class="prov-mark" style="background:linear-gradient(150deg,#13b48c,#0c8466);">AI</div>
+        <div class="prov-meta"><b>OpenAI</b><span>GPT 系列</span></div>
+      </div>
+      <div class="prov-more">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        更多持续接入
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BOTTOM CTA ============ -->
+<section class="sec-pad">
+  <div class="container">
+    <div class="cta-band">
+      <h2>现在就开始托管,让你的官方额度产生稳定收益</h2>
+      <a class="btn btn-white btn-lg" href="#">成为供应商
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand">
+          <div class="brand-mark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L4 6.5v6c0 4.6 3.2 8.4 8 9.5 4.8-1.1 8-4.9 8-9.5v-6L12 2z" fill="#fff" opacity=".95"/>
+              <path d="M9 12.2l2 2 4-4.4" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">TokenKi</span>
+            <span class="brand-tag">官方 Key 托管平台</span>
+          </div>
+        </div>
+        <p>把闲置的官方 AI 额度托管给 TokenKi,接入全球真实企业订单,安全隔离、实时计量、多币种快速结算。</p>
+      </div>
+
+      <div class="foot-col">
+        <h4>产品</h4>
+        <a href="#advantage">平台优势</a>
+        <a href="#flow">托管流程</a>
+        <a href="#settle">结算</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>资源</h4>
+        <a href="#">文档</a>
+        <a href="#">服务条款</a>
+        <a href="#">隐私</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>开始托管</h4>
+        <a href="#">成为供应商</a>
+        <a href="#">登录控制台</a>
+        <a href="#">支持的渠道</a>
+      </div>
+    </div>
+
+    <div class="foot-bottom">
+      <span class="copyright">© 2026 new-api · Powered by QuantumNous</span>
+      <div class="foot-socials">
+        <a href="#" aria-label="文档"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.6"/><path d="M14 4v5h5" stroke="currentColor" stroke-width="1.6"/></svg></a>
+        <a href="#" aria-label="邮箱"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.6"/></svg></a>
+        <a href="#" aria-label="安全"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-2.8 7-7 8.5C7.8 19 5 16 5 12V6l7-3z" stroke="currentColor" stroke-width="1.6"/></svg></a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

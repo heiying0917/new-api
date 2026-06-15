@@ -59,6 +59,8 @@ import {
   IconMail,
   IconLock,
   IconKey,
+  IconEyeOpened,
+  IconEyeClosed,
 } from '@douyinfe/semi-icons';
 import OIDCIcon from '../common/logo/OIDCIcon';
 import WeChatIcon from '../common/logo/WeChatIcon';
@@ -81,6 +83,7 @@ const LoginForm = () => {
     wechat_verification_code: '',
   });
   const { username, password } = inputs;
+  const [showPwd, setShowPwd] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
   const [userState, userDispatch] = useContext(UserContext);
@@ -759,9 +762,19 @@ const LoginForm = () => {
                   label={t('密码')}
                   placeholder={t('请输入您的密码')}
                   name='password'
-                  mode='password'
+                  type={showPwd ? 'text' : 'password'}
                   onChange={(value) => handleChange('password', value)}
                   prefix={<IconLock />}
+                  suffix={
+                    <Button
+                      theme='borderless'
+                      type='tertiary'
+                      size='small'
+                      tabIndex={-1}
+                      icon={showPwd ? <IconEyeOpened /> : <IconEyeClosed />}
+                      onClick={() => setShowPwd((v) => !v)}
+                    />
+                  }
                 />
 
                 {(hasUserAgreement || hasPrivacyPolicy) && (

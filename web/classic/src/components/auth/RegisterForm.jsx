@@ -50,6 +50,8 @@ import {
   IconUser,
   IconLock,
   IconKey,
+  IconEyeOpened,
+  IconEyeClosed,
 } from '@douyinfe/semi-icons';
 import {
   onGitHubOAuthClicked,
@@ -82,6 +84,8 @@ const RegisterForm = () => {
     wechat_verification_code: '',
   });
   const { username, password, password2 } = inputs;
+  const [showPwd, setShowPwd] = useState(false);
+  const [showPwd2, setShowPwd2] = useState(false);
   const [userState, userDispatch] = useContext(UserContext);
   const [statusState] = useContext(StatusContext);
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
@@ -598,9 +602,19 @@ const RegisterForm = () => {
                   label={t('密码')}
                   placeholder={t('输入密码，最短 8 位，最长 20 位')}
                   name='password'
-                  mode='password'
+                  type={showPwd ? 'text' : 'password'}
                   onChange={(value) => handleChange('password', value)}
                   prefix={<IconLock />}
+                  suffix={
+                    <Button
+                      theme='borderless'
+                      type='tertiary'
+                      size='small'
+                      tabIndex={-1}
+                      icon={showPwd ? <IconEyeOpened /> : <IconEyeClosed />}
+                      onClick={() => setShowPwd((v) => !v)}
+                    />
+                  }
                 />
 
                 <Form.Input
@@ -608,9 +622,19 @@ const RegisterForm = () => {
                   label={t('确认密码')}
                   placeholder={t('确认密码')}
                   name='password2'
-                  mode='password'
+                  type={showPwd2 ? 'text' : 'password'}
                   onChange={(value) => handleChange('password2', value)}
                   prefix={<IconLock />}
+                  suffix={
+                    <Button
+                      theme='borderless'
+                      type='tertiary'
+                      size='small'
+                      tabIndex={-1}
+                      icon={showPwd2 ? <IconEyeOpened /> : <IconEyeClosed />}
+                      onClick={() => setShowPwd2((v) => !v)}
+                    />
+                  }
                 />
 
                 {showEmailVerification && (

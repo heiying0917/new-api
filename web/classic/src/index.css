@@ -1049,3 +1049,34 @@ html.dark .with-pastel-balls::before {
 }
 
 .ec-dbcd0a3c01b55203 { forced-color-adjust: auto; }
+
+/* === v6: 全局主色 → 深宝蓝 Sapphire（覆盖 Semi 默认蓝；首页与控制台统一） === */
+/* 浅色：body:not([theme-mode='dark']) 特异性(0,1,1) 胜过 Semi 的 :root，且位于 semi.css 之后 */
+body:not([theme-mode='dark']) {
+  --semi-color-primary: #2052cc;
+  --semi-color-primary-hover: #1b47b3;
+  --semi-color-primary-active: #143a91;
+  --semi-color-primary-disabled: #aec2ec;
+  --semi-color-primary-light-default: #eaf0fb;
+  --semi-color-primary-light-hover: #dce6f8;
+  --semi-color-primary-light-active: #cedcf4;
+  --semi-color-link: #2052cc;
+  --semi-color-link-hover: #1b47b3;
+  --semi-color-link-active: #143a91;
+  --semi-color-link-visited: #2052cc;
+  --semi-color-focus-border: #2052cc;
+}
+body[theme-mode='dark'] {
+  --semi-color-primary: #7aa2ff;
+  --semi-color-primary-hover: #9bbaff;
+  --semi-color-primary-active: #bfd3ff;
+  --semi-color-primary-disabled: rgba(122, 162, 255, 0.4);
+  --semi-color-primary-light-default: rgba(122, 162, 255, 0.2);
+  --semi-color-primary-light-hover: rgba(122, 162, 255, 0.3);
+  --semi-color-primary-light-active: rgba(122, 162, 255, 0.4);
+  --semi-color-link: #7aa2ff;
+  --semi-color-link-hover: #9bbaff;
+  --semi-color-link-active: #bfd3ff;
+  --semi-color-link-visited: #7aa2ff;
+  --semi-color-focus-border: #7aa2ff;
+}

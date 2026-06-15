@@ -48,6 +48,7 @@ const OtherSetting = () => {
     Footer: '',
     About: '',
     HomePageContent: '',
+    HomeSupplierStats: '',
   });
   let [loading, setLoading] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -79,6 +80,7 @@ const OtherSetting = () => {
     SystemName: false,
     Logo: false,
     HomePageContent: false,
+    HomeSupplierStats: false,
     About: false,
     Footer: false,
     CheckUpdate: false,
@@ -226,6 +228,32 @@ const OtherSetting = () => {
       showError('页脚内容更新失败');
     } finally {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Footer: false }));
+    }
+  };
+
+  // 个性化设置 - 首页供应商数据（信任数据条）
+  const submitHomeSupplierStats = async () => {
+    try {
+      setLoadingInput((loadingInput) => ({
+        ...loadingInput,
+        HomeSupplierStats: true,
+      }));
+      // 空串=用定性默认；非空则必须是合法 JSON 数组
+      if (inputs.HomeSupplierStats && inputs.HomeSupplierStats.trim() !== '') {
+        const parsed = JSON.parse(inputs.HomeSupplierStats);
+        if (!Array.isArray(parsed)) {
+          throw new Error('not an array');
+        }
+      }
+      await updateOption('HomeSupplierStats', inputs.HomeSupplierStats);
+      showSuccess(t('首页数据已更新'));
+    } catch (error) {
+      showError(t('首页数据格式有误（应为 JSON 数组，最多 4 项）'));
+    } finally {
+      setLoadingInput((loadingInput) => ({
+        ...loadingInput,
+        HomeSupplierStats: false,
+      }));
     }
   };
 
@@ -505,6 +533,25 @@ const OtherSetting = () => {
                 loading={loadingInput['HomePageContent']}
               >
                 {t('设置首页内容')}
+              </Button>
+              <Form.TextArea
+                label={t('首页供应商数据（信任数据条）')}
+                placeholder={
+                  '可选。JSON 数组，最多 4 项，例如：\n[{"value":"500+","label":"企业客户","caption":""},{"value":"","label":"持续","caption":"充足订单"}]\n留空则使用定性默认（不展示具体数字）。'
+                }
+                field={'HomeSupplierStats'}
+                onChange={handleInputChange}
+                style={{ fontFamily: 'JetBrains Mono, Consolas' }}
+                autosize={{ minRows: 4, maxRows: 10 }}
+                helpText={t(
+                  '用于首页 Hero 的信任数据条；value 为大字数字（留空则显示 label），label/caption 为说明。仅未设置自定义首页内容时生效。',
+                )}
+              />
+              <Button
+                onClick={submitHomeSupplierStats}
+                loading={loadingInput['HomeSupplierStats']}
+              >
+                {t('设置首页数据')}
               </Button>
               <Form.TextArea
                 label={t('关于')}
