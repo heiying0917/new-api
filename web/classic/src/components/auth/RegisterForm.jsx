@@ -60,6 +60,7 @@ import {
 } from '../../helpers';
 import OIDCIcon from '../common/logo/OIDCIcon';
 import LinuxDoIcon from '../common/logo/LinuxDoIcon';
+import FacetLogo from '../common/logo/FacetLogo';
 import WeChatIcon from '../common/logo/WeChatIcon';
 import TelegramLoginButton from 'react-telegram-login/src';
 import { UserContext } from '../../context/User';
@@ -411,7 +412,11 @@ const RegisterForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            {localStorage.getItem('logo') ? (
+              <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            ) : (
+              <FacetLogo size={40} animate='entrance' />
+            )}
             <Title heading={3} className='!text-gray-800'>
               {systemName}
             </Title>
@@ -574,7 +579,11 @@ const RegisterForm = () => {
       <div className='flex flex-col items-center'>
         <div className='w-full max-w-md'>
           <div className='flex items-center justify-center mb-6 gap-2'>
-            <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            {localStorage.getItem('logo') ? (
+              <img src={logo} alt='Logo' className='h-10 rounded-full' />
+            ) : (
+              <FacetLogo size={40} animate='entrance' />
+            )}
             <Title heading={3} className='!text-gray-800'>
               {systemName}
             </Title>

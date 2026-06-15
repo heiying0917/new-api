@@ -1,0 +1,67 @@
+/* Token Ki · Facet logo 动效
+   碎片拼合：六块三角碎片旋转飞入、向心收束于核心。
+   设计交付动效规格：入场 0.7s cubic-bezier(.2,.75,.2,1)，逐块 stagger 0.07s，核心 0.6s 后弹出。 */
+
+.facet-tile {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.facet-tile svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.facet-shard,
+.facet-core,
+.facet-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* —— 入场汇聚（一次性 / 悬停重播）—— */
+.facet-tile.is-entrance .facet-shard,
+.facet-tile.is-hover:hover .facet-shard {
+  animation: facetIn 0.7s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  animation-delay: var(--d);
+}
+.facet-tile.is-entrance .facet-core,
+.facet-tile.is-hover:hover .facet-core {
+  animation: facetPop 0.5s ease both;
+  animation-delay: 0.6s;
+}
+@keyframes facetIn {
+  from {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.7);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0) rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes facetPop {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+/* —— 呼吸脉动（核心光晕循环明灭）—— */
+.facet-halo { opacity: 0; }
+.facet-tile.is-pulse .facet-halo {
+  animation: facetBreathe 2.8s ease-in-out infinite;
+}
+@keyframes facetBreathe {
+  0%, 100% { opacity: 0.1; transform: scale(0.9); }
+  50% { opacity: 0.5; transform: scale(1.08); }
+}
+
+/* 尊重系统“减少动态”偏好：直接显示拼合完成的静态形态 */
+@media (prefers-reduced-motion: reduce) {
+  .facet-tile .facet-shard,
+  .facet-tile .facet-core,
+  .facet-tile .facet-halo {
+    animation: none !important;
+    transform: none !important;
+  }
+  .facet-tile .facet-halo { opacity: 0; }
+}

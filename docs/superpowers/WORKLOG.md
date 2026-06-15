@@ -225,3 +225,33 @@
 - **验证（Playwright 实测 5001，tkadmin 临时改密登录后已还原原 hash）**：① 管理员新建渠道弹窗「成本价」字段显示、**无红星=选填**、提示=`选填，代供应商上传时填写，用于结算`；② 「分组*」带红星、默认 placeholder（空）；③ 填名称+密钥、不选分组点提交 → 模态不关闭，分组字段 inline `[invalid]`=`请至少选择一个分组`、模型字段 `[invalid]`=`请选择模型`，提交被拦截。供应商端复用同一表单（成本价必填、分组同样必选默认空），上一轮已充分验证。
 - **收尾**：tkadmin 密码恢复原 hash 已核验；测试截图/快照工件已删；未建任何测试渠道。
 - **提交状态**：5001 本地容器已生效；**未 commit、未 push**（等用户指令）。
+
+### [2026-06-15] v9 品牌 Logo 落地：碎片拼合 Facet（设计交付方案，带动效，classic 前端，**未提交**）
+- **来源**：用户提供其他设计师交付 `~/Downloads/handoff/`（`token-ki-facet.svg` 固化静态 + `Token Ki Facet - Handoff.html` 动效规格）。方案「碎片拼合 Facet」：六块三角碎片旋转飞入、拼成正六边形、向心收束于核心，寓意聚合平台「汇聚多源、凝聚成一」。配色碎片由浅入深 #bae6fd→#93c5fd、核心 #eaf6ff、深蓝径向底 #143672→#06112e。
+- **用户要求**：运用此方案，能带动效的地方带动效，不能的地方用固定的。
+- **落地策略**：动效（内联 SVG + CSS）用于首页 Hero 大 logo、登录/注册页 logo；静态固化 SVG 用于 favicon、顶栏、默认资源；保留系统配置 logo 机制（管理员上传了自定义 logo 则优先用它）。
+- **做了什么**：
+  1. 新建 `web/classic/src/components/common/logo/FacetLogo.jsx`（内联 SVG，固化 6 碎片坐标 + dx/dy/rot/delay；props `size` / `animate`=static|entrance|pulse|hover|auto；用 `useId()` 隔离 gradient/clip id 防多实例冲突）。
+  2. 新建 `FacetLogo.css`（设计师动效规格：入场 `facetIn` 0.7s cubic-bezier(.2,.75,.2,1) + stagger var(--d)，核心 `facetPop` 0.6s 后弹出，呼吸 `facetBreathe` 光晕 2.8s loop，hover 重播；`prefers-reduced-motion` 降级为静态）。
+  3. 新建 `web/classic/public/logo.svg` = 设计交付固化静态 SVG（favicon / 顶栏 / 兜底用）。
+  4. `index.html` favicon `/logo.png`→`/logo.svg`；`helpers/utils.jsx` `getLogo()` 兜底 `/logo.png`→`/logo.svg`。
+  5. `LoginForm.jsx` / `RegisterForm.jsx`：各 2 处 `<img src={logo}>` 改为 `{localStorage.getItem('logo') ? <img...> : <FacetLogo size={40} animate='entrance'/>}`（无自定义配置时走 Facet 入场动效）+ import。
+  6. `Home/landing/Hero.jsx`：copy 区顶部新增 `<FacetLogo size={64} animate='auto'/>`（入场+呼吸+悬停）+ import。
+- **后端配置**：DB `options` 无 `Logo`（仅 `SystemName=Token Ki`）→ localStorage 无 logo → 全站默认走 Facet。
+- **部署**：classic build（清缓存）→ `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build`（VER `juhe-v9facet`）→ docker cp /new-api → restart。`dist/logo.svg` 1464B、`/logo.svg` 200。
+- **验证（Playwright 实测 5001 首页）**：顶栏小 logo + Hero 大 logo 均为 Facet 蓝宝石；favicon href=`/logo.svg`；6 碎片齐全；Hero tile class=`is-entrance is-pulse is-hover`，碎片 `animationName=facetIn 0.7s`、光晕 `facetBreathe`；重启入场后采样起始帧 `matrix(0.629,-0.307,0.307,0.629,29,-50.23)` = translate(29,-50.23)·rotate(-26°)·scale(.7)，与设计规格一致→入场飞入确凿生效。登录/注册复用同组件。
+- **提交状态**：5001 本地容器已生效；**未 commit、未 push**（等用户指令）。
+
+### [2026-06-15] v9 Logo 修复：favicon 换成 Facet + 顶栏去圆形改圆角方（接 v9，**未提交**）
+- **用户反馈两点**：① 浏览器选项卡 icon 没换；② 顶栏左上角 logo 是圆形、跟全站圆角方不一致、不好看。
+- **问题定位**：① 顶栏 `HeaderLogo` 的 `<img className='rounded-full'>` 把方形 Facet 硬裁成圆；② favicon 虽已写 `/logo.svg`，但 rsbuild 自动向 `dist/index.html` 注入了 `<link rel="icon" href="/favicon.ico">`（指向旧 15KB new-api 图标），浏览器优先用它 → 选项卡没变。
+- **做了什么**：
+  1. 用 Playwright canvas 把 Facet SVG 渲染为透明圆角 PNG（256×256 RGBA）→ `web/classic/public/logo.png`（49KB）。
+  2. 用 PIL 从该 PNG 生成多尺寸 `favicon.ico`（16/32/48/64/128/256，PNG-in-ICO，53KB）覆盖 `web/classic/public/favicon.ico`（原旧图标）。
+  3. `index.html` favicon 声明改为 PNG 优先 + SVG 备 + apple-touch-icon：`<link icon png /logo.png>` + `<link icon svg /logo.svg>` + `<link apple-touch-icon /logo.png>`。
+  4. `getLogo()` 兜底 `/logo.svg`→`/logo.png`（PNG 兼容性更好）。
+  5. `HeaderLogo.jsx`：顶栏 logo 改为 `{localStorage.getItem('logo') ? <img rounded-xl> : <FacetLogo size={32} animate='hover'>}`——无自定义配置时用圆角方 Facet（悬停重播），与 Hero/登录页完全一致；有自定义 logo 时 img 圆角也由 `rounded-full` 改 `rounded-xl`。
+- **部署**：classic build（清缓存，VER 路径修正：go build 必须在 repo 根，不能在 web/classic）→ 覆盖 `dist/favicon.ico` → `go build`（VER `juhe-v9facet3`）→ docker cp → restart。
+- **验证（Playwright 实测 5001）**：DOM favicon 链含 `/logo.png`（png）+`/logo.svg`+`/favicon.ico`，三者服务端均 200、`favicon.ico` 53883B image/x-icon=Facet；顶栏 `headerHasFacet=true`、`headerHasRoundImg=false`（圆形 img 已消除）、全页 2 个 facet-tile（顶栏+Hero）均圆角方一致；截图确认顶栏左上小 logo 与 Hero 大 logo 形状统一。
+- **注意**：浏览器选项卡 favicon 缓存顽固，用户需硬刷新（Cmd+Shift+R）才会看到新 icon。
+- **提交状态**：5001 本地容器已生效；**未 commit、未 push**。

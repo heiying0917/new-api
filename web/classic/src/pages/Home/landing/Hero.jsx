@@ -3,6 +3,7 @@ import { Button } from '@douyinfe/semi-ui';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { StatusContext } from '../../../context/Status';
+import FacetLogo from '../../../components/common/logo/FacetLogo';
 
 // 页面加载后数字滚动动画（0 → 目标值，easeOutCubic），支持错峰延迟
 function useCountUp(target, { duration = 1600, delay = 0 } = {}) {
@@ -77,6 +78,9 @@ const Hero = () => {
       <div className='landing-hero__bg' aria-hidden='true' />
       <div className='landing-container landing-hero__grid'>
         <div className='landing-hero__copy'>
+          <div className='landing-hero__logo' style={{ marginBottom: '20px' }}>
+            <FacetLogo size={64} animate='auto' />
+          </div>
           <span className='landing-eyebrow'>{t('企业级官 Key 托管平台')}</span>
           <h1 className='landing-hero__title'>
             {t('专业的官 Key 托管平台,一键接入全球 AI 算力市场')}

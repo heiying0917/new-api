@@ -21,6 +21,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Typography, Tag } from '@douyinfe/semi-ui';
 import SkeletonWrapper from '../components/SkeletonWrapper';
+import FacetLogo from '../../common/logo/FacetLogo';
 
 const HeaderLogo = ({
   isMobile,
@@ -40,12 +41,22 @@ const HeaderLogo = ({
   return (
     <Link to='/' className='group flex items-center gap-2'>
       <div className='relative w-8 h-8 md:w-8 md:h-8'>
-        <SkeletonWrapper loading={isLoading || !logoLoaded} type='image' />
-        <img
-          src={logo}
-          alt='logo'
-          className={`absolute inset-0 w-full h-full transition-all duration-200 group-hover:scale-110 rounded-full ${!isLoading && logoLoaded ? 'opacity-100' : 'opacity-0'}`}
-        />
+        {localStorage.getItem('logo') ? (
+          <>
+            <SkeletonWrapper loading={isLoading || !logoLoaded} type='image' />
+            <img
+              src={logo}
+              alt='logo'
+              className={`absolute inset-0 w-full h-full transition-all duration-200 group-hover:scale-110 rounded-xl ${!isLoading && logoLoaded ? 'opacity-100' : 'opacity-0'}`}
+            />
+          </>
+        ) : (
+          <FacetLogo
+            size={32}
+            animate='hover'
+            className='w-full h-full transition-transform duration-200 group-hover:scale-110'
+          />
+        )}
       </div>
       <div className='hidden md:flex items-center gap-2'>
         <div className='flex items-center gap-2'>

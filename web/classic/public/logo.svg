@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Token Ki — Facet logo">
+  <defs>
+    <radialGradient id="tileBg" cx="30%" cy="22%" r="120%">
+      <stop offset="0%" stop-color="#143672"></stop>
+      <stop offset="38%" stop-color="#0b2350"></stop>
+      <stop offset="100%" stop-color="#06112e"></stop>
+    </radialGradient>
+    <clipPath id="tileClip"><rect x="0" y="0" width="200" height="200" rx="44"></rect></clipPath>
+  </defs>
+  <g clip-path="url(#tileClip)">
+    <rect x="0" y="0" width="200" height="200" fill="url(#tileBg)"></rect>
+    <path d="M100 100 L 100 26 L 164.09 63 Z" fill="#bae6fd" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <path d="M100 100 L 164.09 63 L 164.09 137 Z" fill="#7dd3fc" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <path d="M100 100 L 164.09 137 L 100 174 Z" fill="#38bdf8" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <path d="M100 100 L 100 174 L 35.91 137 Z" fill="#3b82f6" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <path d="M100 100 L 35.91 137 L 35.91 63 Z" fill="#60a5fa" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <path d="M100 100 L 35.91 63 L 100 26 Z" fill="#93c5fd" stroke="#06112e" stroke-width="2.4" stroke-linejoin="round"></path>
+    <circle cx="100" cy="100" r="7.5" fill="#eaf6ff"></circle>
+  </g>
+</svg>
