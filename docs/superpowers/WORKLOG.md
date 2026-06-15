@@ -131,3 +131,29 @@
 - **改了哪些文件**：`controller/discord.go`、`controller/oidc.go`、`model/user_privesc_test.go`（新增）、`controller/user_privesc_test.go`（新增）。
 - **验证**：`go build ./controller/... ./model/...` 通过；4 个新测试全过；`go test ./model/ ./controller/` = 122 passed / 1 failed（`TestListModelsTokenLimitIncludesTieredBillingModel`，隔离 `-count=1` 单跑亦 nil 指针 panic，**预先存在、与本次无关**）/ 2 skipped，**零新增失败**。
 - **未做（用户当前未要求）**：D 密钥读时打码 / E 官key 静态加密（属「降低泄露后果」，非提权面）；恶意供应商把自己渠道 base_url 指向外部服务器截获终端请求体（市场固有风险，靠准入审核兜底，SSRF 已堵内网）。**未 commit / 未 push。**
+
+---
+
+## 2026-06-15 · v7 供应商渠道体验（类型 logo + 中转标识 + 分组必填）
+
+### [2026-06-15 下午] v7 三项需求（前端，已提交 `e5cb70a8`，已本地部署）
+- **背景（用户第七版需求）**：① 供应商创建/编辑渠道的「类型」下拉无 logo（管理员端有），要对齐；② 供应商填了自定义 API 地址=中转 Key，加一眼可见的特殊标识；③ 创建渠道时分组默认为空、不要默认 default。
+- **两处决策（AskUserQuestion 锁定）**：中转标识「管理员端 + 供应商端都显示」；分组「改必填」。
+- **关键发现（决定方案）**：Explore 核查 `model/ability.go` + `model/channel_cache.go` —— 渠道 `group` 若真存空字符串会 split 成 `[""]` 落进 `group2model2channels[""]`，而请求只查 `group2model2channels["用户分组"]`，**空分组=无法被任何请求命中的死渠道**。故分组取「必填」：UI 创建默认空 + 强制手动选；后端 `SupplierAddChannel` 的 `if group=="" → default` 兜底保留作防御（防 API 直连绕过造成死渠道），与「必填」不冲突。
+- **改了哪些文件**（纯 web/classic 前端，无后端改动）：
+  1. **类型下拉 logo**：`components/table/supplier-channels/modals/EditSupplierChannelModal.jsx` 新增 `renderTypeOption`（复用 `helpers/getChannelIcon`，与管理员端 `EditChannelModal.renderChannelOption` 同款 logo + 选中态），`Form.Select field='type'` 接 `renderOptionItem`。
+  2. **中转标识**（基于 `supplier_id`+`base_url` 实时判定，**不新增数据库字段、不迁移**）：
+     - 管理员端 `components/table/channels/ChannelsColumnDefs.jsx` `renderType`：`supplier_id>0 && base_url 非空 → 中转`，加橙色「中转」Tag（带 Tooltip），与既有 IO.NET 标签并存（重构短路条件 + IO.NET 块改条件渲染，避免无 ionet 时误显示）。
+     - 供应商端 `components/table/supplier-channels/SupplierChannelsColumnDefs.jsx` `renderType`：列表内渠道均属本供应商，`base_url 非空 → 中转`，加橙色小号「中转」Tag；类型列 render 改为传 record。
+  3. **分组必填 + 默认空**：`EditSupplierChannelModal.jsx` `getInitValues().groups` 由 `['default']` 改 `[]`；编辑加载 `groups` 不再回退 `['default']`（读真实值，老死渠道打开即被必填逼着补分组）；`Form.Select field='groups'` 加 `required/min:1` rule，placeholder 改「请选择或输入分组」。
+  4. **i18n**：`i18n/locales/zh-CN.json` 新增 `中转` / `该渠道由供应商填写了自定义 API 地址，为中转 Key` / `请选择或输入分组` / `请至少选择一个分组`。
+- **验证**：
+  - `bun run build`（清 `node_modules/.cache` 防 rsbuild 持久缓存漏编）**exit 0**，classic dist 重新产出；`zh-CN.json` JSON 合法。
+  - 交叉编译 linux/arm64（re-embed 新 classic dist）+ `docker cp` 容器 `/new-api` + restart：容器 **healthy**、运行版本 **`juhe-e5cb70a8`**（日志 `Token Ki juhe-e5cb70a8 ready`）、日志 0 errors、前端新 bundle（`index.7ad6c4a726.js`）加载正常。
+  - **端到端浏览器实测（Playwright，tksupplier1 供应商端 + tkadmin 管理员端，临时改密验证后已还原）**：
+    ① 需求1 ✓ 供应商新建渠道「类型」下拉每项左侧显示品牌 logo（OpenAI/Claude/Suno/Ollama…），与管理员端一致；
+    ② 需求3 ✓ 新建弹窗分组框默认空白 + 占位符「请选择或输入分组」，不选分组提交被拦「请至少选择一个分组」（红色校验）；
+    ③ 需求2 ✓ 给某供应商渠道加 base_url 后，供应商「我的渠道」+ 管理员「渠道管理」该行类型旁均显示橙色「中转」标签，其余无 base_url 渠道不显示。
+    截图：`v7-type-dropdown-logo` / `v7-group-required` / `v7-relay-tag-supplier2` / `v7-relay-tag-admin`。
+  - **环境踩坑**：本地有两个 pg 容器——应用实连 compose 网络的 `postgres`(postgres:15, 库 new-api, root/123456)，另一个 `new-api-xy-pg-local`(bridge, 库 new_api_dev) 与应用无关；起初误操作了后者导致改密不生效，定位后切到正确库。验证用的临时改动（tksupplier1/tkadmin 密码、渠道 base_url，及误操作容器的 test）均已逐项 SQL 还原核对，**零残留**。
+- **提交状态**：代码 `e5cb70a8` 已提交（feat/tokenki-p1a-supplier-backend 分支）+ 已本地部署 + 端到端验证通过。**未 push**（用户本次只要求「提交 + 本地部署」）。
