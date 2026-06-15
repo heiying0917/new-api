@@ -5,20 +5,20 @@ import { IconPulse, IconLayers, IconShield, IconCreditCard } from '@douyinfe/sem
 const Advantages = () => {
   const { t } = useTranslation();
   const items = [
-    { icon: <IconPulse />, title: t('订单量充足,Key 不闲置'),
-      desc: t('平台聚合全球数百家企业的真实需求,你的官方额度持续接单,稳定产生收益。') },
-    { icon: <IconLayers />, title: t('多种官方 Key 托管'),
-      desc: t('支持 Claude(Anthropic)、AWS Bedrock、OpenAI 等主流官方渠道,一处托管、统一接单。') },
-    { icon: <IconShield />, title: t('关键数据隔离加密'),
-      desc: t('官方 Key 加密存储,供应商之间严格隔离、互不可见;遵循最小可见原则。') },
-    { icon: <IconCreditCard />, title: t('多币种快速结算'),
-      desc: t('按实际消耗实时计量,成交价逐笔冻结(不受事后改价影响),支持多币种、快速回款。') },
+    { icon: <IconPulse />, title: t('订单充沛,额度不再闲置'),
+      desc: t('平台汇聚全球数百家企业的真实算力需求,你的官方 Key 持续接单、稳定运转,把沉睡的额度变成实打实的收益。') },
+    { icon: <IconLayers />, title: t('全渠道托管,自助秒级接入'),
+      desc: t('一处托管 Claude(Anthropic)、AWS Bedrock、OpenRouter、OpenAI 等主流官方渠道,自助上传、即刻生效,统一接单、集中管理。') },
+    { icon: <IconShield />, title: t('数据加密隔离,安全有保障'),
+      desc: t('官方 Key 全程密文存储,供应商之间严格隔离、互不可见,遵循最小可见原则,把每一份凭证都护在保险箱里。') },
+    { icon: <IconCreditCard />, title: t('透明计费,多币种实时结算'),
+      desc: t('按官方口径逐笔计量,成交价即时快照、明细可对账;支持多币种实时结算,收益看得见、回款不用等。') },
   ];
   return (
     <section className='landing-section'>
       <div className='landing-container'>
         <span className='landing-eyebrow'>{t('核心优势')}</span>
-        <h2 className='landing-h2'>{t('为什么把官方 Key 托管给我们')}</h2>
+        <h2 className='landing-h2'>{t('为什么把官方 Key 交给我们托管')}</h2>
         <div className='landing-grid-4'>
           {items.map((it, i) => (
             <div className='landing-card' key={i}>

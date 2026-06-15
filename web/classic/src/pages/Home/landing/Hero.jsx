@@ -1,17 +1,49 @@
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Button } from '@douyinfe/semi-ui';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { StatusContext } from '../../../context/Status';
+
+// 页面加载后数字滚动动画（0 → 目标值，easeOutCubic），支持错峰延迟
+function useCountUp(target, { duration = 1600, delay = 0 } = {}) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    let raf = null;
+    let timer = null;
+    let startTs = null;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    const tick = (ts) => {
+      if (startTs === null) startTs = ts;
+      const p = Math.min((ts - startTs) / duration, 1);
+      setVal(Math.round(target * ease(p)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    timer = setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, delay);
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [target, duration, delay]);
+  return val;
+}
+
+const fmtUSD = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+const AnimatedAmount = ({ value, delay = 0 }) => {
+  const v = useCountUp(value, { delay });
+  return <>{fmtUSD(v)}</>;
+};
 
 const Hero = () => {
   const { t } = useTranslation();
   const [statusState] = useContext(StatusContext);
 
   const fallbackStats = [
-    { value: '', label: t('数百家'), caption: t('企业客户') },
-    { value: '', label: t('持续'), caption: t('充足订单') },
-    { value: '', label: t('多币种'), caption: t('快速结算') },
+    { value: '', label: t('数百家'), caption: t('全球企业客户') },
+    { value: '', label: t('全天候'), caption: t('订单不间断') },
+    { value: '', label: t('多币种'), caption: t('实时结算') },
     { value: '', label: t('端到端'), caption: t('加密隔离') },
   ];
   let stats = fallbackStats;
@@ -31,24 +63,27 @@ const Hero = () => {
     }
   }
 
+  // 正在托管的 Key（金额以美元计，依次降低）
   const sampleRows = [
-    { name: 'Claude (Anthropic)', masked: 'sk-ant-••••', amount: '¥ 12,480' },
-    { name: 'AWS Bedrock', masked: 'AKIA••••', amount: '¥ 8,920' },
-    { name: 'OpenAI', masked: 'sk-••••', amount: '¥ 6,310' },
+    { name: 'Claude (Anthropic)', masked: 'sk-ant-••••', amount: 8247360 },
+    { name: 'AWS Bedrock', masked: 'AKIA••••', amount: 4612980 },
+    { name: 'OpenRouter', masked: 'sk-or-••••', amount: 1358420 },
+    { name: 'OpenAI', masked: 'sk-••••', amount: 842170 },
   ];
+  const total = sampleRows.reduce((sum, r) => sum + r.amount, 0);
 
   return (
     <section className='landing-hero'>
       <div className='landing-hero__bg' aria-hidden='true' />
       <div className='landing-container landing-hero__grid'>
         <div className='landing-hero__copy'>
-          <span className='landing-eyebrow'>{t('面向供应商 · 官方额度变现')}</span>
+          <span className='landing-eyebrow'>{t('企业级官 Key 托管平台')}</span>
           <h1 className='landing-hero__title'>
-            {t('托管你的官方 Key,接入全球订单')}
+            {t('专业的官 Key 托管平台,一键接入全球 AI 算力市场')}
           </h1>
           <p className='landing-hero__sub'>
             {t(
-              '我们为全球数百家企业稳定供应 AI 大模型 token,订单量充足。把你闲置的 Claude / AWS / OpenAI 官方额度托管给我们——安全隔离、实时计量、多币种快速结算。',
+              'TokenKi 平台为全球数百家企业提供稳定 AI 算力,支持 Claude、AWS、OpenRouter、OpenAI 等官 Key 托管。一键上传,加密存储,透明计费,多币种实时结算,让每一位供应商都能获得高额收益。',
             )}
           </p>
           <div className='landing-hero__cta'>
@@ -72,23 +107,26 @@ const Hero = () => {
             ))}
           </div>
         </div>
-        <div className='landing-panel' role='img' aria-label={t('收益示意')}>
+        <div className='landing-panel' role='img' aria-label={t('已托管的官 Key')}>
           <div className='landing-panel__head'>
-            <span>{t('我的托管渠道')}</span>
-            <span className='landing-panel__badge'>{t('示意')}</span>
+            <span>{t('已托管的官 Key')}</span>
           </div>
-          {sampleRows.map((r) => (
+          {sampleRows.map((r, i) => (
             <div className='landing-panel__row' key={r.name}>
               <div className='landing-panel__name'>
                 <div>{r.name}</div>
                 <div className='landing-panel__mask'>{r.masked} · {t('已加密')}</div>
               </div>
-              <div className='landing-panel__amt'>{r.amount}</div>
+              <div className='landing-panel__amt'>
+                <AnimatedAmount value={r.amount} delay={i * 140} />
+              </div>
             </div>
           ))}
           <div className='landing-panel__total'>
-            <span>{t('本周期累计收益(示意)')}</span>
-            <span className='landing-panel__total-amt'>¥ 27,710</span>
+            <span>{t('累计托管收益')}</span>
+            <span className='landing-panel__total-amt'>
+              <AnimatedAmount value={total} delay={sampleRows.length * 140} />
+            </span>
           </div>
         </div>
       </div>

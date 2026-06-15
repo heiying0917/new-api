@@ -279,6 +279,8 @@ body[theme-mode='dark'] .landing-panel__row {
   font-weight: 700;
   color: var(--semi-color-text-0);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
 /* 面板底部累计 */
@@ -298,6 +300,8 @@ body[theme-mode='dark'] .landing-panel__row {
   font-size: 23px;
   font-weight: 800;
   letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
   background: var(--landing-grad);
   -webkit-background-clip: text;
   background-clip: text;

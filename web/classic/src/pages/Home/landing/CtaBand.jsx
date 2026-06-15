@@ -9,7 +9,7 @@ const CtaBand = () => {
     <section className='landing-ctaband'>
       <div className='landing-container landing-ctaband__inner'>
         <h2 className='landing-ctaband__title'>
-          {t('现在就开始托管,让你的官方额度产生稳定收益')}
+          {t('立即托管你的官方 Key,让闲置额度转化为稳定收入')}
         </h2>
         <Link to='/register'>
           <Button theme='solid' type='primary' size='large' className='!rounded-xl px-8'>
