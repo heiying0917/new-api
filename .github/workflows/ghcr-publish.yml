@@ -1,7 +1,12 @@
 name: Publish Docker image (GHCR for TKE)
 
 # 推 ghcr.io/heiying0917/tokenki:<tag>，供 TKE 集群拉取。
-# 与 docker-build.yml（推 dockerhub calciumion/new-api）并存，互不影响。
+# 与 docker-build.yml（推 dockerhub calciumion/new-api，multi-arch）并存，互不影响。
+#
+# 架构：只打 linux/amd64
+#   - TKE 节点全是 x86_64，不需要 arm64
+#   - arm64 在 ubuntu-latest 上要 qemu 模拟，编译 Go + 前端 build 慢 3-5 倍（实测 15 分钟 vs 5 分钟）
+#   - 本地 Mac arm64 开发用 docker-compose.dev.yml 本地 build，不依赖 GHCR
 #
 # 触发：
 #   - push tag v*（vYYYY.MM.DD.N）
@@ -45,9 +50,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
+      # 注：只打 amd64 不需要 QEMU（amd64 是 runner 原生架构）
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -58,12 +61,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push (linux/amd64 + linux/arm64)
+      - name: Build & push (linux/amd64)
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.value }}
