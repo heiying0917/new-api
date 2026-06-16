@@ -30,7 +30,7 @@ spec:
       terminationGracePeriodSeconds: 3660
       containers:
       - name: tokenki-api
-        image: ghcr.io/heiying0917/tokenki:placeholder
+        image: ghcr.io/heiying0917/tokenki:v2026.06.16.1
         ports:
         - containerPort: 3000
         envFrom:
