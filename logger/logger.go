@@ -95,19 +95,22 @@ func LogDebug(ctx context.Context, msg string, args ...any) {
 }
 
 func logHelper(ctx context.Context, level string, msg string) {
-	var id any = "SYSTEM"
+	requestID := ""
 	if ctx != nil {
-		if requestID := ctx.Value(common.RequestIdKey); requestID != nil {
-			id = requestID
+		if v := ctx.Value(common.RequestIdKey); v != nil {
+			requestID = fmt.Sprintf("%v", v)
 		}
 	}
-	now := time.Now()
 	common.LogWriterMu.RLock()
 	writer := gin.DefaultErrorWriter
 	if level == loggerINFO {
 		writer = gin.DefaultWriter
 	}
-	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
+	common.WriteJSONLog(writer, common.LogEntry{
+		Level:     common.NormalizeLogLevel(level),
+		RequestID: requestID,
+		Msg:       msg,
+	})
 	common.LogWriterMu.RUnlock()
 	logCount++ // we don't need accurate count, so no lock here
 	if logCount > maxLogCount && !setupLogWorking {

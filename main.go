@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -160,7 +159,7 @@ func main() {
 
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		gopool.Go(func() {
-			log.Println(http.ListenAndServe("0.0.0.0:8005", nil))
+			common.SysError(fmt.Sprintf("pprof server stopped: %v", http.ListenAndServe("0.0.0.0:8005", nil)))
 		})
 		go common.Monitor()
 		common.SysLog("pprof enabled")

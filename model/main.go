@@ -134,6 +134,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 				PreferSimpleProtocol: true, // disables implicit prepared statement usage
 			}), &gorm.Config{
 				PrepareStmt: true, // precompile SQL
+				Logger:      NewJSONGormLogger(),
 			})
 		}
 		if strings.HasPrefix(dsn, "local") {
@@ -145,6 +146,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 			}
 			return gorm.Open(sqlite.Open(common.SQLitePath), &gorm.Config{
 				PrepareStmt: true, // precompile SQL
+				Logger:      NewJSONGormLogger(),
 			})
 		}
 		// Use MySQL
@@ -164,6 +166,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 		}
 		return gorm.Open(mysql.Open(dsn), &gorm.Config{
 			PrepareStmt: true, // precompile SQL
+			Logger:      NewJSONGormLogger(),
 		})
 	}
 	// Use SQLite
@@ -171,6 +174,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 	common.UsingSQLite = true
 	return gorm.Open(sqlite.Open(common.SQLitePath), &gorm.Config{
 		PrepareStmt: true, // precompile SQL
+		Logger:      NewJSONGormLogger(),
 	})
 }
 

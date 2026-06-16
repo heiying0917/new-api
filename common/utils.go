@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"math/big"
 	"math/rand"
 	"net"
@@ -35,14 +34,14 @@ func OpenBrowser(url string) {
 		err = exec.Command("open", url).Start()
 	}
 	if err != nil {
-		log.Println(err)
+		SysError(err.Error())
 	}
 }
 
 func GetIp() (ip string) {
 	ips, err := net.InterfaceAddrs()
 	if err != nil {
-		log.Println(err)
+		SysError(err.Error())
 		return ip
 	}
 
@@ -70,7 +69,7 @@ func GetNetworkIps() []string {
 	var networkIps []string
 	ips, err := net.InterfaceAddrs()
 	if err != nil {
-		log.Println(err)
+		SysError(err.Error())
 		return networkIps
 	}
 

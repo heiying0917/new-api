@@ -14,28 +14,32 @@ import (
 // acquire Lock when swapping writers and closing old files.
 var LogWriterMu sync.RWMutex
 
+// SysLog 系统级 info 日志（无 context / 无 request_id）。
+// 输出统一 NDJSON 走 gin.DefaultWriter，便于 CLS 按 service:tokenki 字段过滤。
 func SysLog(s string) {
-	t := time.Now()
 	LogWriterMu.RLock()
-	_, _ = fmt.Fprintf(gin.DefaultWriter, "[SYS] %v | %s \n", t.Format("2006/01/02 - 15:04:05"), s)
+	WriteJSONLog(gin.DefaultWriter, LogEntry{Level: "info", Msg: s})
 	LogWriterMu.RUnlock()
 }
 
+// SysError 系统级 error 日志。输出统一 NDJSON 走 gin.DefaultErrorWriter。
 func SysError(s string) {
-	t := time.Now()
 	LogWriterMu.RLock()
-	_, _ = fmt.Fprintf(gin.DefaultErrorWriter, "[SYS] %v | %s \n", t.Format("2006/01/02 - 15:04:05"), s)
+	WriteJSONLog(gin.DefaultErrorWriter, LogEntry{Level: "error", Msg: s})
 	LogWriterMu.RUnlock()
 }
 
+// FatalLog 输出 fatal 级别 NDJSON 后 os.Exit(1)。用于启动失败等不可恢复错误。
 func FatalLog(v ...any) {
-	t := time.Now()
 	LogWriterMu.RLock()
-	_, _ = fmt.Fprintf(gin.DefaultErrorWriter, "[FATAL] %v | %v \n", t.Format("2006/01/02 - 15:04:05"), v)
+	WriteJSONLog(gin.DefaultErrorWriter, LogEntry{Level: "fatal", Msg: fmt.Sprint(v...)})
 	LogWriterMu.RUnlock()
 	os.Exit(1)
 }
 
+// LogStartupSuccess 启动成功提示。保留 ANSI 彩色文本格式——这是 console 友好输出而非
+// 结构化日志，CLS 全文索引仍能采集到。不走 WriteJSONLog 是为了保持 vite/rsbuild 风格的
+// 启动横幅观感。
 func LogStartupSuccess(startTime time.Time, port string) {
 	duration := time.Since(startTime)
 	durationMs := duration.Milliseconds()
