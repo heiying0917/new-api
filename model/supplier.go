@@ -2,8 +2,8 @@ package model
 
 import (
 	"errors"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -60,6 +60,7 @@ type SupplierListItem struct {
 	SettlementCycle string `json:"settlement_cycle"`
 	Remark          string `json:"remark"`
 	PendingCNY      float64 `json:"pending_cny"` // 待结算应付人民币 = GetSupplierPendingStat.PayableCNY
+	PendingUsd      float64 `json:"pending_usd"` // 待结算官方价($) = GetSupplierPendingStat.OfficialUsd
 	SettledCNY      float64 `json:"settled_cny"` // 已结算人民币总额 = Σ settled settlements.computed_cny
 }
 
@@ -126,16 +127,91 @@ func CascadeSupplierBySupplierId(supplierId int) error {
 		Update("enabled", enabledCount > 0).Error
 }
 
-func GetAllSuppliers(startIdx, num int) ([]*SupplierListItem, int64, error) {
-	return querySuppliers("", startIdx, num)
+func GetAllSuppliers(startIdx, num int, sortBy, sortOrder string) ([]*SupplierListItem, int64, error) {
+	return querySuppliers("", startIdx, num, sortBy, sortOrder)
 }
 
-func SearchSuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int64, error) {
-	return querySuppliers(keyword, startIdx, num)
+func SearchSuppliers(keyword string, startIdx, num int, sortBy, sortOrder string) ([]*SupplierListItem, int64, error) {
+	return querySuppliers(keyword, startIdx, num, sortBy, sortOrder)
 }
 
-// querySuppliers 查 role=supplier 的 User（分页），再批量合并 Supplier 资料（避免跨库 JOIN）。
-func querySuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int64, error) {
+// querySuppliers 查 role=supplier 的 User，再批量合并 Supplier 资料 + 待结算/已结算统计（避免跨库 JOIN）。
+//
+// 排序语义：
+//   - sortBy 空 / "id"：DB `id desc` + DB 分页（原行为）。
+//   - sortBy ∈ {priority, pending_cny, pending_usd, settled_cny}（计算列，资料/统计均不在 users 表）：
+//     取全量匹配集 → 统一填充资料(priority)与 pending/settled → 内存 sort.Slice 按方向排序 → 内存分页。
+//     注：priority 存于 suppliers 表(非 users 列)，故不能在 users 查询上 ORDER BY priority。
+func querySuppliers(keyword string, startIdx, num int, sortBy, sortOrder string) ([]*SupplierListItem, int64, error) {
+	dir := "desc"
+	if sortOrder == "asc" {
+		dir = "asc"
+	}
+	computed := sortBy == "priority" || sortBy == "pending_cny" || sortBy == "pending_usd" || sortBy == "settled_cny"
+
+	if !computed {
+		order := "id desc"
+		// DB 分页：只取本页用户，再补本页的资料 + 统计。
+		users, total, err := pagedSupplierUsers(keyword, startIdx, num, order)
+		if err != nil {
+			return nil, 0, err
+		}
+		items, err := buildSupplierItems(users)
+		if err != nil {
+			return nil, 0, err
+		}
+		if err := fillSupplierStats(items); err != nil {
+			return nil, 0, err
+		}
+		return items, total, nil
+	}
+
+	// 计算列：取全量匹配集 → 补资料 + 统计 → 内存排序 → 内存分页。
+	users, total, err := pagedSupplierUsers(keyword, 0, -1, "id desc")
+	if err != nil {
+		return nil, 0, err
+	}
+	all, err := buildSupplierItems(users)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := fillSupplierStats(all); err != nil {
+		return nil, 0, err
+	}
+	asc := dir == "asc"
+	sort.Slice(all, func(i, j int) bool {
+		var a, b float64
+		switch sortBy {
+		case "priority":
+			a, b = float64(all[i].Priority), float64(all[j].Priority)
+		case "pending_usd":
+			a, b = all[i].PendingUsd, all[j].PendingUsd
+		case "settled_cny":
+			a, b = all[i].SettledCNY, all[j].SettledCNY
+		default: // pending_cny
+			a, b = all[i].PendingCNY, all[j].PendingCNY
+		}
+		if asc {
+			return a < b
+		}
+		return a > b
+	})
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > len(all) {
+		startIdx = len(all)
+	}
+	end := startIdx + num
+	if num < 0 || end > len(all) {
+		end = len(all)
+	}
+	return all[startIdx:end], total, nil
+}
+
+// pagedSupplierUsers 查 role=supplier 的 User（可选关键词、可选分页）。
+// num < 0 表示不分页（取全量）。返回用户切片与总数。
+func pagedSupplierUsers(keyword string, startIdx, num int, order string) ([]User, int64, error) {
 	q := DB.Model(&User{}).Where("role = ?", common.RoleSupplierUser)
 	if keyword != "" {
 		like := "%" + keyword + "%"
@@ -145,10 +221,19 @@ func querySuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	q = q.Order(order).Omit("password")
+	if num >= 0 {
+		q = q.Limit(num).Offset(startIdx)
+	}
 	var users []User
-	if err := q.Order("id desc").Limit(num).Offset(startIdx).Omit("password").Find(&users).Error; err != nil {
+	if err := q.Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
+	return users, total, nil
+}
+
+// buildSupplierItems 把 User 切片合并 Supplier 资料，构造列表项（不含统计字段）。
+func buildSupplierItems(users []User) ([]*SupplierListItem, error) {
 	ids := make([]int, 0, len(users))
 	for _, u := range users {
 		ids = append(ids, u.Id)
@@ -157,7 +242,7 @@ func querySuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int
 	if len(ids) > 0 {
 		var ss []Supplier
 		if err := DB.Where("user_id IN ?", ids).Find(&ss).Error; err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		for _, s := range ss {
 			profiles[s.UserId] = s
@@ -179,20 +264,29 @@ func querySuppliers(keyword string, startIdx, num int) ([]*SupplierListItem, int
 		}
 		items = append(items, it)
 	}
-	// 回填每个供应商的待结算应付(PendingCNY)与已结算总额(SettledCNY)。
-	// 列表页规模小，逐个查询可接受（复用既有聚合函数，避免跨库 JOIN）。
-	now := time.Now().Unix()
-	for _, it := range items {
-		pending, err := GetSupplierPendingStat(it.UserId)
-		if err != nil {
-			return nil, 0, err
-		}
-		it.PendingCNY = pending.PayableCNY
-		settled, err := GetSupplierSettledStats(it.UserId, now)
-		if err != nil {
-			return nil, 0, err
-		}
-		it.SettledCNY = settled.Total
+	return items, nil
+}
+
+// fillSupplierStats 一次性回填每个供应商的待结算(PendingCNY/PendingUsd)与已结算(SettledCNY)。
+// 用全量聚合 map（GetAllSuppliersPendingStat/GetAllSuppliersSettledTotal）一次填充，避免 N 次单查。
+func fillSupplierStats(items []*SupplierListItem) error {
+	if len(items) == 0 {
+		return nil
 	}
-	return items, total, nil
+	perSupplier, _, err := GetAllSuppliersPendingStat()
+	if err != nil {
+		return err
+	}
+	settledTotal, err := GetAllSuppliersSettledTotal()
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if p, ok := perSupplier[it.UserId]; ok {
+			it.PendingCNY = p.PayableCNY
+			it.PendingUsd = p.OfficialUsd
+		}
+		it.SettledCNY = settledTotal[it.UserId]
+	}
+	return nil
 }

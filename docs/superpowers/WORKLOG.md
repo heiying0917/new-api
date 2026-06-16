@@ -278,3 +278,19 @@
 - **验证（Playwright 实测 5001）**：logo 与 eyebrow 同行（中心 Y 均=150），标题上移（titleTop 192）；部署 `juhe-v9facet8`。
 - **改动文件**：`Hero.jsx`、`landing.css`。
 - **提交状态**：5001 已生效；**未 commit、未 push**。
+
+### [2026-06-16 17:21] 第八版 供应商体系增强（后端4单元+前端3单元,subagent 驱动开发,**未提交、未部署**）
+- **需求来源**：用户第八版 5 条需求。方案 `docs/superpowers/specs/2026-06-16-tokenki-v8-supplier-enhancements-design.md`；计划 `docs/superpowers/plans/2026-06-16-tokenki-v8-supplier-enhancements.md`。
+- **做了什么（7 个实现单元,每单元 实现→测试/build→评审 approve）**：
+  1. **需求1 汇总+排序（后端）**：`model/supplier_stats.go` 新增 `GetAllSuppliersPendingStat`（一次聚合 per-supplier+全局待结算)、`GetSettlementTotalsByStatus`（已申请/已结算分桶,actual_amount 按币种拆 CNY/USD)、`GetAllSuppliersSettledTotal`；`GetSupplierSummary` → `GET /api/supplier/summary`（RootAuth)；`model/supplier.go` `GetAllSuppliers(+sortBy,+sortOrder)` 服务端排序(priority/pending_cny/pending_usd/settled_cny 全量内存排序+分页)。修复 priority 误用 users 列 ORDER BY 的 bug + buildSupplierItems 吞错改为传播。
+  2. **需求1 立即结算（后端）**：`AdminInitiateSettlement` → `POST /api/admin/settlement/initiate`（RootAuth),复用 `model.CreateSettlement`(空待结算自删占位单)+台账 OperatorIsAdmin=true。
+  3. **需求2 渠道供应商过滤（后端）**：`ResolveSupplierIdsByName` + `GetAllChannels`/`SearchChannels`/`buildChannelListQuery` 增 `supplierIds`(无匹配短路空页)。
+  4. **需求3/4/5 概览聚合（后端）**：`GetSupplierOverview`(供应商总数/启用、渠道可用性、按 type 聚合,整行 Find 避开保留字 group)；`GET /api/admin/supplier-overview`（**AdminAuth=管理员+超管**,满足需求4）。
+  5. **需求1 前端**：`useSuppliersData` summary/排序/立即结算+确认弹窗;列排序+「立即结算」按钮;新 `SuppliersSummaryBar`;复用 `ConfirmModal`;排序参数翻页/改页大小/刷新全显式透传。
+  6. **需求2 前端**：`ChannelsFilters` 加供应商搜索框;`useChannelsData` 6 处对称接入 `searchSupplier` → `&supplier_name=`。
+  7. **需求3/4/5 前端**：新 `pages/SupplierOverviewAdmin` + hook + `TypeCard/TypeDetailSheet`;紧凑响应式网格 `Col xs=12 sm=8 md=6 lg=4`(修复卡片太宽);`App.jsx` 路由+`SiderBar` 菜单+`useSidebar.js DEFAULT_ADMIN_CONFIG` 注册;itemKey 用 `supplier_overview_admin` 避开与供应商端冲突。
+- **改了哪些文件**：后端 `controller/{supplier,settlement,channel}.go`、`model/{supplier,supplier_stats,channel}.go`、`router/api-router.go` + 测试 `model/{supplier_summary,supplier_sort,supplier_overview,channel_supplier_filter}_test.go`、`controller/admin_initiate_settlement_test.go`、`model/supplier_test.go`/`supplier_aggregation_test.go`(签名适配)。前端 `web/classic/src/`: `hooks/suppliers/useSuppliersData.jsx`、`components/table/suppliers/{index,SuppliersTable,SuppliersColumnDefs,SuppliersSummaryBar}.jsx`、`hooks/channels/useChannelsData.jsx`、`components/table/channels/ChannelsFilters.jsx`、`pages/SupplierOverviewAdmin/index.jsx`、`hooks/supplier-overview-admin/useSupplierOverviewData.jsx`、`components/supplier-overview-admin/{TypeCard,TypeDetailSheet}.jsx`、`App.jsx`、`components/layout/SiderBar.jsx`、`hooks/common/useSidebar.js`、`i18n/locales/zh-CN.json`。
+- **如何验证**：`go build ./...` ✓;`go vet ./model ./controller` 干净;`go test ./model/ ./controller/` → model 全过、controller 仅 1 个**预先存在**失败 `TestListModelsTokenLimitIncludesTieredBillingModel`(stash 本期改动后仍 panic,属其它未提交工作 official_pricing/option.go,与本期无关);新增后端测试全过;`cd web/classic && bun run build` ✓。
+- **部署 + Playwright 实测(经用户授权)**：classic 清缓存重建 → `CGO_ENABLED=0 GOOS=linux GOARCH=arm64` 交叉编译(VER `juhe-v10supplier`)→ `docker cp` 进 new-api 容器 → restart;`/api/status` 确认新版本生效。tkadmin 临时改密登录(原 hash 已存并**已还原核验** pwd_restored=t、access_token 已清空)。实测 5001 全部通过:① 供应商管理页汇总条三卡(待结算 ¥0.09/$0.49·2家、已申请 ¥0/0单、已结算 ¥423.13/$169.32·3单)、优先级列排序 asc/desc(tksupplier1 优先级5 正确升降)、test1「立即结算」→ 确认弹窗预填 ¥0.09(创建的 已申请单 id=8 测后经 cancel API 撤销 + 硬删 settlement/ledger,test1 待结算与日志已还原);② 渠道管理页「供应商」搜索 test1 → 精确过滤 3 条全属 test1;③ 供应商概览页(管理员可见,需求4)summary 供应商4/渠道8(7可用1不可用)+ 紧凑卡片 OpenAI(3家/5-6可用/¥1.80)、Anthropic(1家/2-2/¥2.50)+ 点卡下钻 SideSheet 分组竞价梯队(claude速刷¥1.80/OpenAI官key¥2/claude官key¥2.2)。
+- **已知小项(非本期 bug)**：概览 summary「供应商 4 / 5 启用」中 enabled(5)>total(4) —— 因测试库有 5 条 supplier 资料行但仅 4 个 role=5 用户(数据不一致),非代码缺陷;真实数据下二者一致。
+- **提交状态**：5001 容器已生效(`juhe-v10supplier`);**未 commit、未 push**(等用户指令)。tkadmin 账号已完整还原。

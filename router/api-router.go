@@ -151,8 +151,15 @@ func SetApiRouter(router *gin.Engine) {
 		supplierAdminRoute.Use(middleware.RootAuth())
 		{
 			supplierAdminRoute.GET("/", controller.GetAllSuppliers)
+			supplierAdminRoute.GET("/summary", controller.GetSupplierSummary)
 			supplierAdminRoute.GET("/search", controller.SearchSuppliers)
 			supplierAdminRoute.PUT("/", controller.UpdateSupplier)
+		}
+
+		supplierOverviewRoute := apiRouter.Group("/admin/supplier-overview")
+		supplierOverviewRoute.Use(middleware.AdminAuth())
+		{
+			supplierOverviewRoute.GET("/", controller.GetSupplierOverviewAdmin)
 		}
 
 		supplierSelfRoute := apiRouter.Group("/supplier/channel")
@@ -196,6 +203,7 @@ func SetApiRouter(router *gin.Engine) {
 		settlementAdminRoute.Use(middleware.RootAuth())
 		{
 			settlementAdminRoute.GET("/", controller.AdminListSettlements)
+			settlementAdminRoute.POST("/initiate", controller.AdminInitiateSettlement)
 			settlementAdminRoute.GET("/:id", controller.AdminGetSettlement)
 			settlementAdminRoute.GET("/:id/logs", controller.AdminGetSettlementLogs)
 			settlementAdminRoute.GET("/:id/breakdown", controller.AdminGetSettlementBreakdown)
@@ -281,6 +289,14 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
+		}
+		officialPriceBookRoute := apiRouter.Group("/pricing/official_book")
+		officialPriceBookRoute.Use(middleware.RootAuth())
+		{
+			officialPriceBookRoute.GET("/", controller.GetOfficialPriceBook)
+			officialPriceBookRoute.POST("/refresh", controller.RefreshOfficialPriceBook)
+			officialPriceBookRoute.POST("/preview", controller.PreviewOfficialPriceFill)
+			officialPriceBookRoute.POST("/apply", controller.ApplyOfficialPriceFill)
 		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())

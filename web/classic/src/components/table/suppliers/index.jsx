@@ -22,7 +22,9 @@ import CardPro from '../../common/ui/CardPro';
 import SuppliersTable from './SuppliersTable';
 import SuppliersFilters from './SuppliersFilters';
 import SuppliersDescription from './SuppliersDescription';
+import SuppliersSummaryBar from './SuppliersSummaryBar';
 import EditSupplierModal from './modals/EditSupplierModal';
+import ConfirmModal from '../settlement-review/modals/ConfirmModal';
 import { useSuppliersData } from '../../../hooks/suppliers/useSuppliersData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -48,6 +50,13 @@ const SuppliersPage = () => {
     loading,
     searching,
 
+    // Summary + confirm
+    summary,
+    showConfirm,
+    confirmRecord,
+    confirmSettlement,
+    closeConfirm,
+
     // Description state
     compactMode,
     setCompactMode,
@@ -65,6 +74,16 @@ const SuppliersPage = () => {
         updateSupplier={updateSupplier}
         editingSupplier={editingSupplier}
       />
+
+      <ConfirmModal
+        visible={showConfirm}
+        record={confirmRecord}
+        onCancel={closeConfirm}
+        confirmSettlement={confirmSettlement}
+        t={t}
+      />
+
+      <SuppliersSummaryBar summary={summary} t={t} />
 
       <CardPro
         type='type1'
@@ -100,7 +119,10 @@ const SuppliersPage = () => {
         })}
         t={suppliersData.t}
       >
-        <SuppliersTable {...suppliersData} />
+        <SuppliersTable
+          {...suppliersData}
+          onInitiateSettlement={suppliersData.initiateSettlement}
+        />
       </CardPro>
     </>
   );

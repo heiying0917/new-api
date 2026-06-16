@@ -126,9 +126,23 @@ const renderSettlementMode = (mode, t) => {
 /**
  * Render operations column
  */
-const renderOperations = (text, record, { setEditingSupplier, setShowEditSupplier, t }) => {
+const renderOperations = (
+  text,
+  record,
+  { setEditingSupplier, setShowEditSupplier, onInitiateSettlement, t },
+) => {
   return (
     <Space>
+      {onInitiateSettlement ? (
+        <Button
+          type='primary'
+          theme='light'
+          size='small'
+          onClick={() => onInitiateSettlement(record)}
+        >
+          {t('立即结算')}
+        </Button>
+      ) : null}
       <Button
         type='tertiary'
         size='small'
@@ -151,6 +165,7 @@ export const getSuppliersColumns = ({
   onNavigateSettlement,
   setEditingSupplier,
   setShowEditSupplier,
+  onInitiateSettlement,
 }) => {
   return [
     {
@@ -172,6 +187,7 @@ export const getSuppliersColumns = ({
     {
       title: t('优先级'),
       dataIndex: 'priority',
+      sorter: true,
       render: (text) => <span>{text ?? 0}</span>,
     },
     {
@@ -182,6 +198,7 @@ export const getSuppliersColumns = ({
     {
       title: t('待结算'),
       dataIndex: 'pending_cny',
+      sorter: true,
       render: (text) => (
         <Text type='warning'>{formatCny(text)}</Text>
       ),
@@ -189,6 +206,7 @@ export const getSuppliersColumns = ({
     {
       title: t('已结算'),
       dataIndex: 'settled_cny',
+      sorter: true,
       render: (text) => (
         <Text type='success'>{formatCny(text)}</Text>
       ),
@@ -202,11 +220,12 @@ export const getSuppliersColumns = ({
       title: '',
       dataIndex: 'operate',
       fixed: 'right',
-      width: 100,
+      width: 160,
       render: (text, record) =>
         renderOperations(text, record, {
           setEditingSupplier,
           setShowEditSupplier,
+          onInitiateSettlement,
           t,
         }),
     },

@@ -112,12 +112,16 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	return query
 }
 
-func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
+// buildChannelListQuery 构造渠道列表基础查询。supplierIds 非空时按供应商 user_id 过滤(供应商名模糊搜索用)。
+func buildChannelListQuery(group string, statusFilter int, typeFilter int, supplierIds []int) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
+	}
+	if len(supplierIds) > 0 {
+		query = query.Where("supplier_id IN ?", supplierIds)
 	}
 	return query
 }
@@ -141,16 +145,37 @@ func GetAllChannels(c *gin.Context) {
 		}
 	}
 
+	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
+	var supplierIds []int
+	if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		ids, err := model.ResolveSupplierIdsByName(supplierName)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			common.ApiSuccess(c, gin.H{
+				"items":       []any{},
+				"total":       0,
+				"page":        pageInfo.GetPage(),
+				"page_size":   pageInfo.GetPageSize(),
+				"type_counts": gin.H{},
+			})
+			return
+		}
+		supplierIds = ids
+	}
+
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter))
+		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -161,7 +186,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -172,13 +197,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -195,7 +220,7 @@ func GetAllChannels(c *gin.Context) {
 	}
 	backfillChannelSupplierNames(channelData)
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
+	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, supplierIds)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -300,6 +325,30 @@ func SearchChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+
+	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
+	var supplierIds []int
+	if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		ids, err := model.ResolveSupplierIdsByName(supplierName)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "",
+				"data": gin.H{
+					"items":       []any{},
+					"total":       0,
+					"type_counts": gin.H{},
+				},
+			})
+			return
+		}
+		supplierIds = ids
+	}
+
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
 		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
@@ -313,7 +362,7 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1).Where("tag = ?", *tag)).
+				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1, supplierIds).Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -327,7 +376,7 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, sortOptions)
+		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, supplierIds, sortOptions)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,

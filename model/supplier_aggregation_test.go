@@ -64,7 +64,7 @@ func TestQuerySuppliers_PendingAndSettled(t *testing.T) {
 	// Applied (not settled) excluded.
 	require.NoError(t, DB.Create(&Settlement{SupplierId: u.Id, Status: SettlementStatusApplied, ComputedCNY: 100}).Error)
 
-	items, total, err := GetAllSuppliers(0, 20)
+	items, total, err := GetAllSuppliers(0, 20, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, items, 1)

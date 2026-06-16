@@ -273,6 +273,37 @@ func AdminConfirmSettlement(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+type adminInitiateReq struct {
+	SupplierId int `json:"supplier_id"`
+}
+
+// AdminInitiateSettlement 管理员为指定供应商立即发起结算单(status=已申请)，返回新单供前端打开确认弹窗。
+func AdminInitiateSettlement(c *gin.Context) {
+	var req adminInitiateReq
+	if err := c.ShouldBindJSON(&req); err != nil || req.SupplierId <= 0 {
+		common.ApiErrorMsg(c, "invalid supplier_id")
+		return
+	}
+	// 校验目标是供应商
+	u, err := model.GetUserById(req.SupplierId, false)
+	if err != nil || u == nil || u.Role != common.RoleSupplierUser {
+		common.ApiErrorMsg(c, "目标不是供应商")
+		return
+	}
+	s, err := model.CreateSettlement(req.SupplierId, "manual", common.GetTimestamp())
+	if err != nil {
+		common.ApiError(c, err) // 含「无待结算消费」错误透传
+		return
+	}
+	model.RecordSettlementLedger(&model.SettlementLedger{
+		SettlementId: s.Id, SupplierId: s.SupplierId, Action: "create",
+		OfficialUsd: s.OfficialUsd, ComputedCNY: s.ComputedCNY,
+		OperatorId: c.GetInt("id"), OperatorIsAdmin: true,
+		SnapshotHash: model.SettlementSnapshotHash(s),
+	})
+	common.ApiSuccess(c, s)
+}
+
 // AdminCancelSettlement cancels any applied settlement regardless of owner.
 func AdminCancelSettlement(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
