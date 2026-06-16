@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,31 @@ func AllOption() ([]*Option, error) {
 	var err error
 	err = DB.Find(&options).Error
 	return options, err
+}
+
+// GetRawOptionValue reads a single option value straight from the options table
+// without touching the in-memory OptionMap. Use for large cached blobs (e.g.
+// the official price book) that must NOT be shipped to the frontend by
+// GetOptions. Returns ("", nil) when the key does not exist.
+func GetRawOptionValue(key string) (string, error) {
+	var option Option
+	err := DB.Where("key = ?", key).First(&option).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return option.Value, nil
+}
+
+// SaveRawOption upserts an option value directly into the options table without
+// updating OptionMap (counterpart to GetRawOptionValue).
+func SaveRawOption(key string, value string) error {
+	option := Option{Key: key}
+	DB.FirstOrCreate(&option, Option{Key: key})
+	option.Value = value
+	return DB.Save(&option).Error
 }
 
 func InitOptionMap() {
