@@ -243,9 +243,25 @@ git push origin <tag>        # 推 tag → 触发 GitHub Actions 镜像构建
 ```bash
 gh run list -R heiying0917/new-api -L 5
 gh run watch <run-id> -R heiying0917/new-api --exit-status   # 阻塞到完成；失败则终止发版并报告
+
+# ⚠️ 二次校验（必做）：gh run watch 遇到 GitHub API 502 时会无重试 exit 0 假装成功
+# 必须用 gh run view JSON 状态确认 status=completed AND conclusion=success
+for i in {1..30}; do
+  STATUS=$(gh run view <run-id> -R heiying0917/new-api --json status,conclusion \
+    --jq '.status + "/" + (.conclusion // "null")' 2>/dev/null)
+  echo "[$i/30] $STATUS"
+  [[ "$STATUS" == "completed/success" ]] && break
+  [[ "$STATUS" == completed/* ]] && { echo "❌ 非 success: $STATUS"; exit 1; }
+  sleep 10
+done
 ```
 
-取最近一次由该 tag 触发的 `Publish Docker image (GHCR for TKE)` workflow。构建失败 → 停止，不部署。平均约 8 分钟。
+取最近一次由该 tag 触发的 `Publish Docker image (GHCR for TKE)` workflow。构建失败 → 停止，不部署。
+amd64-only 后平均约 5 分钟（multi-arch 是 25 分钟）。
+
+**关键 SOP**：watch + 二次校验**必须都成功**才进 Phase 3。watch exit 0 单独不能证明 build 完成——
+2026-06-16 v2026.06.16.3 发版踩过坑：watch 因 502 假退出，我提前进了 P3，幸运的是镜像那时已 push
+完成，pod 拉得到；如果 build 早期失败，pod 会 ImagePullBackOff 服务挂掉。
 
 **完成后**输出进度面板（P1 ✅，P2 ✅，P3 🔄，其余 ⬜）。
 
@@ -683,7 +699,7 @@ print(d["AnalysisResults"][0]["Data"][0]["Value"] if d.get("AnalysisResults") el
 | 有未提交改动就打 tag | Phase 2 强制检查工作区干净，否则中止 |
 | 本地 commit 未 push 就打 tag | Phase 2 自动 push main 后再打 tag |
 | 合并 main 产生冲突自行处理 | 不确定的冲突立即停止，把冲突段落列给用户确认解法 |
-| 未等 GitHub Actions 完成就部署 | 等 `gh run watch` 输出成功才执行 Phase 3 |
+| 未等 GitHub Actions 完成就部署 | watch 输出 + `gh run view --json status,conclusion` 二次校验都 success 才进 P3——watch 遇 502 会假 exit 0 |
 | slave 先于 master 回滚 | 回滚顺序：先 slave → 再 master（与滚动顺序相反） |
 | 健康检查只看 HTTP 200 | tokenki `/api/status` 必须额外验证 body 含 `success: true` |
 | Phase 4 跳过冒烟测试 | 必做。用 `AskUserQuestion` 主动索要测试 token |
