@@ -27,7 +27,7 @@ import { useSupplierSettlementsData } from '../../../hooks/supplier-settlements/
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 function SupplierSettlementsPage() {
   const data = useSupplierSettlementsData();
@@ -42,6 +42,7 @@ function SupplierSettlementsPage() {
     applySettlement,
     cancelSettlement,
     getDetail,
+    getPendingAmount,
     getBreakdown,
     getSettlementLogs,
     exportSettlement,
@@ -77,17 +78,55 @@ function SupplierSettlementsPage() {
     [exportSettlement],
   );
 
-  const handleApply = useCallback(() => {
+  const handleApply = useCallback(async () => {
+    const pending = await getPendingAmount();
+    if (!pending) {
+      return;
+    }
+
+    const payableCny = Number(pending.payable_cny || 0);
+    const officialUsd = Number(pending.official_usd || 0);
+    const logCount = Number(pending.log_count || 0);
+    const nothingToSettle = logCount <= 0 || payableCny <= 0;
+
     Modal.confirm({
       title: t('确定申请结算？'),
-      content: t(
-        '申请结算将把当前所有待结算的用量快照为一笔新的待审核结算，提交后当前待结算计费将清零。',
+      content: (
+        <div className='flex flex-col gap-2'>
+          {nothingToSettle ? (
+            <Text type='tertiary'>{t('当前没有可结算的消费')}</Text>
+          ) : (
+            <>
+              <div>
+                <Text strong style={{ fontSize: 18 }}>
+                  {t('当前应结算金额：')}
+                </Text>
+                <Text strong type='success' style={{ fontSize: 22 }}>
+                  ¥{payableCny.toFixed(2)}
+                </Text>
+              </div>
+              <Text type='tertiary' size='small'>
+                {t('官方价')} ${officialUsd.toFixed(2)} · {t('共')} {logCount}{' '}
+                {t('条待结算')}
+              </Text>
+            </>
+          )}
+          <Text type='tertiary' size='small'>
+            {t(
+              '申请结算将把当前所有待结算的用量快照为一笔新的待审核结算，提交后当前待结算计费将清零。',
+            )}
+          </Text>
+        </div>
       ),
+      okButtonProps: { disabled: nothingToSettle },
       onOk: () => {
+        if (nothingToSettle) {
+          return;
+        }
         applySettlement();
       },
     });
-  }, [applySettlement, t]);
+  }, [applySettlement, getPendingAmount, t]);
 
   return (
     <>

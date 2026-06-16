@@ -831,6 +831,29 @@ export const getLogsColumns = ({
       },
     },
     {
+      key: COLUMN_KEYS.PAYABLE,
+      // 供应商视角是「应收」，管理员视角是「应付（给供应商）」，金额一致。
+      title: isSupplierUser ? t('应收(¥)') : t('应付(¥)'),
+      dataIndex: 'cost_price_snapshot',
+      render: (text, record) => {
+        // 应付供应商 = 该请求官方价(USD) × 成交时冻结的渠道成本价(¥/$)。
+        // 非供应商渠道、非消费日志或改造前旧日志的 snapshot 为 0 → 统一显示「-」。
+        const officialUsd = Number(record.official_usd) || 0;
+        const costPrice = Number(record.cost_price_snapshot) || 0;
+        const payable = officialUsd * costPrice;
+        if (!(payable > 0)) {
+          return <span style={{ color: 'var(--semi-color-text-2)' }}>-</span>;
+        }
+        return (
+          <Tooltip
+            content={`${t('官方价')} $${officialUsd.toFixed(4)} × ${t('成本价')} ¥${costPrice}/$ = ¥${payable.toFixed(2)}`}
+          >
+            <span>¥{payable.toFixed(2)}</span>
+          </Tooltip>
+        );
+      },
+    },
+    {
       key: COLUMN_KEYS.IP,
       title: (
         <div className='flex items-center gap-1'>

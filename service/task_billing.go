@@ -59,6 +59,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		TokenId:   info.TokenId,
 		Group:     info.UsingGroup,
 		Other:     other,
+		// 供应商应付：任务按额度/按次计费，无 token 拆分，从已含分组倍率的 Quota 反推官方价美元。
+		OfficialUsd: OfficialUsdFromQuota(info.PriceData.Quota, info.PriceData.GroupRatioInfo.GroupRatio),
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)

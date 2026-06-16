@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
   Modal,
   Button,
@@ -56,6 +57,7 @@ const SecureVerificationModal = ({
   description,
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isAnimating, setIsAnimating] = useState(false);
   const [verifySuccess, setVerifySuccess] = useState(false);
 
@@ -87,7 +89,23 @@ const SecureVerificationModal = ({
         title={title || t('安全验证')}
         visible={visible}
         onCancel={onCancel}
-        footer={<Button onClick={onCancel}>{t('确定')}</Button>}
+        footer={
+          <div
+            style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}
+          >
+            <Button onClick={onCancel}>{t('取消')}</Button>
+            <Button
+              theme='solid'
+              type='primary'
+              onClick={() => {
+                onCancel?.();
+                navigate('/console/personal?tab=security');
+              }}
+            >
+              {t('去设置 2FA')}
+            </Button>
+          </div>
+        }
         width={500}
         style={{ maxWidth: '90vw' }}
       >

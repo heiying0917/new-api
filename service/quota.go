@@ -252,6 +252,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
+		// 供应商应付：实时流按音频额度计费，从已含分组倍率的 quota 反推官方价美元。
+		OfficialUsd: OfficialUsdFromQuota(quota, groupRatio),
 	})
 }
 
@@ -373,6 +375,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
+		// 供应商应付：音频按音频额度计费，从已含分组倍率的 quota 反推官方价美元。
+		OfficialUsd: OfficialUsdFromQuota(quota, groupRatio),
 	})
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))

@@ -60,6 +60,8 @@ export const useLogsData = () => {
     PROMPT: 'prompt',
     COMPLETION: 'completion',
     COST: 'cost',
+    // 应付供应商 = 官方价(USD) × 渠道冻结成本价(¥/$)，仅管理员与供应商可见
+    PAYABLE: 'payable',
     RETRY: 'retry',
     IP: 'ip',
     DETAILS: 'details',
@@ -131,6 +133,8 @@ export const useLogsData = () => {
       [COLUMN_KEYS.PROMPT]: true,
       [COLUMN_KEYS.COMPLETION]: true,
       [COLUMN_KEYS.COST]: true,
+      // 应付/应收（供应商成本）仅管理员与供应商默认可见，普通终端用户不可见
+      [COLUMN_KEYS.PAYABLE]: isAdminUser || isSupplierUser,
       [COLUMN_KEYS.RETRY]: isAdminUser,
       // IP is the consumer's IP — hide it from suppliers.
       [COLUMN_KEYS.IP]: !isSupplierUser,
@@ -161,6 +165,8 @@ export const useLogsData = () => {
         merged[COLUMN_KEYS.CHANNEL] = false;
         merged[COLUMN_KEYS.USERNAME] = false;
         merged[COLUMN_KEYS.RETRY] = false;
+        // 普通终端用户不得看到供应商成本（应付）
+        merged[COLUMN_KEYS.PAYABLE] = false;
       }
 
       return merged;
@@ -238,7 +244,8 @@ export const useLogsData = () => {
       } else if (
         (key === COLUMN_KEYS.CHANNEL ||
           key === COLUMN_KEYS.USERNAME ||
-          key === COLUMN_KEYS.RETRY) &&
+          key === COLUMN_KEYS.RETRY ||
+          key === COLUMN_KEYS.PAYABLE) &&
         !isAdminUser
       ) {
         updatedColumns[key] = false;

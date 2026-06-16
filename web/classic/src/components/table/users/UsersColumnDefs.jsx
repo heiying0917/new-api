@@ -244,16 +244,21 @@ const renderOperations = (
       name: t('解锁登录'),
       onClick: () => unlockUser(record),
     },
-    {
-      node: 'item',
-      name: t('重置 Passkey'),
-      onClick: () => showResetPasskeyModal(record),
-    },
-    {
-      node: 'item',
-      name: t('重置 2FA'),
-      onClick: () => showResetTwoFAModal(record),
-    },
+    // 重置 2FA/Passkey：对超级管理员(role=100)隐藏（后端 canManageTargetRole 同样会拦截，此处避免无效入口）
+    ...(record.role !== 100
+      ? [
+          {
+            node: 'item',
+            name: t('重置 Passkey'),
+            onClick: () => showResetPasskeyModal(record),
+          },
+          {
+            node: 'item',
+            name: t('重置 2FA'),
+            onClick: () => showResetTwoFAModal(record),
+          },
+        ]
+      : []),
     {
       node: 'divider',
     },

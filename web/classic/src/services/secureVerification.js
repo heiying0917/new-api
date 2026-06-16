@@ -199,6 +199,20 @@ export const createApiCalls = {
   },
 
   /**
+   * 创建供应商查看自己渠道密钥的 API 调用。
+   * 后端 GET /api/supplier/channel/:id/key 受 RequireTwoFAEnabled 守卫：
+   * 已开启 2FA/Passkey → 直接返回 key；未开启 → 403 TWO_FA_NOT_ENABLED。
+   * 用 skipErrorHandler 关闭全局错误 toast，未开启时交由验证流程弹"去设置 2FA"引导弹窗。
+   * @param {number} channelId - 渠道ID
+   */
+  viewSupplierChannelKey: (channelId) => async () => {
+    const response = await API.get(`/api/supplier/channel/${channelId}/key`, {
+      skipErrorHandler: true,
+    });
+    return response.data;
+  },
+
+  /**
    * 创建自定义API调用
    * @param {string} url - API URL
    * @param {string} method - HTTP方法，默认为 'POST'

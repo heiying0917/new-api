@@ -160,6 +160,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			supplierSelfRoute.GET("/", controller.SupplierListChannels)
 			supplierSelfRoute.GET("/:id", controller.SupplierGetChannel)
+			// 查看自己渠道明文 key：要求已开启 2FA/Passkey（不做每次输码挑战）。
+			supplierSelfRoute.GET("/:id/key", middleware.RequireTwoFAEnabled(), middleware.DisableCache(), controller.SupplierGetChannelKey)
 			supplierSelfRoute.POST("/", controller.SupplierAddChannel)
 			supplierSelfRoute.PUT("/", controller.SupplierUpdateChannel)
 			supplierSelfRoute.DELETE("/:id", controller.SupplierDeleteChannel)
@@ -290,7 +292,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/models", controller.ChannelListModels)
 			channelRoute.GET("/models_enabled", controller.EnabledListModels)
 			channelRoute.GET("/:id", controller.GetChannel)
-			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
+			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)

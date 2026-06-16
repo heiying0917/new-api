@@ -278,3 +278,91 @@
 - **验证（Playwright 实测 5001）**：logo 与 eyebrow 同行（中心 Y 均=150），标题上移（titleTop 192）；部署 `juhe-v9facet8`。
 - **改动文件**：`Hero.jsx`、`landing.css`。
 - **提交状态**：5001 已生效；**未 commit、未 push**。
+
+### [2026-06-16 17:21] 第八版 供应商体系增强（后端4单元+前端3单元,subagent 驱动开发,**未提交、未部署**）
+- **需求来源**：用户第八版 5 条需求。方案 `docs/superpowers/specs/2026-06-16-tokenki-v8-supplier-enhancements-design.md`；计划 `docs/superpowers/plans/2026-06-16-tokenki-v8-supplier-enhancements.md`。
+- **做了什么（7 个实现单元,每单元 实现→测试/build→评审 approve）**：
+  1. **需求1 汇总+排序（后端）**：`model/supplier_stats.go` 新增 `GetAllSuppliersPendingStat`（一次聚合 per-supplier+全局待结算)、`GetSettlementTotalsByStatus`（已申请/已结算分桶,actual_amount 按币种拆 CNY/USD)、`GetAllSuppliersSettledTotal`；`GetSupplierSummary` → `GET /api/supplier/summary`（RootAuth)；`model/supplier.go` `GetAllSuppliers(+sortBy,+sortOrder)` 服务端排序(priority/pending_cny/pending_usd/settled_cny 全量内存排序+分页)。修复 priority 误用 users 列 ORDER BY 的 bug + buildSupplierItems 吞错改为传播。
+  2. **需求1 立即结算（后端）**：`AdminInitiateSettlement` → `POST /api/admin/settlement/initiate`（RootAuth),复用 `model.CreateSettlement`(空待结算自删占位单)+台账 OperatorIsAdmin=true。
+  3. **需求2 渠道供应商过滤（后端）**：`ResolveSupplierIdsByName` + `GetAllChannels`/`SearchChannels`/`buildChannelListQuery` 增 `supplierIds`(无匹配短路空页)。
+  4. **需求3/4/5 概览聚合（后端）**：`GetSupplierOverview`(供应商总数/启用、渠道可用性、按 type 聚合,整行 Find 避开保留字 group)；`GET /api/admin/supplier-overview`（**AdminAuth=管理员+超管**,满足需求4）。
+  5. **需求1 前端**：`useSuppliersData` summary/排序/立即结算+确认弹窗;列排序+「立即结算」按钮;新 `SuppliersSummaryBar`;复用 `ConfirmModal`;排序参数翻页/改页大小/刷新全显式透传。
+  6. **需求2 前端**：`ChannelsFilters` 加供应商搜索框;`useChannelsData` 6 处对称接入 `searchSupplier` → `&supplier_name=`。
+  7. **需求3/4/5 前端**：新 `pages/SupplierOverviewAdmin` + hook + `TypeCard/TypeDetailSheet`;紧凑响应式网格 `Col xs=12 sm=8 md=6 lg=4`(修复卡片太宽);`App.jsx` 路由+`SiderBar` 菜单+`useSidebar.js DEFAULT_ADMIN_CONFIG` 注册;itemKey 用 `supplier_overview_admin` 避开与供应商端冲突。
+- **改了哪些文件**：后端 `controller/{supplier,settlement,channel}.go`、`model/{supplier,supplier_stats,channel}.go`、`router/api-router.go` + 测试 `model/{supplier_summary,supplier_sort,supplier_overview,channel_supplier_filter}_test.go`、`controller/admin_initiate_settlement_test.go`、`model/supplier_test.go`/`supplier_aggregation_test.go`(签名适配)。前端 `web/classic/src/`: `hooks/suppliers/useSuppliersData.jsx`、`components/table/suppliers/{index,SuppliersTable,SuppliersColumnDefs,SuppliersSummaryBar}.jsx`、`hooks/channels/useChannelsData.jsx`、`components/table/channels/ChannelsFilters.jsx`、`pages/SupplierOverviewAdmin/index.jsx`、`hooks/supplier-overview-admin/useSupplierOverviewData.jsx`、`components/supplier-overview-admin/{TypeCard,TypeDetailSheet}.jsx`、`App.jsx`、`components/layout/SiderBar.jsx`、`hooks/common/useSidebar.js`、`i18n/locales/zh-CN.json`。
+- **如何验证**：`go build ./...` ✓;`go vet ./model ./controller` 干净;`go test ./model/ ./controller/` → model 全过、controller 仅 1 个**预先存在**失败 `TestListModelsTokenLimitIncludesTieredBillingModel`(stash 本期改动后仍 panic,属其它未提交工作 official_pricing/option.go,与本期无关);新增后端测试全过;`cd web/classic && bun run build` ✓。
+- **部署 + Playwright 实测(经用户授权)**：classic 清缓存重建 → `CGO_ENABLED=0 GOOS=linux GOARCH=arm64` 交叉编译(VER `juhe-v10supplier`)→ `docker cp` 进 new-api 容器 → restart;`/api/status` 确认新版本生效。tkadmin 临时改密登录(原 hash 已存并**已还原核验** pwd_restored=t、access_token 已清空)。实测 5001 全部通过:① 供应商管理页汇总条三卡(待结算 ¥0.09/$0.49·2家、已申请 ¥0/0单、已结算 ¥423.13/$169.32·3单)、优先级列排序 asc/desc(tksupplier1 优先级5 正确升降)、test1「立即结算」→ 确认弹窗预填 ¥0.09(创建的 已申请单 id=8 测后经 cancel API 撤销 + 硬删 settlement/ledger,test1 待结算与日志已还原);② 渠道管理页「供应商」搜索 test1 → 精确过滤 3 条全属 test1;③ 供应商概览页(管理员可见,需求4)summary 供应商4/渠道8(7可用1不可用)+ 紧凑卡片 OpenAI(3家/5-6可用/¥1.80)、Anthropic(1家/2-2/¥2.50)+ 点卡下钻 SideSheet 分组竞价梯队(claude速刷¥1.80/OpenAI官key¥2/claude官key¥2.2)。
+- **已知小项(非本期 bug)**：概览 summary「供应商 4 / 5 启用」中 enabled(5)>total(4) —— 因测试库有 5 条 supplier 资料行但仅 4 个 role=5 用户(数据不一致),非代码缺陷;真实数据下二者一致。
+- **提交状态**：5001 容器已生效(`juhe-v10supplier`);**未 commit、未 push**(等用户指令)。tkadmin 账号已完整还原。
+
+### [2026-06-16] 修复「新建/编辑渠道·获取模型列表」对多类型失败(代码+测试+真机API实测,**未提交、未部署**)
+- **现象**：用户报「添加任何类型渠道,获取模型列表都失败」。系统化调试(用户给了 Anthropic 真实测试 key)。
+- **根因(已证)**:新建路径 `controller/channel.go fetchModelsByParams` 对除 Ollama/Gemini 外**一律** `Authorization: Bearer` + `{base}/v1/models`,与编辑路径 `fetchChannelUpstreamModelIDs`(已按 provider 定制头/路径)分叉退化。
+  - Anthropic `/v1/models` 要 `x-api-key`+`anthropic-version`,不认 Bearer → 用 key 实测 Bearer→**401 Invalid bearer token**,x-api-key→**200+模型**。
+  - AWS Bedrock 无 `/v1/models` 端点且默认 base 空;自定义/空 base 类型 URL 缺 host → 必失败。
+  - **排除网络**:容器内 `wget https://api.anthropic.com/v1/models`→真实 401(出网/DNS/TLS 全通);DB 渠道有成功 response_time。先前 `/dev/tcp` 假阴性已复核纠正。
+- **改法(收敛+静态兜底)**:
+  - 新增 `fetchModelIDsForDisplay(channel)`:先调按-provider 定制的 `fetchChannelUpstreamModelIDs`(自动获得 Anthropic 头/各家路径),失败或空时回退 `relay.GetAdaptor(common.ChannelType2APIType(type)).GetModelList()` 静态列表(AWS 等)。**刻意与上游模型更新检测分离**(后者需严格错误语义,不走兜底)。
+  - 重写 `fetchModelsByParams`:构造临时 `model.Channel{Type,Key,BaseURL}` → 委托 `fetchModelIDsForDisplay`;删除旧 Bearer-only 块(顺带去掉 `json.NewDecoder` 违反规则一、移除 channel.go 不再用到的 `gemini` import)。
+  - 编辑路径两个按钮 handler `FetchUpstreamModels`(287)/`SupplierFetchUpstreamModels`(1139)改调 `fetchModelIDsForDisplay`(检测路径 `upstreamModels,err:=` 与 fetchModelIDsForDisplay 内部 1159 调用保持不变)。
+- **改了哪些文件**：`controller/channel.go`(imports、`fetchModelsByParams` 重写、新增 `fetchModelIDsForDisplay`、两 handler 改调用);新增 `controller/fetch_models_test.go`。
+- **如何验证**：① 新增确定性测试 3 条全过(Anthropic 必带 x-api-key/anthropic-version 且无 Bearer;AWS 走静态兜底非空;OpenAI 自定义 URL 用 Bearer 正常解析)——均能复现旧 bug(改前必红)。② **真机 API 实测**(临时 live test,用完即删):空 base→真实 `api.anthropic.com` 返回 8 个真实模型(claude-fable-5/opus-4-8/...)。③ `go build ./...` ✓、`go vet ./controller` 干净。
+- **提交状态**：**未 commit、未 push、未重新部署到 5001 容器**(等用户指令)。第九版需求1(供应商渠道列表复用管理员)仍在设计阶段,未动工。
+
+### [2026-06-16] 第九版需求1 后端:供应商渠道列表/行操作复用管理员(代码+部署+e2e实测,**未提交**)
+- **方案**:`docs/superpowers/specs/2026-06-16-tokenki-v9-supplier-channel-reuse-design.md`(前端 mode 参数化 + 后端供应商作用域接口;否决"共享 admin 路由"提权方案)。
+- **后端做了什么**:
+  1. **列表复用(共享核心)**:把 `GetAllChannels`/`SearchChannels` 抽成 `listChannelsCore(c, forceSupplierId)`/`searchChannelsCore(c, forceSupplierId)`;管理员 wrapper 传 0(行为字节级不变),供应商传本人 id 强制 `supplier_id=本人`(忽略 supplier_name 等越权参数)。供应商因此免费获得 分组/模型/类型/状态筛选+排序+标签模式+类型计数,与管理员完全一致;并回填 `official_usd`/`receivable`(新增 `backfillSupplierUnsettled`)。
+  2. **供应商行操作(归属校验后委托管理员 handler 完整复用)**:新增 `supplierOwnsChannelParam`(URL :id)/`supplierOwnsChannelBody`(body id/channel_id,读后复位 body 供下游重解析)两个守卫;新增 `SupplierTestChannel`/`SupplierUpdateChannelBalance`/`SupplierCopyChannel`(委托 TestChannel/UpdateChannelBalance/CopyChannel)、`SupplierManageMultiKeys`/`SupplierDetectChannelUpstreamModelUpdates`/`SupplierApplyChannelUpstreamModelUpdates`。启禁用/优先级/权重走既有 `SupplierUpdateChannel`。
+  3. **路由**:`/api/supplier/channel` 组新增 `GET /search`、`GET /test/:id`、`GET /update_balance/:id`、`POST /copy/:id`、`POST /multi_key/manage`、`POST /upstream_updates/detect`、`POST /upstream_updates/apply`。
+- **改了哪些文件**:`controller/channel.go`(list/search 抽核心+force+receivable 回填)、`controller/supplier_channel.go`(列表改委托核心 + 守卫 + 6 个委托 handler + backfill 助手 + imports bytes/io)、`router/api-router.go`。
+- **如何验证**:`go build ./...` ✓、`go vet ./controller` 干净;交叉编译部署 `juhe-v12supplierch-be` 启动正常(**无 gin 路由冲突 panic**,证明 list-core 重构未破坏 admin 启动)。临时 access_token e2e 实测(tkadmin/test1,**测后已 NULL 清空核验**):① admin 列表 total=9、搜索 Claude→[1,13,10] **无回归**;② 供应商 test1 列表仅返回本人渠道 [12,13,10] 且带 `cost_price=2/official_usd=0.03941/receivable=0.07882`;③ `?type=14` 过滤→[13,10];④ test1 调 `test/2`、`GET /2`(tksupplier1 的渠道)→ **forbidden: not your channel**(归属拦截生效)。
+- **剩余(未做)**:前端 `useChannelsData`/`ChannelsColumnDefs`/`ChannelsFilters`/`ChannelsPage` 的 mode 参数化 + 供应商页切到 `<ChannelsPage mode="supplier"/>` + 退役旧 supplier-channels 组件;页面级「全部/批量」工具栏操作(测试全部/全余额/修复/批量删/删禁用/全部检测·应用/标签)的供应商作用域版本或隐藏(待用户定);后端 Go 归属单测(当前以 e2e 实测覆盖)。
+- **提交状态**:5001 已是 `juhe-v12supplierch-be`(仅后端,前端未动→供应商页 UI 暂无变化);**未 commit、未 push**。
+
+### [2026-06-16] 第九版需求1 前端:供应商渠道页完全复用管理员表格(代码+部署+浏览器实测,**未提交**)
+- **做了什么(前端 mode 参数化,真复用同一套组件)**:
+  - `useChannelsData(mode='admin')`:新增 `isSupplierMode`/`apiBase`(supplier→`/api/supplier/channel`),全部单渠道端点(列表/搜索/删除/启禁用·优先级·权重 PUT/复制/单测/单余额/获取分组)按 apiBase 切换;`fetchGlobalPassThroughEnabled` 供应商端跳过(无 /api/option 权限);分组下拉供应商端走 `/api/supplier/self/groups`。
+  - **批量操作 fan-out(作用域版)**:供应商端 批量删除/删除禁用/更新全部余额 改为循环单渠道接口(天然只作用于本人渠道);`useChannelUpstreamUpdates({apiBase})` 单条 detect/apply 切 apiBase。
+  - `ChannelsColumnDefs(isSupplierMode)`:供应商去「创建者」、加「成本(¥)」「应收款(¥,2位)」;`ChannelsTable` 可见性过滤改 `!==false`(让无开关的成本/应收款列默认显示),并把 isSupplierMode 传入列定义。
+  - `ChannelsFilters`:供应商隐藏「供应商名」筛选。
+  - `ChannelsActions`:供应商隐藏 测试所有/修复能力表/检测全部·处理全部上游/批量设置标签/标签聚合模式(全局或无供应商端点);保留 更新全部余额/删除禁用(fan-out)。
+  - `index.jsx ChannelsPage({mode})` → `useChannelsData(mode)`,`EditChannelModal apiMode` + `MultiKeyManageModal apiBase` 透传;`MultiKeyManageModal` 7 处端点按 apiBase。
+  - `pages/SupplierChannels` 改渲染 `<ChannelsPage mode="supplier"/>`;**退役删除** `components/table/supplier-channels/*` + `hooks/supplier-channels/*`(确认无外部引用)。
+  - **后端补丁**:`SupplierUpdateChannel` 改为返回更新后的渠道(原返回 nil,导致前端 manageChannel 读 `res.data.data.status` 报错、行状态不刷新);现回填全字段、不回传 key。
+- **改了哪些文件**:`web/classic/src/hooks/channels/{useChannelsData,useChannelUpstreamUpdates}.jsx`、`components/table/channels/{index,ChannelsTable,ChannelsColumnDefs,ChannelsFilters,ChannelsActions}.jsx`、`components/table/channels/modals/MultiKeyManageModal.jsx`、`pages/SupplierChannels/index.jsx`(删 supplier-channels/* 与 hooks/supplier-channels/*);`controller/supplier_channel.go`。
+- **如何验证**:`bun run build`(classic)✓;`go build ./...`/`go vet`/获取模型测试 ✓;交叉编译部署 `juhe-v14supplierch-fix`。**Playwright 实测 5001**(注册一次性供应商 v9probe + seed 渠道,测后连同 tkadmin 临时口令一并清理还原):① 供应商渠道页列=`ID 名称 分组 成本(¥3) 应收款(¥0.00) 类型 状态 响应时间 已用/剩余 优先级 权重`+操作(**去创建者、加成本/应收款**),行操作 测试/禁用/编辑/more 齐全;② 类型 tab/筛选/分页 scoped;③ 禁用→启用 走 `PUT /api/supplier/channel/` 且行内即时刷新(SupplierUpdateChannel 回填修复后)、0 console error;④ 批量操作下拉仅 更新全部余额/删除禁用(全局项已隐藏);⑤ **管理员渠道页无回归**:列含「创建者」、无成本/应收款、供应商名筛选在、10 行(mode 默认 admin)。
+- **提交状态**:5001 已是 `juhe-v14supplierch-fix`;**未 commit、未 push**。清理:v9probe 用户/渠道/abilities 已删,tkadmin 口令已还原(核验 restored=true)。
+
+### [2026-06-16] 修复供应商渠道页「Cannot read properties of undefined (reading 'map')」(系统化调试+代码+部署+实测,**未提交**)
+- **现象**:供应商进入「我的渠道」/编辑渠道时弹错误 toast「错误：Cannot read properties of undefined (reading 'map')」(2 条 console error)。
+- **系统化调试**:Playwright 复现 + CDP 抓栈。关键证据链:
+  1. 错误是 toast(经 `showError(error.message)`),非 type/数据相关——所有供应商渠道编辑均触发,与渠道类型无关。
+  2. CDP 栈:`showError(_)` 被两个相邻函数 `z@187292`/`P@187439` 调用;反编译部署 bundle 定位到 **`EditTagModal.jsx`** 的 `fetchModels`(`z`)与 `fetchGroups`(`P`)。
+  3. 根因:**管理员鉴权接口对越权返回 HTTP 200 + `{success:false, data:undefined}`(非 403)**。`EditTagModal` 由 `ChannelsPage` 常驻挂载,其 useEffect 在 mount 即调 `fetchModels`(`GET /api/channel/models`)与 `fetchGroups`(`GET /api/group/`,硬编码管理员端点),两处 `res.data.data.map(...)` **未守卫** → 供应商下 data 为 undefined → `.map` 崩 → 2 条 toast。`EditChannelModal` 自身 fetchModels 已有守卫,故之前没发现。
+- **改法(根因修复 + 纵深防御)**:`EditTagModal.fetchModels/fetchGroups` 增加 `if(!res?.data?.data||!Array.isArray(res.data.data))return;` 优雅降级(标签编辑本就是管理员功能);顺手给 `EditChannelModal.fetchGroups` 加同款守卫(防供应商分组端点偶发非数组)。管理员路径不变(data 为正常数组,守卫直接通过)。
+- **改了哪些文件**:`web/classic/src/components/table/channels/modals/{EditTagModal,EditChannelModal}.jsx`。
+- **如何验证**:`bun run build` ✓;部署 `juhe-v15tagmodalfix`;Playwright 实测(注册一次性供应商 v9edit + seed OpenAI/Claude/AWS 渠道):修复前 进页面/开编辑均弹 map toast;**修复后 页面加载 + 打开各类型渠道编辑均 0 toast / 0 console error,弹窗正常打开**。测试数据(v9edit + 4 渠道)已清理。
+- **提交状态**:5001 已是 `juhe-v15tagmodalfix`;**未 commit、未 push**。
+
+### [2026-06-17] 第十版后端:查看秘钥2FA门禁 + 日志应付供应商金额(TDD,**未提交**)
+- **需求**:① 供应商查看自己渠道 key 需「已开启 2FA/Passkey」(只校验开过、不每次输码),超管查看任意渠道 key 跳过 2FA;③ 使用日志展示「应付供应商=官方价(USD)×渠道冻结成本价(¥/$)」,补齐各消费路径记录,普通用户不可见。设计见 `docs/superpowers/specs/2026-06-16-tokenki-v10-2fa-keyview-payable-settlement-design.md`。
+- **做了什么(后端,全程 TDD red→green)**:
+  1. **需求1 门禁**:`middleware/secure_verification.go` 新增 `RequireTwoFAEnabled()`(仅校验 `model.IsTwoFAEnabled` 或有 Passkey,未开启返回 403+`TWO_FA_NOT_ENABLED`);`router/api-router.go` 从 `POST /channel/:id/key` **移除** `SecureVerificationRequired`(超管所有渠道跳过 2FA),供应商组新增 `GET /supplier/channel/:id/key`(挂 `RequireTwoFAEnabled`+`DisableCache`);`controller/supplier_channel.go` `SupplierGetChannel` 改 `GetChannelById(id,false)`(Omit key,详情不再泄露明文)+ 新增 `SupplierGetChannelKey`(归属校验后返回明文 key)。注:GORM `Updates(struct)` 跳过零值,详情空 key 不会冲掉原 key,供应商编辑保存安全。
+  2. **需求3 记录**:`service/supplier_billing.go` 新增 `OfficialUsdFromQuota(quota,groupRatio)=quota/(groupRatio×QuotaPerUnit)`(反推不含分组折扣的官方价);`model/log.go` `RecordConsumeLog` **统一归一**——仅供应商渠道按渠道当前成本价补 `cost_price_snapshot`,非供应商渠道把 official_usd/snapshot 清零(只在有计费字段时查渠道,普通请求热路径零开销);各路径接 official_usd:`service/quota.go`(wss/audio)、`service/task_billing.go`(任务)、`relay/mjproxy_handler.go`(MJ 两处);text 路径原已记录,违规罚金**有意不计应付**。
+  3. **需求3 防泄露**:`controller/log.go` 新增 `clearSupplierBillingFields`,在 `GetUserLogs`(/log/self)与 `GetLogByKey`(/log/token)清零两字段——普通终端用户看不到平台对供应商的成本;admin(/log/)与供应商(/supplier/self/logs)接口保留。
+- **新增/改测试(均先 red 后 green)**:`service/supplier_billing_test.go::TestOfficialUsdFromQuota`、`service/task_billing_supplier_test.go::TestLogTaskConsumption_RecordsSupplierPayable`、`model/log_supplier_billing_test.go::TestRecordConsumeLogSupplierBilling`、`middleware/require_twofa_test.go`(4 例:无凭证 403/有2FA放行/有Passkey放行/未登录401)、`controller/log_billing_strip_test.go::TestClearSupplierBillingFields`。
+- **如何验证**:`go build ./...` ✓;`go test ./middleware ./service ./model` 全绿;`controller` 包除**预存在失败** `TestListModelsTokenLimitIncludesTieredBillingModel`(纯 HEAD worktree 复现同样 `RedisHGetObj` 空指针 panic,与本次无关)外全绿。
+- **剩余(未做)**:前端 Req1(toast→引导弹窗+去设置2FA、供应商查看key走新接口并按2FA门禁、超管直显)、Req3 前端(已加「应付/应收(¥)」列,待 bun build)、Req4(申请结算确认弹窗显示金额)、Req2(管理员重置2FA classic 已具备,待实测)、i18n 文案键。
+- **提交状态**:**未 commit、未 push**。
+
+### [2026-06-17] 第十版前端 + Req2核验 + 对抗性复审(TDD,**未提交**)
+- **Req1 前端(查看key 2FA 引导弹窗 + 角色化)**:`helpers/secureApiCall.js` `isVerificationRequiredError` 增识 `TWO_FA_NOT_ENABLED`;`hooks/common/useSecureVerification.jsx` 无验证方式时**改为开引导弹窗(不再 toast)**;`components/common/modals/SecureVerificationModal.jsx` 未启用分支加「去设置 2FA」按钮(`useNavigate` → `/console/personal?tab=security`);`services/secureVerification.js` 新增 `viewSupplierChannelKey`(GET 供应商 key 接口,带 `skipErrorHandler`);`components/table/channels/modals/EditChannelModal.jsx` `handleShow2FAModal` 按 `isSupplierMode` 选接口(供应商走新接口/管理员走原接口);`components/settings/personal/cards/AccountManagement.jsx` 读 `?tab=security` 受控激活安全 tab。
+- **Req3 前端(应付列)**:`hooks/usage-logs/useUsageLogsData.jsx` COLUMN_KEYS 加 `PAYABLE`,默认仅 admin+supplier 可见、普通用户强制隐藏(初始可见性 + handleSelectAll 双重拦截);`components/table/usage-logs/UsageLogsColumnDefs.jsx` 新增列(供应商「应收(¥)」/管理员「应付(¥)」)= `official_usd × cost_price_snapshot`,snapshot/官方价为 0 显示「-」,附明细 tooltip;列选择器与表格两处 getLogsColumns 均已传 isSupplierUser。
+- **Req4 前端(子代理实现)**:`hooks/supplier-settlements/useSupplierSettlementsData.jsx` 新增 `getPendingAmount`;`components/table/supplier-settlements/index.jsx` handleApply 先拉 `/api/supplier/self/pending` 再弹确认(展示应结算金额¥/官方价$/条数,无可结算时禁用确认)。
+- **Req2 核验(子代理只读) + 补瑕疵**:后端重置 2FA(`AdminDisable2FA` 连带清备用码 + `canManageTargetRole` 拦截 + 重置后 `IsTwoFAEnabled=false` 可纯密码登录)与 reset_passkey **功能完整**;classic 前端补两处:`UsersColumnDefs.jsx` 对 role=100(超管)隐藏重置入口、`UsersTable.jsx` 重置后 `refresh?.()`。
+- **i18n**:`web/classic/src/i18n/locales/zh-CN.json` 追加 8 个缺失键(去设置 2FA/应付(¥)/应收(¥)/官方价/当前没有可结算的消费/当前应结算金额：/条待结算/确定申请结算？),JSON 校验通过。
+- **对抗性复审(code-reviewer 子代理 + 5 并行深挖,已逐条复验)**:无 Critical。子代理报的"task 计费放大 8×"经 lead 复验为**误报**(OtherRatios 本应计入 official_usd)。确认无新增越权/泄露:面向普通用户/令牌的原始日志端点仅 `GetUserLogs`/`GetLogByKey` 两处且都已 strip;供应商 key 接口有归属校验;单 key 空 key 不冲(GORM Updates 跳零值)。flag 三项**预存在/业务决策项**(非本次回归):①`SupplierUpdateChannel` 多 Key `ChannelInfo` 覆盖(预存在,建议对齐管理员 `patch.ChannelInfo=existing.ChannelInfo`);②`RequireTwoFAEnabled` 在 DB 故障时 fail-closed 误导已开 2FA 用户(安全方向对,体验欠佳);③违规罚金不计应付(有意决策,待产品确认)。按建议补 `TestLogTaskConsumption_NonSupplierChannelNoPayable` 回归守卫。
+- **如何验证**:`go build ./...`/`go vet` ✓;`go test ./middleware ./service ./model` 全绿、`controller` 改动相关测试全绿(仅预存在 panic 测试 `TestListModelsTokenLimitIncludesTieredBillingModel` 除外);`bun run build`(classic)✓;zh-CN.json JSON 校验 ✓。
+- **未做(待定)**:本地部署 + Playwright e2e 实测(需改生产环境,待用户指令);预存在的多 Key ChannelInfo 修复(超范围,待用户定)。
+- **提交状态**:**未 commit、未 push**(等用户指令)。

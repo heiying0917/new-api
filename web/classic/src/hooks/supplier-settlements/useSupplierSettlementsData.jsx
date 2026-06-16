@@ -67,6 +67,22 @@ export const useSupplierSettlementsData = () => {
     [activePage, pageSize, loadSettlements],
   );
 
+  // Get current pending (unsettled) amount before applying
+  const getPendingAmount = useCallback(async () => {
+    try {
+      const res = await API.get('/api/supplier/self/pending');
+      const { success, message, data } = res.data;
+      if (success) {
+        return data || null;
+      }
+      showError(message);
+      return null;
+    } catch (e) {
+      showError(e.message);
+      return null;
+    }
+  }, []);
+
   // Apply for a new settlement (snapshot current unsettled usage)
   const applySettlement = useCallback(async () => {
     setApplying(true);
@@ -222,6 +238,7 @@ export const useSupplierSettlementsData = () => {
     // Functions
     loadSettlements,
     refresh,
+    getPendingAmount,
     applySettlement,
     cancelSettlement,
     getDetail,
