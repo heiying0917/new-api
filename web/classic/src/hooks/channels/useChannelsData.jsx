@@ -40,9 +40,13 @@ import { parseUpstreamUpdateMeta } from './upstreamUpdateUtils';
 import { Modal, Button } from '@douyinfe/semi-ui';
 import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
 
-export const useChannelsData = () => {
+export const useChannelsData = (mode = 'admin') => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+
+  // 供应商模式:复用管理员渠道页全套组件,接口切到 /api/supplier/channel(后端强制 supplier_id=本人)。
+  const isSupplierMode = mode === 'supplier';
+  const apiBase = isSupplierMode ? '/api/supplier/channel' : '/api/channel';
 
   // Basic states
   const [channels, setChannels] = useState([]);
@@ -94,6 +98,11 @@ export const useChannelsData = () => {
     useState(false);
 
   const fetchGlobalPassThroughEnabled = async () => {
+    if (isSupplierMode) {
+      // 供应商无 /api/option/ 权限,且该开关仅管理员可配。
+      setGlobalPassThroughEnabled(false);
+      return;
+    }
     try {
       const res = await API.get('/api/option/');
       const { success, data } = res?.data || {};
@@ -357,7 +366,7 @@ export const useChannelsData = () => {
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
     const res = await API.get(
-      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `${apiBase}/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -415,7 +424,7 @@ export const useChannelsData = () => {
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&supplier_name=${encodeURIComponent(searchSupplier)}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `${apiBase}/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&supplier_name=${encodeURIComponent(searchSupplier)}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -459,7 +468,7 @@ export const useChannelsData = () => {
     }
   };
 
-  const upstreamUpdates = useChannelUpstreamUpdates({ t, refresh });
+  const upstreamUpdates = useChannelUpstreamUpdates({ t, refresh, apiBase });
 
   // Channel management
   const manageChannel = async (id, action, record, value) => {
@@ -467,31 +476,31 @@ export const useChannelsData = () => {
     let res;
     switch (action) {
       case 'delete':
-        res = await API.delete(`/api/channel/${id}/`);
+        res = await API.delete(`${apiBase}/${id}/`);
         break;
       case 'enable':
         data.status = 1;
-        res = await API.put('/api/channel/', data);
+        res = await API.put(`${apiBase}/`, data);
         break;
       case 'disable':
         data.status = 2;
-        res = await API.put('/api/channel/', data);
+        res = await API.put(`${apiBase}/`, data);
         break;
       case 'priority':
         if (value === '') return;
         data.priority = parseInt(value);
-        res = await API.put('/api/channel/', data);
+        res = await API.put(`${apiBase}/`, data);
         break;
       case 'weight':
         if (value === '') return;
         data.weight = parseInt(value);
         if (data.weight < 0) data.weight = 0;
-        res = await API.put('/api/channel/', data);
+        res = await API.put(`${apiBase}/`, data);
         break;
       case 'enable_all':
         data.channel_info = record.channel_info;
         data.channel_info.multi_key_status_list = {};
-        res = await API.put('/api/channel/', data);
+        res = await API.put(`${apiBase}/`, data);
         break;
     }
     const { success, message } = res.data;
@@ -594,7 +603,9 @@ export const useChannelsData = () => {
   // Fetch groups
   const fetchGroups = async () => {
     try {
-      let res = await API.get(`/api/group/`);
+      let res = await API.get(
+        isSupplierMode ? `/api/supplier/self/groups` : `/api/group/`,
+      );
       if (res === undefined) return;
       setGroupOptions(
         res.data.data.map((group) => ({
@@ -610,7 +621,7 @@ export const useChannelsData = () => {
   // Copy channel
   const copySelectedChannel = async (record) => {
     try {
-      const res = await API.post(`/api/channel/copy/${record.id}`);
+      const res = await API.post(`${apiBase}/copy/${record.id}`);
       if (res?.data?.success) {
         showSuccess(t('渠道复制成功'));
         await refresh();
@@ -737,6 +748,20 @@ export const useChannelsData = () => {
     selectedChannels.forEach((channel) => {
       ids.push(channel.id);
     });
+    if (isSupplierMode) {
+      // 供应商端 fan-out:逐个删除(单渠道接口已做归属校验),天然只作用于本人渠道。
+      let ok = 0;
+      for (const id of ids) {
+        try {
+          const r = await API.delete(`${apiBase}/${id}/`);
+          if (r?.data?.success) ok++;
+        } catch (e) {}
+      }
+      showSuccess(t('已删除 ${data} 个通道！').replace('${data}', ok));
+      await refresh();
+      setLoading(false);
+      return;
+    }
     const res = await API.post(`/api/channel/batch`, { ids: ids });
     const { success, message, data } = res.data;
     if (success) {
@@ -765,6 +790,24 @@ export const useChannelsData = () => {
   };
 
   const deleteAllDisabledChannels = async () => {
+    if (isSupplierMode) {
+      // 供应商端 fan-out:删除本人所有禁用渠道。
+      const targets = channels.filter(
+        (ch) => ch && ch.id && !ch.children && ch.status !== 1,
+      );
+      let ok = 0;
+      for (const ch of targets) {
+        try {
+          const r = await API.delete(`${apiBase}/${ch.id}/`);
+          if (r?.data?.success) ok++;
+        } catch (e) {}
+      }
+      showSuccess(
+        t('已删除所有禁用渠道，共计 ${data} 个').replace('${data}', ok),
+      );
+      await refresh();
+      return;
+    }
     const res = await API.delete(`/api/channel/disabled`);
     const { success, message, data } = res.data;
     if (success) {
@@ -778,6 +821,18 @@ export const useChannelsData = () => {
   };
 
   const updateAllChannelsBalance = async () => {
+    if (isSupplierMode) {
+      // 供应商端 fan-out:逐个刷新本人渠道余额。
+      const targets = channels.filter((ch) => ch && ch.id && !ch.children);
+      for (const ch of targets) {
+        try {
+          await API.get(`${apiBase}/update_balance/${ch.id}/`);
+        } catch (e) {}
+      }
+      showInfo(t('已更新完毕所有已启用通道余额！'));
+      await refresh();
+      return;
+    }
     const res = await API.get(`/api/channel/update_balance`);
     const { success, message } = res.data;
     if (success) {
@@ -801,7 +856,7 @@ export const useChannelsData = () => {
       return;
     }
 
-    const res = await API.get(`/api/channel/update_balance/${record.id}/`);
+    const res = await API.get(`${apiBase}/update_balance/${record.id}/`);
     const { success, message, balance } = res.data;
     if (success) {
       updateChannelProperty(record.id, (channel) => {
@@ -910,7 +965,7 @@ export const useChannelsData = () => {
     setTestingModels((prev) => new Set([...prev, model]));
 
     try {
-      let url = `/api/channel/test/${record.id}?model=${model}`;
+      let url = `${apiBase}/test/${record.id}?model=${model}`;
       if (endpointType) {
         url += `&endpoint_type=${endpointType}`;
       }
@@ -1168,6 +1223,11 @@ export const useChannelsData = () => {
   }, [channelTypeCounts]);
 
   return {
+    // Mode
+    mode,
+    isSupplierMode,
+    apiBase,
+
     // Basic states
     channels,
     loading,

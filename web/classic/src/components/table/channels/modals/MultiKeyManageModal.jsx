@@ -50,7 +50,7 @@ import {
 
 const { Text } = Typography;
 
-const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
+const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh, apiBase = '/api/channel' }) => {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [keyStatusList, setKeyStatusList] = useState([]);
@@ -92,7 +92,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
         requestData.status = status;
       }
 
-      const res = await API.post('/api/channel/multi_key/manage', requestData);
+      const res = await API.post(`${apiBase}/multi_key/manage`, requestData);
 
       if (res.data.success) {
         const data = res.data.data;
@@ -123,7 +123,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, [operationId]: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'disable_key',
         key_index: keyIndex,
@@ -149,7 +149,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, [operationId]: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'enable_key',
         key_index: keyIndex,
@@ -174,7 +174,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, enable_all: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'enable_all_keys',
       });
@@ -200,7 +200,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, disable_all: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'disable_all_keys',
       });
@@ -226,7 +226,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, delete_disabled: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'delete_disabled_keys',
       });
@@ -253,7 +253,7 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     setOperationLoading((prev) => ({ ...prev, [operationId]: true }));
 
     try {
-      const res = await API.post('/api/channel/multi_key/manage', {
+      const res = await API.post(`${apiBase}/multi_key/manage`, {
         channel_id: channel.id,
         action: 'delete_key',
         key_index: keyIndex,

@@ -1194,7 +1194,7 @@ const EditChannelModal = (props) => {
       let res = await API.get(
         isSupplierMode ? '/api/supplier/self/groups' : '/api/group/',
       );
-      if (res === undefined) {
+      if (!res?.data?.data || !Array.isArray(res.data.data)) {
         return;
       }
       setGroupOptions(

@@ -43,6 +43,7 @@ const ChannelsTable = (channelsData) => {
     handleRow,
     t,
     COLUMN_KEYS,
+    isSupplierMode,
     // Column functions and data
     updateChannelBalance,
     manageChannel,
@@ -70,6 +71,7 @@ const ChannelsTable = (channelsData) => {
     return getChannelsColumns({
       t,
       COLUMN_KEYS,
+      isSupplierMode,
       updateChannelBalance,
       manageChannel,
       manageTag,
@@ -94,6 +96,7 @@ const ChannelsTable = (channelsData) => {
   }, [
     t,
     COLUMN_KEYS,
+    isSupplierMode,
     updateChannelBalance,
     manageChannel,
     manageTag,
@@ -118,7 +121,8 @@ const ChannelsTable = (channelsData) => {
 
   // Filter columns based on visibility settings
   const getVisibleColumns = () => {
-    return allColumns.filter((column) => visibleColumns[column.key]);
+    // 未在 visibleColumns 中显式置 false 的列默认显示(供应商模式的成本/应收款列无对应开关,需默认可见)。
+    return allColumns.filter((column) => visibleColumns[column.key] !== false);
   };
 
   const visibleColumnsList = useMemo(() => {

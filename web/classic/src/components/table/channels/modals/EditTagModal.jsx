@@ -168,6 +168,10 @@ const EditTagModal = (props) => {
   const fetchModels = async () => {
     try {
       let res = await API.get(`/api/channel/models`);
+      // 供应商等无权限访问该管理员接口时优雅降级（标签编辑为管理员功能，响应可能为 {success:false}）。
+      if (!res?.data?.data || !Array.isArray(res.data.data)) {
+        return;
+      }
       let localModelOptions = res.data.data.map((model) => ({
         label: model.id,
         value: model.id,
@@ -181,7 +185,8 @@ const EditTagModal = (props) => {
   const fetchGroups = async () => {
     try {
       let res = await API.get(`/api/group/`);
-      if (res === undefined) {
+      // 同上：无权限/非数组响应时优雅降级，避免 undefined.map 崩溃。
+      if (!res?.data?.data || !Array.isArray(res.data.data)) {
         return;
       }
       setGroupOptions(

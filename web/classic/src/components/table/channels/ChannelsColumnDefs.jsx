@@ -321,6 +321,7 @@ const getUpstreamUpdateMeta = (record) => {
 export const getChannelsColumns = ({
   t,
   COLUMN_KEYS,
+  isSupplierMode = false,
   updateChannelBalance,
   manageChannel,
   manageTag,
@@ -490,14 +491,44 @@ export const getChannelsColumns = ({
         </div>
       ),
     },
-    {
-      key: COLUMN_KEYS.SUPPLIER,
-      title: t('创建者'),
-      dataIndex: 'created_by_name',
-      render: (text, record, index) => (
-        <span>{record.created_by_name || record.supplier_name || '-'}</span>
-      ),
-    },
+    // 供应商模式:去掉「创建者」,换成「成本 / 应收款」两列;管理员模式保持「创建者」。
+    ...(isSupplierMode
+      ? [
+          {
+            key: 'cost_price',
+            title: t('成本'),
+            dataIndex: 'cost_price',
+            render: (text, record) =>
+              record.children === undefined ? (
+                <span>{text != null && text !== '' ? `¥${text}` : '-'}</span>
+              ) : null,
+          },
+          {
+            key: 'receivable',
+            title: t('应收款'),
+            dataIndex: 'receivable',
+            render: (text, record) =>
+              record.children === undefined ? (
+                <span>
+                  {text != null && text !== ''
+                    ? `¥${Number(text).toFixed(2)}`
+                    : '-'}
+                </span>
+              ) : null,
+          },
+        ]
+      : [
+          {
+            key: COLUMN_KEYS.SUPPLIER,
+            title: t('创建者'),
+            dataIndex: 'created_by_name',
+            render: (text, record, index) => (
+              <span>
+                {record.created_by_name || record.supplier_name || '-'}
+              </span>
+            ),
+          },
+        ]),
     {
       key: COLUMN_KEYS.TYPE,
       title: t('类型'),

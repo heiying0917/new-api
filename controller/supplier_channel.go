@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"bytes"
+	"io"
 	"strconv"
 	"strings"
 
@@ -27,40 +29,33 @@ func validateSupplierChannelBaseURL(baseURL *string) error {
 	return common.ValidateURLWithFetchSetting(u, true, false, false, false, nil, nil, nil, true)
 }
 
-// SupplierListChannels 列出当前供应商自己的渠道（支持 keyword 搜索）
+// SupplierListChannels 列出当前供应商自己的渠道。复用管理员列表核心(强制 supplier_id=本人),
+// 因此分组/模型/类型/状态筛选、排序、标签模式、类型计数与管理员完全一致;并回填成本/应收款。
 func SupplierListChannels(c *gin.Context) {
-	supplierId := c.GetInt("id")
-	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
-	var (
-		list  []*model.Channel
-		total int64
-		err   error
-	)
-	if keyword != "" {
-		list, total, err = model.SearchChannelsBySupplier(supplierId, keyword, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
-	} else {
-		list, total, err = model.GetChannelsBySupplier(supplierId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
-	}
-	if err != nil {
-		common.ApiError(c, err)
+	listChannelsCore(c, c.GetInt("id"))
+}
+
+// SupplierSearchChannels 搜索当前供应商自己的渠道(复用管理员搜索核心,强制 supplier_id=本人)。
+func SupplierSearchChannels(c *gin.Context) {
+	searchChannelsCore(c, c.GetInt("id"))
+}
+
+// backfillSupplierUnsettled 为渠道列表回填未结算 official_usd(USD)与 receivable(应收款¥),
+// 应收款按「每条日志冻结的成交价」累加,与结算口径一致、免疫事后改价。
+func backfillSupplierUnsettled(channels []*model.Channel) {
+	if len(channels) == 0 {
 		return
 	}
-	// 为本页渠道补充未结算计费信息：official_usd（未结算官方计费）与 receivable（应收款）。
-	// 应收款按「每条日志冻结的成交价」累加，与结算口径一致、免疫事后改价。
-	ids := make([]int, 0, len(list))
-	for _, ch := range list {
+	ids := make([]int, 0, len(channels))
+	for _, ch := range channels {
 		ids = append(ids, ch.Id)
 	}
 	usdByChannel, _ := model.GetUnsettledOfficialUsdByChannels(ids)
 	receivableByChannel, _ := model.GetUnsettledReceivableByChannels(ids)
-	for _, ch := range list {
+	for _, ch := range channels {
 		ch.OfficialUsd = usdByChannel[ch.Id]
 		ch.Receivable = receivableByChannel[ch.Id]
 	}
-	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(list)
-	common.ApiSuccess(c, pageInfo)
 }
 
 // SupplierGetChannel 取自己的单个渠道（含 key）
@@ -146,7 +141,9 @@ func SupplierUpdateChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	common.ApiSuccess(c, nil)
+	// 返回更新后的渠道(Update 内已回填全字段),供前端 manageChannel 就地刷新行状态;不回传 key。
+	patch.Key = ""
+	common.ApiSuccess(c, patch)
 }
 
 // SupplierDeleteChannel 删除自己的渠道
@@ -168,4 +165,109 @@ func SupplierDeleteChannel(c *gin.Context) {
 	}
 	model.InitChannelCache()
 	common.ApiSuccess(c, nil)
+}
+
+// supplierOwnsChannelParam 校验 URL :id 渠道归当前供应商所有;不属于则写错误并返回 false。
+func supplierOwnsChannelParam(c *gin.Context) bool {
+	supplierId := c.GetInt("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	ch, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if ch.SupplierId != supplierId {
+		common.ApiErrorMsg(c, "forbidden: not your channel")
+		return false
+	}
+	return true
+}
+
+// supplierOwnsChannelBody 从 JSON body 的 id / channel_id 字段取渠道并校验归属;
+// 读后将 body 复位,以便后续(被委托的管理员 handler)重新解析。
+func supplierOwnsChannelBody(c *gin.Context) bool {
+	supplierId := c.GetInt("id")
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	var probe struct {
+		Id        int `json:"id"`
+		ChannelId int `json:"channel_id"`
+	}
+	if err := common.Unmarshal(raw, &probe); err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	id := probe.Id
+	if id == 0 {
+		id = probe.ChannelId
+	}
+	ch, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if ch.SupplierId != supplierId {
+		common.ApiErrorMsg(c, "forbidden: not your channel")
+		return false
+	}
+	return true
+}
+
+// 以下供应商作用域操作:先校验「本人渠道」,再委托给现成的管理员 handler 完整复用其解析/逻辑/响应。
+
+// SupplierTestChannel 测试本人单个渠道 GET /api/supplier/channel/test/:id
+func SupplierTestChannel(c *gin.Context) {
+	if !supplierOwnsChannelParam(c) {
+		return
+	}
+	TestChannel(c)
+}
+
+// SupplierUpdateChannelBalance 刷新本人单个渠道余额 GET /api/supplier/channel/update_balance/:id
+func SupplierUpdateChannelBalance(c *gin.Context) {
+	if !supplierOwnsChannelParam(c) {
+		return
+	}
+	UpdateChannelBalance(c)
+}
+
+// SupplierCopyChannel 复制本人渠道 POST /api/supplier/channel/copy/:id
+// clone 为 origin 的浅拷贝,supplier_id/created_by 随之保持为本人(已通过归属校验)。
+func SupplierCopyChannel(c *gin.Context) {
+	if !supplierOwnsChannelParam(c) {
+		return
+	}
+	CopyChannel(c)
+}
+
+// SupplierManageMultiKeys 管理本人渠道的多 Key POST /api/supplier/channel/multi_key/manage
+func SupplierManageMultiKeys(c *gin.Context) {
+	if !supplierOwnsChannelBody(c) {
+		return
+	}
+	ManageMultiKeys(c)
+}
+
+// SupplierDetectChannelUpstreamModelUpdates 检测本人渠道的上游模型更新 POST /api/supplier/channel/upstream_updates/detect
+func SupplierDetectChannelUpstreamModelUpdates(c *gin.Context) {
+	if !supplierOwnsChannelBody(c) {
+		return
+	}
+	DetectChannelUpstreamModelUpdates(c)
+}
+
+// SupplierApplyChannelUpstreamModelUpdates 应用本人渠道的上游模型更新 POST /api/supplier/channel/upstream_updates/apply
+func SupplierApplyChannelUpstreamModelUpdates(c *gin.Context) {
+	if !supplierOwnsChannelBody(c) {
+		return
+	}
+	ApplyChannelUpstreamModelUpdates(c)
 }

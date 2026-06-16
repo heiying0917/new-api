@@ -166,10 +166,18 @@ func SetApiRouter(router *gin.Engine) {
 		supplierSelfRoute.Use(middleware.SupplierAuth())
 		{
 			supplierSelfRoute.GET("/", controller.SupplierListChannels)
+			supplierSelfRoute.GET("/search", controller.SupplierSearchChannels)
 			supplierSelfRoute.GET("/:id", controller.SupplierGetChannel)
 			supplierSelfRoute.POST("/", controller.SupplierAddChannel)
 			supplierSelfRoute.PUT("/", controller.SupplierUpdateChannel)
 			supplierSelfRoute.DELETE("/:id", controller.SupplierDeleteChannel)
+			// 行操作:与管理员对等,均限定本人渠道(handler 内归属校验)。
+			supplierSelfRoute.GET("/test/:id", controller.SupplierTestChannel)
+			supplierSelfRoute.GET("/update_balance/:id", controller.SupplierUpdateChannelBalance)
+			supplierSelfRoute.POST("/copy/:id", controller.SupplierCopyChannel)
+			supplierSelfRoute.POST("/multi_key/manage", controller.SupplierManageMultiKeys)
+			supplierSelfRoute.POST("/upstream_updates/detect", controller.SupplierDetectChannelUpstreamModelUpdates)
+			supplierSelfRoute.POST("/upstream_updates/apply", controller.SupplierApplyChannelUpstreamModelUpdates)
 		}
 
 		supplierMeRoute := apiRouter.Group("/supplier/self")
