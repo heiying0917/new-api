@@ -10,6 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// clearSupplierBillingFields 清除日志里的供应商成本字段（官方价 / 冻结成本价），
+// 用于普通终端用户可见的日志接口，避免泄露平台对供应商的成本；管理员与供应商接口不调用。
+func clearSupplierBillingFields(logs []*model.Log) {
+	for _, l := range logs {
+		if l == nil {
+			continue
+		}
+		l.OfficialUsd = 0
+		l.CostPriceSnapshot = 0
+	}
+}
+
 func GetAllLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	logType, _ := strconv.Atoi(c.Query("type"))
@@ -49,6 +61,7 @@ func GetUserLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	clearSupplierBillingFields(logs) // 普通用户不可见供应商成本
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
@@ -88,6 +101,7 @@ func GetLogByKey(c *gin.Context) {
 		})
 		return
 	}
+	clearSupplierBillingFields(logs) // 令牌持有者(普通用户)不可见供应商成本
 	c.JSON(200, gin.H{
 		"success": true,
 		"message": "",

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/QuantumNous/new-api/model"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -74,6 +76,37 @@ func SecureVerificationRequired() gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+// RequireTwoFAEnabled 轻量校验中间件：仅要求当前用户「已启用 2FA」或「已注册 Passkey」，
+// 不做 session 级输码挑战（区别于 SecureVerificationRequired）。用于供应商查看自己渠道 key 等
+// "只要求开过 2FA" 的受控动作；未开启则返回 403 + TWO_FA_NOT_ENABLED，供前端弹窗引导去设置。
+func RequireTwoFAEnabled() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userId := c.GetInt("id")
+		if userId == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "未登录",
+			})
+			c.Abort()
+			return
+		}
+		if model.IsTwoFAEnabled(userId) {
+			c.Next()
+			return
+		}
+		if _, err := model.GetPasskeyByUserID(userId); err == nil {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": "您需要先启用两步验证或 Passkey 才能执行此操作",
+			"code":    "TWO_FA_NOT_ENABLED",
+		})
+		c.Abort()
 	}
 }
 

@@ -344,3 +344,25 @@
 - **改了哪些文件**:`web/classic/src/components/table/channels/modals/{EditTagModal,EditChannelModal}.jsx`。
 - **如何验证**:`bun run build` ✓;部署 `juhe-v15tagmodalfix`;Playwright 实测(注册一次性供应商 v9edit + seed OpenAI/Claude/AWS 渠道):修复前 进页面/开编辑均弹 map toast;**修复后 页面加载 + 打开各类型渠道编辑均 0 toast / 0 console error,弹窗正常打开**。测试数据(v9edit + 4 渠道)已清理。
 - **提交状态**:5001 已是 `juhe-v15tagmodalfix`;**未 commit、未 push**。
+
+### [2026-06-17] 第十版后端:查看秘钥2FA门禁 + 日志应付供应商金额(TDD,**未提交**)
+- **需求**:① 供应商查看自己渠道 key 需「已开启 2FA/Passkey」(只校验开过、不每次输码),超管查看任意渠道 key 跳过 2FA;③ 使用日志展示「应付供应商=官方价(USD)×渠道冻结成本价(¥/$)」,补齐各消费路径记录,普通用户不可见。设计见 `docs/superpowers/specs/2026-06-16-tokenki-v10-2fa-keyview-payable-settlement-design.md`。
+- **做了什么(后端,全程 TDD red→green)**:
+  1. **需求1 门禁**:`middleware/secure_verification.go` 新增 `RequireTwoFAEnabled()`(仅校验 `model.IsTwoFAEnabled` 或有 Passkey,未开启返回 403+`TWO_FA_NOT_ENABLED`);`router/api-router.go` 从 `POST /channel/:id/key` **移除** `SecureVerificationRequired`(超管所有渠道跳过 2FA),供应商组新增 `GET /supplier/channel/:id/key`(挂 `RequireTwoFAEnabled`+`DisableCache`);`controller/supplier_channel.go` `SupplierGetChannel` 改 `GetChannelById(id,false)`(Omit key,详情不再泄露明文)+ 新增 `SupplierGetChannelKey`(归属校验后返回明文 key)。注:GORM `Updates(struct)` 跳过零值,详情空 key 不会冲掉原 key,供应商编辑保存安全。
+  2. **需求3 记录**:`service/supplier_billing.go` 新增 `OfficialUsdFromQuota(quota,groupRatio)=quota/(groupRatio×QuotaPerUnit)`(反推不含分组折扣的官方价);`model/log.go` `RecordConsumeLog` **统一归一**——仅供应商渠道按渠道当前成本价补 `cost_price_snapshot`,非供应商渠道把 official_usd/snapshot 清零(只在有计费字段时查渠道,普通请求热路径零开销);各路径接 official_usd:`service/quota.go`(wss/audio)、`service/task_billing.go`(任务)、`relay/mjproxy_handler.go`(MJ 两处);text 路径原已记录,违规罚金**有意不计应付**。
+  3. **需求3 防泄露**:`controller/log.go` 新增 `clearSupplierBillingFields`,在 `GetUserLogs`(/log/self)与 `GetLogByKey`(/log/token)清零两字段——普通终端用户看不到平台对供应商的成本;admin(/log/)与供应商(/supplier/self/logs)接口保留。
+- **新增/改测试(均先 red 后 green)**:`service/supplier_billing_test.go::TestOfficialUsdFromQuota`、`service/task_billing_supplier_test.go::TestLogTaskConsumption_RecordsSupplierPayable`、`model/log_supplier_billing_test.go::TestRecordConsumeLogSupplierBilling`、`middleware/require_twofa_test.go`(4 例:无凭证 403/有2FA放行/有Passkey放行/未登录401)、`controller/log_billing_strip_test.go::TestClearSupplierBillingFields`。
+- **如何验证**:`go build ./...` ✓;`go test ./middleware ./service ./model` 全绿;`controller` 包除**预存在失败** `TestListModelsTokenLimitIncludesTieredBillingModel`(纯 HEAD worktree 复现同样 `RedisHGetObj` 空指针 panic,与本次无关)外全绿。
+- **剩余(未做)**:前端 Req1(toast→引导弹窗+去设置2FA、供应商查看key走新接口并按2FA门禁、超管直显)、Req3 前端(已加「应付/应收(¥)」列,待 bun build)、Req4(申请结算确认弹窗显示金额)、Req2(管理员重置2FA classic 已具备,待实测)、i18n 文案键。
+- **提交状态**:**未 commit、未 push**。
+
+### [2026-06-17] 第十版前端 + Req2核验 + 对抗性复审(TDD,**未提交**)
+- **Req1 前端(查看key 2FA 引导弹窗 + 角色化)**:`helpers/secureApiCall.js` `isVerificationRequiredError` 增识 `TWO_FA_NOT_ENABLED`;`hooks/common/useSecureVerification.jsx` 无验证方式时**改为开引导弹窗(不再 toast)**;`components/common/modals/SecureVerificationModal.jsx` 未启用分支加「去设置 2FA」按钮(`useNavigate` → `/console/personal?tab=security`);`services/secureVerification.js` 新增 `viewSupplierChannelKey`(GET 供应商 key 接口,带 `skipErrorHandler`);`components/table/channels/modals/EditChannelModal.jsx` `handleShow2FAModal` 按 `isSupplierMode` 选接口(供应商走新接口/管理员走原接口);`components/settings/personal/cards/AccountManagement.jsx` 读 `?tab=security` 受控激活安全 tab。
+- **Req3 前端(应付列)**:`hooks/usage-logs/useUsageLogsData.jsx` COLUMN_KEYS 加 `PAYABLE`,默认仅 admin+supplier 可见、普通用户强制隐藏(初始可见性 + handleSelectAll 双重拦截);`components/table/usage-logs/UsageLogsColumnDefs.jsx` 新增列(供应商「应收(¥)」/管理员「应付(¥)」)= `official_usd × cost_price_snapshot`,snapshot/官方价为 0 显示「-」,附明细 tooltip;列选择器与表格两处 getLogsColumns 均已传 isSupplierUser。
+- **Req4 前端(子代理实现)**:`hooks/supplier-settlements/useSupplierSettlementsData.jsx` 新增 `getPendingAmount`;`components/table/supplier-settlements/index.jsx` handleApply 先拉 `/api/supplier/self/pending` 再弹确认(展示应结算金额¥/官方价$/条数,无可结算时禁用确认)。
+- **Req2 核验(子代理只读) + 补瑕疵**:后端重置 2FA(`AdminDisable2FA` 连带清备用码 + `canManageTargetRole` 拦截 + 重置后 `IsTwoFAEnabled=false` 可纯密码登录)与 reset_passkey **功能完整**;classic 前端补两处:`UsersColumnDefs.jsx` 对 role=100(超管)隐藏重置入口、`UsersTable.jsx` 重置后 `refresh?.()`。
+- **i18n**:`web/classic/src/i18n/locales/zh-CN.json` 追加 8 个缺失键(去设置 2FA/应付(¥)/应收(¥)/官方价/当前没有可结算的消费/当前应结算金额：/条待结算/确定申请结算？),JSON 校验通过。
+- **对抗性复审(code-reviewer 子代理 + 5 并行深挖,已逐条复验)**:无 Critical。子代理报的"task 计费放大 8×"经 lead 复验为**误报**(OtherRatios 本应计入 official_usd)。确认无新增越权/泄露:面向普通用户/令牌的原始日志端点仅 `GetUserLogs`/`GetLogByKey` 两处且都已 strip;供应商 key 接口有归属校验;单 key 空 key 不冲(GORM Updates 跳零值)。flag 三项**预存在/业务决策项**(非本次回归):①`SupplierUpdateChannel` 多 Key `ChannelInfo` 覆盖(预存在,建议对齐管理员 `patch.ChannelInfo=existing.ChannelInfo`);②`RequireTwoFAEnabled` 在 DB 故障时 fail-closed 误导已开 2FA 用户(安全方向对,体验欠佳);③违规罚金不计应付(有意决策,待产品确认)。按建议补 `TestLogTaskConsumption_NonSupplierChannelNoPayable` 回归守卫。
+- **如何验证**:`go build ./...`/`go vet` ✓;`go test ./middleware ./service ./model` 全绿、`controller` 改动相关测试全绿(仅预存在 panic 测试 `TestListModelsTokenLimitIncludesTieredBillingModel` 除外);`bun run build`(classic)✓;zh-CN.json JSON 校验 ✓。
+- **未做(待定)**:本地部署 + Playwright e2e 实测(需改生产环境,待用户指令);预存在的多 Key ChannelInfo 修复(超范围,待用户定)。
+- **提交状态**:**未 commit、未 push**(等用户指令)。

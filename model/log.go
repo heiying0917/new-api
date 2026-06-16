@@ -242,6 +242,24 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			needRecordIp = true
 		}
 	}
+	// 供应商计费字段归一：仅供应商渠道保留 official_usd 并按渠道当前成本价冻结 cost_price_snapshot；
+	// 非供应商渠道一律清零，避免脏数据进入「Σ(official_usd × cost_price_snapshot)」结算口径。
+	// 仅在有计费字段需要处理时才查渠道，普通(非供应商)请求的热路径零额外开销。
+	if params.OfficialUsd != 0 || params.CostPriceSnapshot != 0 {
+		isSupplier := false
+		if params.ChannelId > 0 {
+			if ch, chErr := CacheGetChannel(params.ChannelId); chErr == nil && ch != nil && ch.SupplierId > 0 {
+				isSupplier = true
+				if params.CostPriceSnapshot == 0 && ch.CostPrice != nil {
+					params.CostPriceSnapshot = *ch.CostPrice
+				}
+			}
+		}
+		if !isSupplier {
+			params.OfficialUsd = 0
+			params.CostPriceSnapshot = 0
+		}
+	}
 	log := &Log{
 		UserId:           userId,
 		Username:         username,

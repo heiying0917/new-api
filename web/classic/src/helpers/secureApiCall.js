@@ -38,6 +38,9 @@ export function isVerificationRequiredError(error) {
       'VERIFICATION_REQUIRED',
       'VERIFICATION_EXPIRED',
       'VERIFICATION_INVALID',
+      // 未开启 2FA/Passkey（供应商查看 key 等受 RequireTwoFAEnabled 守卫的动作）。
+      // 同样交给验证流程：此时无可用验证方式，会弹出"去设置 2FA"引导弹窗而非报错 toast。
+      'TWO_FA_NOT_ENABLED',
     ];
 
     return verificationCodes.includes(data.code);

@@ -58,11 +58,12 @@ func backfillSupplierUnsettled(channels []*model.Channel) {
 	}
 }
 
-// SupplierGetChannel 取自己的单个渠道（含 key）
+// SupplierGetChannel 取自己的单个渠道（不含明文 key；明文 key 走 /:id/key 受 2FA 守卫的接口）
 func SupplierGetChannel(c *gin.Context) {
 	supplierId := c.GetInt("id")
 	id, _ := strconv.Atoi(c.Param("id"))
-	ch, err := model.GetChannelById(id, true)
+	// selectAll=false → Omit("key")，详情不下发明文 key，避免未经 2FA 即可读取
+	ch, err := model.GetChannelById(id, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -72,6 +73,27 @@ func SupplierGetChannel(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, ch)
+}
+
+// SupplierGetChannelKey 取自己渠道的明文 key。路由已挂 RequireTwoFAEnabled：
+// 只有已开启 2FA/Passkey 的供应商才能调用；此处再校验渠道归属本人。
+func SupplierGetChannelKey(c *gin.Context) {
+	supplierId := c.GetInt("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	ch, err := model.GetChannelById(id, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if ch.SupplierId != supplierId {
+		common.ApiErrorMsg(c, "forbidden: not your channel")
+		return
+	}
+	common.ApiSuccess(c, gin.H{"key": ch.Key})
 }
 
 // SupplierAddChannel 创建渠道（强制归属本人 + 成本价必填 > 0）

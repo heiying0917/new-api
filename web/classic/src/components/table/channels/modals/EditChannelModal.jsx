@@ -1222,15 +1222,17 @@ const EditChannelModal = (props) => {
   // 查看渠道密钥（透明验证）
   const handleShow2FAModal = async () => {
     try {
-      // 使用 withVerification 包装，会自动处理需要验证的情况
-      const result = await withVerification(
-        createApiCalls.viewChannelKey(channelId),
-        {
-          title: t('查看渠道密钥'),
-          description: t('为了保护账户安全，请验证您的身份。'),
-          preferredMethod: 'passkey', // 优先使用 Passkey
-        },
-      );
+      // 供应商查看自己渠道：走受 RequireTwoFAEnabled 守卫的供应商接口（只要求开过 2FA/Passkey）；
+      // 管理员/超管：走原渠道 key 接口（后端已去除每次安全验证，点击直接返回）。
+      // 未开启 2FA 时两者都会被 withVerification 捕获 403 → 弹"去设置 2FA"引导弹窗。
+      const keyApiCall = isSupplierMode
+        ? createApiCalls.viewSupplierChannelKey(channelId)
+        : createApiCalls.viewChannelKey(channelId);
+      const result = await withVerification(keyApiCall, {
+        title: t('查看渠道密钥'),
+        description: t('为了保护账户安全，请验证您的身份。'),
+        preferredMethod: 'passkey', // 优先使用 Passkey
+      });
 
       // 如果直接返回了结果（已验证），显示密钥
       if (result && result.success && result.data?.key) {

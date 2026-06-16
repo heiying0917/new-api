@@ -90,9 +90,17 @@ export const useSecureVerification = ({
       const methods = await checkVerificationMethods();
 
       if (!methods.has2FA && !methods.hasPasskey) {
-        const errorMessage = t('您需要先启用两步验证或 Passkey 才能执行此操作');
-        showError(errorMessage);
-        onError?.(new Error(errorMessage));
+        // 未启用任何验证方式：不再用 toast 报错，而是打开引导弹窗
+        // （SecureVerificationModal 的"未启用"分支会展示"去设置 2FA"按钮，跳转到安全设置）。
+        // apiCall 置空：用户关闭弹窗即放弃本次操作；点"去设置"则跳转个人设置页。
+        setVerificationState((prev) => ({
+          ...prev,
+          method: null,
+          apiCall: null,
+          title,
+          description,
+        }));
+        setIsModalVisible(true);
         return false;
       }
 

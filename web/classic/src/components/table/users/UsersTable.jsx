@@ -121,11 +121,13 @@ const UsersTable = (usersData) => {
   const handleResetPasskeyConfirm = async () => {
     await resetUserPasskey(modalUser);
     setShowResetPasskeyModal(false);
+    refresh?.();
   };
 
   const handleResetTwoFAConfirm = async () => {
     await resetUserTwoFA(modalUser);
     setShowResetTwoFAModal(false);
+    refresh?.();
   };
 
   // 解除该用户的登录暴破锁定（清零失败计数与锁定状态）

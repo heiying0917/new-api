@@ -53,6 +53,7 @@ import {
   getOAuthProviderIcon,
 } from '../../../../helpers';
 import TwoFASetting from '../components/TwoFASetting';
+import { useSearchParams } from 'react-router-dom';
 
 const AccountManagement = ({
   t,
@@ -72,6 +73,11 @@ const AccountManagement = ({
   onPasskeyRegister,
   onPasskeyDelete,
 }) => {
+  // 支持外部用 ?tab=security 直达「安全设置」（查看 key 等弹窗的"去设置 2FA"按钮跳转至此）
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = React.useState(
+    searchParams.get('tab') === 'security' ? 'security' : 'binding',
+  );
   const renderAccountInfo = (accountId, label) => {
     if (!accountId || accountId === '') {
       return <span className='text-gray-500'>{t('未绑定')}</span>;
@@ -185,7 +191,7 @@ const AccountManagement = ({
         </div>
       </div>
 
-      <Tabs type='card' defaultActiveKey='binding'>
+      <Tabs type='card' activeKey={activeTab} onChange={setActiveTab}>
         {/* 账户绑定 Tab */}
         <TabPane
           tab={
