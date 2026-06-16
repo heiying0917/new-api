@@ -1,7 +1,7 @@
 {
-  "name": "new-api-electron",
+  "name": "tokenki-electron",
   "version": "1.0.0",
-  "description": "New API - AI Model Gateway Desktop Application",
+  "description": "Tokenki - AI Model Gateway Desktop Application",
   "main": "main.js",
   "scripts": {
     "start-app": "electron .",
@@ -18,7 +18,7 @@
     "openai",
     "claude"
   ],
-  "author": "QuantumNous",
+  "author": "Tokenki Team",
   "repository": {
     "type": "git",
     "url": "https://github.com/QuantumNous/new-api"
@@ -29,8 +29,8 @@
     "electron-builder": "^26.7.0"
   },
   "build": {
-    "appId": "com.newapi.desktop",
-    "productName": "New-API-App",
+    "appId": "com.tokenki.desktop",
+    "productName": "Tokenki-App",
     "publish": null,
     "directories": {
       "output": "dist"
@@ -57,8 +57,8 @@
       ],
       "extraResources": [
         {
-          "from": "../new-api",
-          "to": "bin/new-api"
+          "from": "../tokenki",
+          "to": "bin/tokenki"
         },
         {
           "from": "../web/dist",
@@ -94,8 +94,8 @@
       ],
       "extraResources": [
         {
-          "from": "../new-api.exe",
-          "to": "bin/new-api.exe"
+          "from": "../tokenki.exe",
+          "to": "bin/tokenki.exe"
         },
         {
           "from": "../LICENSE",
@@ -128,8 +128,8 @@
       "category": "Development",
       "extraResources": [
         {
-          "from": "../new-api",
-          "to": "bin/new-api"
+          "from": "../tokenki",
+          "to": "bin/tokenki"
         },
         {
           "from": "../LICENSE",

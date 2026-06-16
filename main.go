@@ -66,7 +66,7 @@ func main() {
 		}
 	}
 
-	common.SysLog("New API " + common.Version + " started")
+	common.SysLog("Tokenki " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}

@@ -1,8 +1,8 @@
 <div align="center">
 
-![new-api](/web/default/public/logo.png)
+![tokenki](/web/default/public/logo.png)
 
-# New API
+# Tokenki
 
 🍥 **新一代大模型網關與AI資產管理系統**
 
@@ -111,8 +111,8 @@
 
 ```bash
 # 複製項目
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # 編輯 docker-compose.yml 配置
 nano docker-compose.yml
@@ -126,22 +126,24 @@ docker-compose up -d
 
 ```bash
 # 拉取最新鏡像
-docker pull calciumion/new-api:latest
+# 注意：官方 `tokenki/tokenki` 鏡像尚未發佈，請先本地 build：
+#   docker build -t tokenki/tokenki:latest .
+docker pull tokenki/tokenki:latest
 
 # 使用 SQLite（預設）
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 
 # 使用 MySQL
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 提示：** `-v ./data:/data` 會將數據保存在當前目錄的 `data` 資料夾中，你也可以改為絕對路徑如 `-v /your/custom/path:/data`
@@ -295,7 +297,7 @@ docker run --name new-api -d --restart always \
 ## 🚢 部署
 
 > [!TIP]
-> **最新版 Docker 鏡像：** `calciumion/new-api:latest`
+> **最新版 Docker 鏡像：** `tokenki/tokenki:latest`
 
 ### 📋 部署要求
 
@@ -322,12 +324,12 @@ docker run --name new-api -d --restart always \
 | `AZURE_DEFAULT_API_VERSION` | Azure API 版本                                                 | `2025-04-01-preview` |
 | `ERROR_LOG_ENABLED` | 錯誤日誌開關                                                       | `false` |
 | `PYROSCOPE_URL` | Pyroscope 服務位址                                            | - |
-| `PYROSCOPE_APP_NAME` | Pyroscope 應用名                                        | `new-api` |
+| `PYROSCOPE_APP_NAME` | Pyroscope 應用名                                        | `tokenki` |
 | `PYROSCOPE_BASIC_AUTH_USER` | Pyroscope Basic Auth 用戶名                        | - |
 | `PYROSCOPE_BASIC_AUTH_PASSWORD` | Pyroscope Basic Auth 密碼                  | - |
 | `PYROSCOPE_MUTEX_RATE` | Pyroscope mutex 採樣率                               | `5` |
 | `PYROSCOPE_BLOCK_RATE` | Pyroscope block 採樣率                               | `5` |
-| `HOSTNAME` | Pyroscope 標籤裡的主機名                                          | `new-api` |
+| `HOSTNAME` | Pyroscope 標籤裡的主機名                                          | `tokenki` |
 
 📖 **完整配置：** [環境變數文件](https://docs.newapi.pro/zh/docs/installation/config-maintenance/environment-variables)
 
@@ -340,8 +342,8 @@ docker run --name new-api -d --restart always \
 
 ```bash
 # 複製項目
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # 編輯配置
 nano docker-compose.yml
@@ -357,21 +359,21 @@ docker-compose up -d
 
 **使用 SQLite：**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 **使用 MySQL：**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 路徑說明：**
@@ -469,7 +471,7 @@ docker run --name new-api -d --restart always \
 
 <div align="center">
 
-### 💖 感謝使用 New API
+### 💖 感謝使用 Tokenki
 
 如果這個項目對你有幫助，歡迎給我們一個 ⭐️ Star！
 

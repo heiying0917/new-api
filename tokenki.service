@@ -1,0 +1,18 @@
+# File path: /etc/systemd/system/tokenki.service
+# sudo systemctl daemon-reload
+# sudo systemctl start tokenki
+# sudo systemctl enable tokenki
+# sudo systemctl status tokenki
+[Unit]
+Description=Tokenki Service
+After=network.target
+
+[Service]
+User=ubuntu  # 注意修改用户名
+WorkingDirectory=/path/to/tokenki  # 注意修改路径
+ExecStart=/path/to/tokenki/tokenki --port 3000 --log-dir /path/to/tokenki/logs  # 注意修改路径和端口号
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
