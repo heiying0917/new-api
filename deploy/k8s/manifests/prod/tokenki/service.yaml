@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tokenki-api
+  namespace: tokenki
+spec:
+  # 只匹配 slave：master 跑后台任务（统计、批量更新、定时同步），混入 API 流量会竞争资源
+  # master 的 liveness/readiness 由 kubelet 直接 probe，不依赖此 Service
+  selector:
+    app: tokenki-api
+    role: slave
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP

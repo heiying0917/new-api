@@ -23,8 +23,12 @@ tiktoken_cache
 .gomodcache/
 .cache
 plans
-.claude
+.claude/settings.local.json
 .cursor
+
+# K8s 真实 secret 文件（凭证不入仓库；example 模板可提交）
+deploy/k8s/manifests/ghcr-secret.yaml
+deploy/k8s/manifests/prod/*/secret.yaml
 
 electron/node_modules
 electron/dist

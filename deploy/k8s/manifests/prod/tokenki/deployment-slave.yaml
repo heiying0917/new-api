@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tokenki-api-slave
+  namespace: tokenki
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tokenki-api
+      role: slave
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: tokenki-api
+        role: slave
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      terminationGracePeriodSeconds: 3660
+      affinity:
+        podAntiAffinity:
+          # 软约束：尽量分散到不同节点；改 required 会因 maxUnavailable=0 + 节点紧张时滚不动
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: tokenki-api
+                  role: slave
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: tokenki-api
+        image: ghcr.io/heiying0917/tokenki:v2026.06.16.1
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: tokenki-api-config
+        env:
+        - name: NODE_TYPE
+          value: "slave"
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: tokenki-api
+              key: SESSION_SECRET
+        - name: CRYPTO_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: tokenki-api
+              key: CRYPTO_SECRET
+        - name: SQL_DSN
+          valueFrom:
+            secretKeyRef:
+              name: tokenki-api
+              key: SQL_DSN
+        - name: REDIS_CONN_STRING
+          valueFrom:
+            secretKeyRef:
+              name: tokenki-api
+              key: REDIS_CONN_STRING
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"

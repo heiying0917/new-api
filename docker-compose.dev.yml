@@ -6,28 +6,33 @@
 #   3. Open http://localhost:3001 (Rsbuild dev server, API auto-proxied to :3000)
 #
 # Rebuild backend after Go code changes:
-#   docker compose -f docker-compose.dev.yml up -d --build new-api
+#   docker compose -f docker-compose.dev.yml up -d --build tokenki
 #
 # Stop:
 #   docker compose -f docker-compose.dev.yml down
 #
 # Reset data:
 #   docker compose -f docker-compose.dev.yml down -v
+#
+# Host port override (when 3000 is taken):
+#   TOKENKI_DEV_PORT=3010 docker compose -f docker-compose.dev.yml up -d
+
+name: tokenki
 
 services:
-  new-api:
+  tokenki:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: new-api-dev:local
-    container_name: new-api-dev
+    image: tokenki-dev:local
+    container_name: tokenki-dev
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${TOKENKI_DEV_PORT:-3000}:3000"
     volumes:
       - dev_data:/data
     environment:
-      - SQL_DSN=postgresql://root:123456@postgres:5432/new-api
+      - SQL_DSN=postgresql://root:123456@postgres:5432/tokenki
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
@@ -41,25 +46,25 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: new-api-dev-redis
+    container_name: tokenki-dev-redis
     restart: unless-stopped
     networks:
       - dev-network
 
   postgres:
     image: postgres:15-alpine
-    container_name: new-api-dev-pg
+    container_name: tokenki-dev-pg
     restart: unless-stopped
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: new-api
+      POSTGRES_DB: tokenki
     volumes:
       - dev_pg_data:/var/lib/postgresql/data
     networks:
       - dev-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d new-api"]
+      test: ["CMD-SHELL", "pg_isready -U root -d tokenki"]
       interval: 5s
       timeout: 3s
       retries: 5

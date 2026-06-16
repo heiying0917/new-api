@@ -1,8 +1,8 @@
 <div align="center">
 
-![new-api](/web/default/public/logo.png)
+![tokenki](/web/default/public/logo.png)
 
-# New API
+# Tokenki
 
 🍥 **Passerelle de modèles étendus de nouvelle génération et système de gestion d'actifs d'IA**
 
@@ -111,8 +111,8 @@
 
 ```bash
 # Cloner le projet
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # Modifier la configuration docker-compose.yml
 nano docker-compose.yml
@@ -126,22 +126,24 @@ docker-compose up -d
 
 ```bash
 # Tirer la dernière image
-docker pull calciumion/new-api:latest
+# NOTE : l'image officielle `tokenki/tokenki` n'est pas encore publiée — buildez localement d'abord :
+#   docker build -t tokenki/tokenki:latest .
+docker pull tokenki/tokenki:latest
 
 # Utilisation de SQLite (par défaut)
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 
 # Utilisation de MySQL
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 Astuce:** `-v ./data:/data` sauvegardera les données dans le dossier `data` du répertoire actuel, vous pouvez également le changer en chemin absolu comme `-v /your/custom/path:/data`
@@ -295,7 +297,7 @@ docker run --name new-api -d --restart always \
 ## 🚢 Déploiement
 
 > [!TIP]
-> **Dernière image Docker:** `calciumion/new-api:latest`
+> **Dernière image Docker:** `tokenki/tokenki:latest`
 
 ### 📋 Exigences de déploiement
 
@@ -322,12 +324,12 @@ docker run --name new-api -d --restart always \
 | `AZURE_DEFAULT_API_VERSION` | Version de l'API Azure | `2025-04-01-preview` |
 | `ERROR_LOG_ENABLED` | Interrupteur du journal d'erreurs | `false` |
 | `PYROSCOPE_URL` | Adresse du serveur Pyroscope | - |
-| `PYROSCOPE_APP_NAME` | Nom de l'application Pyroscope | `new-api` |
+| `PYROSCOPE_APP_NAME` | Nom de l'application Pyroscope | `tokenki` |
 | `PYROSCOPE_BASIC_AUTH_USER` | Utilisateur Basic Auth Pyroscope | - |
 | `PYROSCOPE_BASIC_AUTH_PASSWORD` | Mot de passe Basic Auth Pyroscope | - |
 | `PYROSCOPE_MUTEX_RATE` | Taux d'échantillonnage mutex Pyroscope | `5` |
 | `PYROSCOPE_BLOCK_RATE` | Taux d'échantillonnage block Pyroscope | `5` |
-| `HOSTNAME` | Nom d'hôte tagué pour Pyroscope | `new-api` |
+| `HOSTNAME` | Nom d'hôte tagué pour Pyroscope | `tokenki` |
 
 📖 **Configuration complète:** [Documentation des variables d'environnement](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables)
 
@@ -340,8 +342,8 @@ docker run --name new-api -d --restart always \
 
 ```bash
 # Cloner le projet
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # Modifier la configuration
 nano docker-compose.yml
@@ -357,21 +359,21 @@ docker-compose up -d
 
 **Utilisation de SQLite:**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 **Utilisation de MySQL:**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 Explication du chemin:**
@@ -469,7 +471,7 @@ Si les politiques de votre organisation ne permettent pas l'utilisation de logic
 
 <div align="center">
 
-### 💖 Merci d'utiliser New API
+### 💖 Merci d'utiliser Tokenki
 
 Si ce projet vous est utile, bienvenue à nous donner une ⭐️ Étoile！
 

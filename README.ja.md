@@ -1,8 +1,8 @@
 <div align="center">
 
-![new-api](/web/default/public/logo.png)
+![tokenki](/web/default/public/logo.png)
 
-# New API
+# Tokenki
 
 🍥 **次世代大規模モデルゲートウェイとAI資産管理システム**
 
@@ -111,8 +111,8 @@
 
 ```bash
 # プロジェクトをクローン
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # docker-compose.yml 設定を編集
 nano docker-compose.yml
@@ -126,22 +126,24 @@ docker-compose up -d
 
 ```bash
 # 最新のイメージをプル
-docker pull calciumion/new-api:latest
+# 注意: 公式の `tokenki/tokenki` イメージは未公開のため、まずローカル build してください:
+#   docker build -t tokenki/tokenki:latest .
+docker pull tokenki/tokenki:latest
 
 # SQLiteを使用（デフォルト）
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 
 # MySQLを使用
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 ヒント:** `-v ./data:/data` は現在のディレクトリの `data` フォルダにデータを保存します。絶対パスに変更することもできます：`-v /your/custom/path:/data`
@@ -297,7 +299,7 @@ docker run --name new-api -d --restart always \
 ## 🚢 デプロイ
 
 > [!TIP]
-> **最新のDockerイメージ:** `calciumion/new-api:latest`
+> **最新のDockerイメージ:** `tokenki/tokenki:latest`
 
 ### 📋 デプロイ要件
 
@@ -324,12 +326,12 @@ docker run --name new-api -d --restart always \
 | `AZURE_DEFAULT_API_VERSION` | Azure APIバージョン | `2025-04-01-preview` |
 | `ERROR_LOG_ENABLED` | エラーログスイッチ | `false` |
 | `PYROSCOPE_URL` | Pyroscopeサーバーのアドレス | - |
-| `PYROSCOPE_APP_NAME` | Pyroscopeアプリ名 | `new-api` |
+| `PYROSCOPE_APP_NAME` | Pyroscopeアプリ名 | `tokenki` |
 | `PYROSCOPE_BASIC_AUTH_USER` | Pyroscope Basic Authユーザー | - |
 | `PYROSCOPE_BASIC_AUTH_PASSWORD` | Pyroscope Basic Authパスワード | - |
 | `PYROSCOPE_MUTEX_RATE` | Pyroscope mutexサンプリング率 | `5` |
 | `PYROSCOPE_BLOCK_RATE` | Pyroscope blockサンプリング率 | `5` |
-| `HOSTNAME` | Pyroscope用のホスト名タグ | `new-api` |
+| `HOSTNAME` | Pyroscope用のホスト名タグ | `tokenki` |
 
 📖 **完全な設定:** [環境変数ドキュメント](https://docs.newapi.pro/ja/docs/installation/config-maintenance/environment-variables)
 
@@ -342,8 +344,8 @@ docker run --name new-api -d --restart always \
 
 ```bash
 # プロジェクトをクローン
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
+git clone https://github.com/QuantumNous/new-api.git tokenki
+cd tokenki
 
 # 設定を編集
 nano docker-compose.yml
@@ -359,21 +361,21 @@ docker-compose up -d
 
 **SQLiteを使用:**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 **MySQLを使用:**
 ```bash
-docker run --name new-api -d --restart always \
+docker run --name tokenki -d --restart always \
   -p 3000:3000 \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -e TZ=Asia/Shanghai \
   -v ./data:/data \
-  calciumion/new-api:latest
+  tokenki/tokenki:latest
 ```
 
 > **💡 パス説明:**
@@ -469,7 +471,7 @@ docker run --name new-api -d --restart always \
 
 <div align="center">
 
-### 💖 New APIをご利用いただきありがとうございます
+### 💖 Tokenkiをご利用いただきありがとうございます
 
 このプロジェクトがあなたのお役に立てたなら、ぜひ ⭐️ スターをください！
 

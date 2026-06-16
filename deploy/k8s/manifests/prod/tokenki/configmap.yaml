@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tokenki-api-config
+  namespace: tokenki
+data:
+  TZ: "Asia/Shanghai"
+  # 日志只输出到 stdout（交由腾讯云 CLS 采集容器日志），不在容器内写文件
+  LOG_DIR: ""
+  # CLS 服务名标识，配合主题 tke_tokenki 做 service: 维度过滤
+  LOG_SERVICE_NAME: "tokenki"
+  # 长任务 graceful shutdown：等待 LLM 流式响应结束
+  GRACEFUL_SHUTDOWN_TIMEOUT: "3600"
+  ERROR_LOG_ENABLED: "true"
+  BATCH_UPDATE_ENABLED: "true"
+  MEMORY_CACHE_ENABLED: "true"
+  # DB 连接池（PG 单实例共享，控制单服务上限）
+  SQL_MAX_OPEN_CONNS: "60"
+  SQL_MAX_IDLE_CONNS: "20"
+  SQL_MAX_LIFETIME: "600"
+  # Redis 连接池（共享实例 db=2，避免连接耗尽影响 tokensolo）
+  REDIS_POOL_SIZE: "100"
+  REDIS_MIN_IDLE_CONNS: "10"
+  REDIS_MAX_CONN_AGE_SEC: "1800"
+  REDIS_IDLE_TIMEOUT_SEC: "240"
+  REDIS_IDLE_CHECK_SEC: "30"
+  REDIS_READ_TIMEOUT_SEC: "10"
+  REDIS_WRITE_TIMEOUT_SEC: "10"
+  REDIS_POOL_TIMEOUT_SEC: "5"
+  REDIS_MAX_RETRIES: "2"
+  # HTTP relay 连接池
+  RELAY_MAX_IDLE_CONNS: "2000"
+  RELAY_MAX_IDLE_CONNS_PER_HOST: "200"
+  LOG_SQL_DSN: ""
+  DEBUG: "false"

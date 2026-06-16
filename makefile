@@ -5,10 +5,15 @@ DEV_FRONTEND_DEFAULT_PORT ?= 5173
 DEV_FRONTEND_CLASSIC_PORT ?= 5174
 DEV_COMPOSE_FILE = docker-compose.dev.yml
 DEV_POSTGRES_SERVICE = postgres
-DEV_BACKEND_SERVICE = new-api
-DEV_POSTGRES_DB = new-api
+DEV_BACKEND_SERVICE = tokenki
+DEV_POSTGRES_DB = tokenki
 DEV_POSTGRES_USER = root
-DEV_SQLITE_PATH ?= one-api.db
+DEV_SQLITE_PATH ?= tokenki.db
+# 后端宿主端口（被占用时改：make dev TOKENKI_DEV_PORT=3010）
+# 同时把前端 dev server 的 API proxy 指向这个端口
+TOKENKI_DEV_PORT ?= 3000
+export TOKENKI_DEV_PORT
+export VITE_REACT_APP_SERVER_URL ?= http://localhost:$(TOKENKI_DEV_PORT)
 
 .PHONY: all build-frontend build-frontend-classic build-all-frontends start-backend dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup
 

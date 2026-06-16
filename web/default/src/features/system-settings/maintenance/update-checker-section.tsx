@@ -59,7 +59,7 @@ export function UpdateCheckerSection({
         {
           headers: {
             Accept: 'application/vnd.github+json',
-            'User-Agent': 'new-api-dashboard',
+            'User-Agent': 'tokenki-dashboard',
           },
         }
       )
