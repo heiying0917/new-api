@@ -72,7 +72,7 @@ body[theme-mode='dark'] .supplier-landing {
   position: relative;
   overflow: hidden;
   /* padding-top 留白避开 app 固定顶栏 */
-  padding: 4.5rem 0 84px;
+  padding: 4rem 0 84px;
   background-color: var(--semi-color-bg-0);
 }
 

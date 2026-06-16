@@ -271,3 +271,10 @@
 - **验证（Playwright 实测 5001）**：eyebrow=「端到端加密 · 供应商严格隔离」、title=「企业级官 Key 托管平台,一键接入全球 AI 算力市场」，不再重复。
 - **改动文件**：`web/classic/src/pages/Home/landing/Hero.jsx`。
 - **提交状态**：5001 已生效；**未 commit、未 push**。
+
+### [2026-06-16] Hero logo+eyebrow 并排一行 + 内容上移（**未提交**）
+- **用户建议**：logo 与 eyebrow 标签放在同一行，让首页内容再往上一点（之前仍偏下）。
+- **改**：`Hero.jsx` 把 logo 与 eyebrow 包进 `landing-hero__brand` 横向 flex（`align-items:center; gap:14px; margin-bottom:20px`，eyebrow 内联清零自身下边距）；`landing.css` `.landing-hero` 顶部留白 `4.5rem→4rem`。
+- **验证（Playwright 实测 5001）**：logo 与 eyebrow 同行（中心 Y 均=150），标题上移（titleTop 192）；部署 `juhe-v9facet8`。
+- **改动文件**：`Hero.jsx`、`landing.css`。
+- **提交状态**：5001 已生效；**未 commit、未 push**。
