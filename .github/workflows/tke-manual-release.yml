@@ -1,0 +1,84 @@
+name: TKE Manual Release (tokenki)
+
+# ⚠️ 紧急备用路径（无冒烟测试，高风险）
+# 正常发版请使用本地 /tke-release skill（含 Phase 4 冒烟测试 + Phase 6 监控）。
+# 本 workflow 仅在本地 Claude Code / 本机环境不可用时手动触发，用完后需手动补跑冒烟测试。
+#
+# 触发方式：仅手动 workflow_dispatch，指定 tag
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (e.g. v2026.06.16.1)'
+        required: true
+        type: string
+
+# 最小权限：本 workflow 只调 K8s API + curl 健康检查，不回写 GitHub 任何资源
+permissions:
+  contents: read
+
+env:
+  IMAGE_BASE: ghcr.io/heiying0917/tokenki
+  HEALTH_URL: https://tokenki.com/api/status
+  NAMESPACE: tokenki
+  MASTER_DEPLOY: tokenki-api-master
+  SLAVE_DEPLOY: tokenki-api-slave
+  CONTAINER_NAME: tokenki-api
+
+jobs:
+  deploy:
+    name: Rolling deploy → TKE (prod)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Resolve image
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "IMAGE=$IMAGE_BASE:$TAG" >> $GITHUB_ENV
+          echo "Deploying: $IMAGE_BASE:$TAG"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          # Secret 存 base64 编码内容，解码写入文件，避免 YAML 引号在存储时丢失
+          # 复用 tokensolo 的 kubeconfig（同集群）
+          echo "${{ secrets.KUBECONFIG_TKE }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      # master 先更新：新 Pod readiness 通过后才摘旧 Pod（maxUnavailable=0）
+      # terminationGracePeriodSeconds=3660 确保旧 Pod 等待 LLM 长任务结束
+      - name: Update master image
+        run: |
+          kubectl set image deployment/$MASTER_DEPLOY \
+            $CONTAINER_NAME=$IMAGE \
+            -n $NAMESPACE
+
+      - name: Wait for master rollout
+        run: |
+          kubectl rollout status deployment/$MASTER_DEPLOY \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Update slave image & wait
+        run: |
+          kubectl set image deployment/$SLAVE_DEPLOY \
+            $CONTAINER_NAME=$IMAGE \
+            -n $NAMESPACE
+          kubectl rollout status deployment/$SLAVE_DEPLOY \
+            -n $NAMESPACE --timeout=300s
+
+      - name: Health check
+        run: |
+          curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            "$HEALTH_URL"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "部署失败，回滚 slave 和 master"
+          kubectl rollout undo deployment/$SLAVE_DEPLOY -n $NAMESPACE
+          kubectl rollout undo deployment/$MASTER_DEPLOY -n $NAMESPACE
