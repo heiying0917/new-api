@@ -28,7 +28,7 @@ env:
 
 jobs:
   build_and_push:
-    name: Build & push multi-arch
+    name: Build & Push
     runs-on: ubuntu-latest
     permissions:
       contents: read

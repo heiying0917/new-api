@@ -9,12 +9,13 @@ description: >-
 disable-model-invocation: true
 # 参数占位提示:tag 可选。
 argument-hint: "[tag]"
-# 最小权限:仅发版所需工具。git/gh/kubectl/curl + 读文档/写报告/询问 commit。
+# 最小权限:仅发版所需工具。git/gh/kubectl/curl/tccli + 读文档/写报告/询问 commit。
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
   - Bash(kubectl *)
   - Bash(curl *)
+  - Bash(tccli *)
   - Bash(go build *)
   - Bash(go test *)
   - Bash(cd *)
@@ -488,48 +489,94 @@ git checkout <panic-commit>
 ### CLS 日志配置
 
 - **Region**：`ap-tokyo`
-- **TopicId**：`<a31bee45-4b9e-4026-b747-5ca2f6656284>`（**TODO**：在腾讯云 CLS 控制台新建主题 `tke_tokenki` 后填入此处）
+- **TopicId**：`a31bee45-4b9e-4026-b747-5ca2f6656284` ✅
 - **主题名**：`tke_tokenki`
 - **过滤字段**：`service:tokenki`（应用通过 `LOG_SERVICE_NAME` env 暴露）
+- **索引模式**：JSON 提取 + 键值索引已建（18 字段：status/level/type/service/path/method/client_ip/latency_ms/route_tag/user_id/model/channel_id/error_reason/elapsed_ms 等业务字段 SqlFlag=true；request_id/msg/sql 高基数 SqlFlag=false）
+
+### 查询工具选择（关键）
+
+> **默认 `tccli cls SearchLog` + SQL 聚合**——SQL 在 CLS 服务端聚合后只回几行结论
+> （如 `status=200, cnt=268`），主对话直接消化，**无需子 agent 中转，token 消耗 ~200**。
+>
+> ❌ 不要用 CLS MCP `SearchLog` 工具拉原始日志条目——单次返回几 KB×N 条 raw log，
+> 会污染主对话上下文，且 LLM 还得二次过滤聚合。
+>
+> ✅ MCP/子 agent 仅在以下场景用：
+> - 需要拉某条具体 `request_id` 的完整日志原文（如 panic stack 全文 + 上下文）
+> - SQL 无法表达的复杂检索（很少见）
 
 ### 查询原则（关键）
 
 > **每轮必须从监控起点查到当前时间，不能只查最近 1 分钟。**
 > CLS 有约 1 分钟采集延迟，滑动窗口会漏掉边界日志。固定 From 累计查才能覆盖所有延迟到达的日志。
 
-> ⚠️ **CLS 查询返回体量大** —— **必须用子 agent（Agent 工具）执行查询，只回传结论**
-> （4xx/5xx 计数 / 是否异常 / 相关性判断），**不要在主对话里直接拉原始日志**。
+### tccli 查询模板
 
-**4xx/5xx 查询语句**：
+时间戳获取（毫秒级）：
+```bash
+TOPIC_ID="a31bee45-4b9e-4026-b747-5ca2f6656284"
+FROM=<监控起点毫秒，Phase 3 部署完成时刻 $(($(date +%s) * 1000)) 记录>
+TO=$(($(date +%s) * 1000))
+```
 
-**步骤 1 — 按状态码分组统计**：
-```
-service:tokenki AND status_code:>=400 | SELECT status_code, count(*) AS cnt GROUP BY status_code ORDER BY cnt DESC LIMIT 20
+**步骤 1 — 按 status 分组统计（4xx/5xx 计数）**：
+```bash
+tccli cls SearchLog --region ap-tokyo \
+  --TopicId $TOPIC_ID --From $FROM --To $TO \
+  --Query 'service:tokenki AND type:access AND status:>=400 | SELECT status, count(*) AS cnt GROUP BY status ORDER BY cnt DESC LIMIT 20' \
+  --Limit 20 2>&1 | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [{kv["Key"]: kv["Value"] for kv in r["Data"]} for r in d.get("AnalysisResults", [])]
+print(rows)'
 ```
 
-**步骤 2 — 若有 5xx，拉明细看路径 / 错误原因**：
-```
-service:tokenki AND status_code:>=500 | SELECT event, level, status_code, path, model, channel_id, error_reason, user_id LIMIT 10
+**步骤 2 — 若有 5xx，拉明细看路径 / 错误原因 / 用户 / 渠道**：
+```bash
+tccli cls SearchLog --region ap-tokyo \
+  --TopicId $TOPIC_ID --From $FROM --To $TO \
+  --Query 'service:tokenki AND status:>=500 | SELECT level, status, path, model, channel_id, error_reason, user_id LIMIT 10' \
+  --Limit 10 2>&1 | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rows = [{kv["Key"]: kv["Value"] for kv in r["Data"]} for r in d.get("AnalysisResults", [])]
+[print(r) for r in rows]'
 ```
 
 **步骤 3 — 与发版前同时段对比**（改 From/To 为发版前 1 小时的同窗口）：
+```bash
+tccli cls SearchLog --region ap-tokyo \
+  --TopicId $TOPIC_ID --From $FROM_PREV --To $TO_PREV \
+  --Query 'service:tokenki AND status:503 AND path:"/v1/chat/completions" | SELECT count(*) AS cnt' \
+  --Limit 1 2>&1 | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(d["AnalysisResults"][0]["Data"][0]["Value"] if d.get("AnalysisResults") else 0)'
 ```
-service:tokenki AND status_code:503 AND path:"/v1/chat/completions" | SELECT count(*) AS cnt
-```
+
+> 若发版前 0 条、发版后突现 → 疑似引入；发版前后量级相当 → pre-existing。
+
+**字段名提醒**：业务字段是 `status`（不是 status_code）、`type`（access/sql 区分）。
+`request_id` / `msg` / `sql` 是 SqlFlag=false，只能在 Query 部分作过滤条件，**不能 SELECT/GROUP BY**——
+如需拉某 request_id 的完整日志，用子 agent + CLS MCP，不要 SQL。
 
 ### 执行流程
 
-1. 用 `ConvertTimeStringToTimestamp` 将监控起始时间转为 **From timestamp（固定不变，贯穿全部 6 轮）**
+1. 监控起始时间转为 **From timestamp 毫秒（固定不变，贯穿全部 6 轮）**：
+   `FROM=$(($(date +%s) * 1000))` —— 在 Phase 3 部署完成 + 健康检查通过那一刻立即执行
 2. 用 TaskCreate 创建监控任务，记录起始 timestamp 和初始累计状态（空）
 3. 用 ScheduleWakeup（delaySeconds=30）启动循环，每轮 prompt 携带：
    - 监控起始 From timestamp（固定）
    - 上轮累计已发现的错误列表（含时间、状态码、路径、次数）
    - 当前轮次编号 / 总轮次（6）
 4. 每轮唤醒后：
-   - 用 `ConvertTimeStringToTimestamp` 获取当前时间的 To timestamp
-   - **委托子 agent（Agent 工具）执行 CLS 查询**（From=固定起点，To=当前时间）
+   - 计算当前 To timestamp：`TO=$(($(date +%s) * 1000))`
+   - **主对话直接 Bash 跑步骤 1 的 tccli + python 解析**（From=固定起点，To=当前时间）
+   - 拿到 1-5 行聚合结果（如 `[{'status': '200', 'cnt': '268'}]`），不会污染上下文
    - 与上轮累计结果对比，提取本轮**新增**条目
-   - 若有新增：按相关性准则判断，疑似版本引入则立即报告并停止监控进入 Phase 5
+   - 若有新增 5xx：跑步骤 2 拉明细（仍 tccli）→ 按相关性准则判断
+   - 疑似版本引入则立即报告并停止监控进入 Phase 5
    - **每轮必须输出一行状态行**（格式见下方）
    - 未到第 6 轮：ScheduleWakeup(delaySeconds=30)
    - 到第 6 轮：输出完整汇总报告，TaskUpdate 标记任务完成
@@ -644,4 +691,6 @@ service:tokenki AND status_code:503 AND path:"/v1/chat/completions" | SELECT cou
 | 发现 panic 后先去拉栈分析 | **立即 rollout undo 止血**！证据回滚后照样能拿到 |
 | CLS 监控用滑动时间窗口 | 必须从监控起点固定 From 查到当前时间 |
 | CLS 忘记加服务名过滤 | 每条查询前置 `service:tokenki`（避免混入 tokensolo / crs 日志） |
+| CLS 监控用 MCP SearchLog 拉原始日志 | 默认用 `tccli cls SearchLog + SQL 聚合`，单次回 ~200 tokens；MCP 仅排查单条 request_id 详情时用 |
+| 误用 `status_code` 字段名 | 索引里字段叫 `status`（与 access log JSON 字段一致），SQL 用 `status:>=400` 而非 `status_code:>=400` |
 | 误操作 tokensolo 命名空间 | kubectl 命令始终带 `-n tokenki`，绝不 `--all-namespaces` |
