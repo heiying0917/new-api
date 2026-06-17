@@ -7,10 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetAllSuppliers 供应商列表（分页）。仅超管。
+// GetAllSuppliers 供应商列表（分页 + 可选排序）。仅超管。
 func GetAllSuppliers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.GetAllSuppliers(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	sortBy := c.Query("sort_by")
+	sortOrder := c.Query("sort_order")
+	items, total, err := model.GetAllSuppliers(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortBy, sortOrder)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -20,11 +22,13 @@ func GetAllSuppliers(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
-// SearchSuppliers 关键词搜索供应商。仅超管。
+// SearchSuppliers 关键词搜索供应商（可选排序）。仅超管。
 func SearchSuppliers(c *gin.Context) {
 	keyword := c.Query("keyword")
 	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.SearchSuppliers(keyword, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	sortBy := c.Query("sort_by")
+	sortOrder := c.Query("sort_order")
+	items, total, err := model.SearchSuppliers(keyword, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortBy, sortOrder)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -32,6 +36,62 @@ func SearchSuppliers(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(items)
 	common.ApiSuccess(c, pageInfo)
+}
+
+// GetSupplierSummary 返回全局三组指标(待结算/已申请/已结算),供供应商管理页顶部汇总条。仅超管。
+func GetSupplierSummary(c *gin.Context) {
+	perSupplier, pendingGlobal, err := model.GetAllSuppliersPendingStat()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	applied, err := model.GetSettlementTotalsByStatus(model.SettlementStatusApplied)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	settled, err := model.GetSettlementTotalsByStatus(model.SettlementStatusSettled)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// 有未结算量的供应商数
+	supplierCount := 0
+	for _, s := range perSupplier {
+		if s.LogCount > 0 {
+			supplierCount++
+		}
+	}
+	common.ApiSuccess(c, gin.H{
+		"pending": gin.H{
+			"official_usd":   pendingGlobal.OfficialUsd,
+			"payable_cny":    pendingGlobal.PayableCNY,
+			"supplier_count": supplierCount,
+			"log_count":      pendingGlobal.LogCount,
+		},
+		"applied": gin.H{
+			"official_usd": applied.OfficialUsd,
+			"computed_cny": applied.ComputedCNY,
+			"count":        applied.Count,
+		},
+		"settled": gin.H{
+			"official_usd": settled.OfficialUsd,
+			"actual_cny":   settled.ActualCNY,
+			"actual_usd":   settled.ActualUSD,
+			"computed_cny": settled.ComputedCNY,
+			"count":        settled.Count,
+		},
+	})
+}
+
+// GetSupplierOverviewAdmin 管理员/超管可见的全局供应商概览。
+func GetSupplierOverviewAdmin(c *gin.Context) {
+	ov, err := model.GetSupplierOverview()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, ov)
 }
 
 type updateSupplierRequest struct {

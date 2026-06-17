@@ -18,12 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import SupplierChannelsPage from '../../components/table/supplier-channels';
+import ChannelsPage from '../../components/table/channels';
 
 const SupplierChannels = () => {
   return (
     <div className='classic-page-fill'>
-      <SupplierChannelsPage />
+      <ChannelsPage mode='supplier' />
     </div>
   );
 };

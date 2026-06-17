@@ -13,8 +13,8 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
-	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/service"
 
@@ -112,17 +112,27 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	return query
 }
 
-func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
+// buildChannelListQuery 构造渠道列表基础查询。supplierIds 非空时按供应商 user_id 过滤(供应商名模糊搜索用)。
+func buildChannelListQuery(group string, statusFilter int, typeFilter int, supplierIds []int) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
 	}
+	if len(supplierIds) > 0 {
+		query = query.Where("supplier_id IN ?", supplierIds)
+	}
 	return query
 }
 
 func GetAllChannels(c *gin.Context) {
+	listChannelsCore(c, 0)
+}
+
+// listChannelsCore 渠道列表核心。forceSupplierId>0 时强制只列该供应商自己的渠道(供应商端复用),
+// 供应商无法通过任何 query 越权查看他人渠道;并回填未结算 official_usd/receivable 供「成本/应收款」列展示。
+func listChannelsCore(c *gin.Context, forceSupplierId int) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
@@ -141,16 +151,40 @@ func GetAllChannels(c *gin.Context) {
 		}
 	}
 
+	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
+	var supplierIds []int
+	if forceSupplierId > 0 {
+		// 供应商端:强制只看本人渠道,忽略 supplier_name 等越权参数。
+		supplierIds = []int{forceSupplierId}
+	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		ids, err := model.ResolveSupplierIdsByName(supplierName)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			common.ApiSuccess(c, gin.H{
+				"items":       []any{},
+				"total":       0,
+				"page":        pageInfo.GetPage(),
+				"page_size":   pageInfo.GetPageSize(),
+				"type_counts": gin.H{},
+			})
+			return
+		}
+		supplierIds = ids
+	}
+
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter))
+		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -161,7 +195,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -172,13 +206,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, supplierIds)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -194,8 +228,11 @@ func GetAllChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 	backfillChannelSupplierNames(channelData)
+	if forceSupplierId > 0 {
+		backfillSupplierUnsettled(channelData)
+	}
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
+	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, supplierIds)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -259,7 +296,7 @@ func FetchUpstreamModels(c *gin.Context) {
 		return
 	}
 
-	ids, err := fetchChannelUpstreamModelIDs(channel)
+	ids, err := fetchModelIDsForDisplay(channel)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -292,6 +329,11 @@ func FixChannelsAbilities(c *gin.Context) {
 }
 
 func SearchChannels(c *gin.Context) {
+	searchChannelsCore(c, 0)
+}
+
+// searchChannelsCore 渠道搜索核心。forceSupplierId>0 时强制只搜该供应商自己的渠道(供应商端复用)。
+func searchChannelsCore(c *gin.Context, forceSupplierId int) {
 	keyword := c.Query("keyword")
 	group := c.Query("group")
 	modelKeyword := c.Query("model")
@@ -300,6 +342,33 @@ func SearchChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+
+	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
+	var supplierIds []int
+	if forceSupplierId > 0 {
+		// 供应商端:强制只搜本人渠道,忽略 supplier_name 等越权参数。
+		supplierIds = []int{forceSupplierId}
+	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		ids, err := model.ResolveSupplierIdsByName(supplierName)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "",
+				"data": gin.H{
+					"items":       []any{},
+					"total":       0,
+					"type_counts": gin.H{},
+				},
+			})
+			return
+		}
+		supplierIds = ids
+	}
+
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
 		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
@@ -313,7 +382,7 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1).Where("tag = ?", *tag)).
+				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1, supplierIds).Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -327,7 +396,7 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, sortOptions)
+		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, supplierIds, sortOptions)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -401,6 +470,9 @@ func SearchChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 	backfillChannelSupplierNames(pagedData)
+	if forceSupplierId > 0 {
+		backfillSupplierUnsettled(pagedData)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1087,7 +1159,7 @@ func SupplierFetchUpstreamModels(c *gin.Context) {
 		common.ApiErrorMsg(c, "forbidden: not your channel")
 		return
 	}
-	ids, err := fetchChannelUpstreamModelIDs(channel)
+	ids, err := fetchModelIDsForDisplay(channel)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -1102,109 +1174,46 @@ func SupplierFetchUpstreamModels(c *gin.Context) {
 	})
 }
 
-// fetchModelsByParams 用给定 base_url/type/key 探测上游模型列表（管理员与供应商共用核心）。
+// fetchModelIDsForDisplay 供「获取模型列表」按钮使用：先按 provider 定制逻辑(头/路径)在线探测，
+// 在线失败或返回空时，回退到适配器内置的静态模型列表(例如 AWS Bedrock 没有 /v1/models 端点)。
+// 与上游模型更新检测(collectPendingUpstreamModelChanges)刻意分离——后者需要严格的错误语义，
+// 不能走静态兜底，否则会把"在线探测失败"误判成"上游模型被清空"。
+func fetchModelIDsForDisplay(channel *model.Channel) ([]string, error) {
+	ids, err := fetchChannelUpstreamModelIDs(channel)
+	if err == nil && len(ids) > 0 {
+		return ids, nil
+	}
+	// 在线探测失败/为空：回退到该渠道类型适配器内置的模型列表，保证按钮不空手而归。
+	if apiType, ok := common.ChannelType2APIType(channel.Type); ok {
+		if adaptor := relay.GetAdaptor(apiType); adaptor != nil {
+			if static := normalizeModelNames(adaptor.GetModelList()); len(static) > 0 {
+				return static, nil
+			}
+		}
+	}
+	return ids, err
+}
+
+// fetchModelsByParams 用给定 base_url/type/key 探测上游模型列表(管理员/供应商新建渠道时共用)。
+// 通过构造临时渠道复用 fetchModelIDsForDisplay 的「按 provider 定制 + 静态兜底」逻辑，
+// 从而对 Anthropic(x-api-key+anthropic-version)、AWS(静态列表)、OpenAI/OpenRouter/自定义 URL
+// 等各类渠道均能正确获取——修复此前一律用 Authorization: Bearer + /v1/models 导致的失败。
 func fetchModelsByParams(c *gin.Context, baseURL string, channelType int, key string) {
-	if baseURL == "" {
-		baseURL = constant.ChannelBaseURLs[channelType]
+	transient := &model.Channel{Type: channelType, Key: key}
+	if trimmed := strings.TrimSpace(baseURL); trimmed != "" {
+		transient.BaseURL = &trimmed
 	}
-
-	// remove line breaks and extra spaces.
-	key = strings.TrimSpace(key)
-	key = strings.Split(key, "\n")[0]
-
-	if channelType == constant.ChannelTypeOllama {
-		models, err := ollama.FetchOllamaModels(baseURL, key)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("获取Ollama模型失败: %s", err.Error()),
-			})
-			return
-		}
-
-		names := make([]string, 0, len(models))
-		for _, modelInfo := range models {
-			names = append(names, modelInfo.Name)
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data":    names,
-		})
-		return
-	}
-
-	if channelType == constant.ChannelTypeGemini {
-		models, err := gemini.FetchGeminiModels(baseURL, key, "")
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("获取Gemini模型失败: %s", err.Error()),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data":    models,
-		})
-		return
-	}
-
-	client := &http.Client{}
-	url := fmt.Sprintf("%s/v1/models", baseURL)
-
-	request, err := http.NewRequest("GET", url, nil)
+	ids, err := fetchModelIDsForDisplay(transient)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": fmt.Sprintf("获取模型列表失败: %s", err.Error()),
 		})
 		return
 	}
-
-	request.Header.Set("Authorization", "Bearer "+key)
-
-	response, err := client.Do(request)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
-	//check status code
-	if response.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "Failed to fetch models",
-		})
-		return
-	}
-	defer response.Body.Close()
-
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	var models []string
-	for _, model := range result.Data {
-		models = append(models, model.ID)
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    models,
+		"data":    ids,
 	})
 }
 

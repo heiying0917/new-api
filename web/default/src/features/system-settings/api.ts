@@ -21,6 +21,10 @@ import type {
   ConfirmPaymentComplianceResponse,
   DeleteLogsResponse,
   FetchUpstreamRatiosRequest,
+  OfficialFillApplyResponse,
+  OfficialFillPreviewRequest,
+  OfficialFillPreviewResponse,
+  OfficialPriceBookMetaResponse,
   SystemOptionsResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
@@ -71,6 +75,40 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
   const res = await api.post<UpstreamRatiosResponse>(
     '/api/ratio_sync/fetch',
     request
+  )
+  return res.data
+}
+
+// --- Official price book (models.dev) ---
+
+export async function getOfficialPriceBook() {
+  const res = await api.get<OfficialPriceBookMetaResponse>(
+    '/api/pricing/official_book/'
+  )
+  return res.data
+}
+
+export async function refreshOfficialPriceBook() {
+  const res = await api.post<OfficialPriceBookMetaResponse>(
+    '/api/pricing/official_book/refresh'
+  )
+  return res.data
+}
+
+export async function previewOfficialPriceFill(
+  request: OfficialFillPreviewRequest
+) {
+  const res = await api.post<OfficialFillPreviewResponse>(
+    '/api/pricing/official_book/preview',
+    request
+  )
+  return res.data
+}
+
+export async function applyOfficialPriceFill(models: string[]) {
+  const res = await api.post<OfficialFillApplyResponse>(
+    '/api/pricing/official_book/apply',
+    { models }
   )
   return res.data
 }

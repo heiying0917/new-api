@@ -35,11 +35,22 @@ export const useSuppliersData = () => {
   const [searching, setSearching] = useState(false);
   const [supplierCount, setSupplierCount] = useState(0);
 
+  // Summary bar data
+  const [summary, setSummary] = useState(null);
+
+  // Sorting state
+  const [sortBy, setSortBy] = useState('');
+  const [sortOrder, setSortOrder] = useState('desc');
+
   // Modal states
   const [showEditSupplier, setShowEditSupplier] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState({
     user_id: undefined,
   });
+
+  // Immediate settlement confirm modal state
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmRecord, setConfirmRecord] = useState(null);
 
   // Form initial values
   const formInitValues = {
@@ -66,10 +77,18 @@ export const useSuppliersData = () => {
   };
 
   // Load suppliers data
-  const loadSuppliers = async (startIdx, pageSize) => {
+  const loadSuppliers = async (
+    startIdx,
+    pageSize,
+    nextSortBy = sortBy,
+    nextSortOrder = sortOrder,
+  ) => {
     setLoading(true);
+    const sortParam = nextSortBy
+      ? `&sort_by=${nextSortBy}&sort_order=${nextSortOrder}`
+      : '';
     const res = await API.get(
-      `/api/supplier/?p=${startIdx}&page_size=${pageSize}`,
+      `/api/supplier/?p=${startIdx}&page_size=${pageSize}${sortParam}`,
     );
     const { success, message, data } = res.data;
     if (success) {
@@ -84,19 +103,28 @@ export const useSuppliersData = () => {
   };
 
   // Search suppliers with keyword
-  const searchSuppliers = async (startIdx, pageSize, searchKeyword = null) => {
+  const searchSuppliers = async (
+    startIdx,
+    pageSize,
+    searchKeyword = null,
+    nextSortBy = sortBy,
+    nextSortOrder = sortOrder,
+  ) => {
     if (searchKeyword === null) {
       const formValues = getFormValues();
       searchKeyword = formValues.searchKeyword;
     }
 
     if (searchKeyword === '') {
-      await loadSuppliers(startIdx, pageSize);
+      await loadSuppliers(startIdx, pageSize, nextSortBy, nextSortOrder);
       return;
     }
     setSearching(true);
+    const sortParam = nextSortBy
+      ? `&sort_by=${nextSortBy}&sort_order=${nextSortOrder}`
+      : '';
     const res = await API.get(
-      `/api/supplier/search?keyword=${searchKeyword}&p=${startIdx}&page_size=${pageSize}`,
+      `/api/supplier/search?keyword=${searchKeyword}&p=${startIdx}&page_size=${pageSize}${sortParam}`,
     );
     const { success, message, data } = res.data;
     if (success) {
@@ -108,6 +136,58 @@ export const useSuppliersData = () => {
       showError(message);
     }
     setSearching(false);
+  };
+
+  // Load top summary bar metrics
+  const loadSummary = async () => {
+    const res = await API.get('/api/supplier/summary');
+    const { success, data } = res.data;
+    if (success) setSummary(data);
+  };
+
+  // Handle column sort change (server-side); reload first page with new sort
+  const handleSortChange = (nextSortBy, nextOrder) => {
+    setSortBy(nextSortBy);
+    setSortOrder(nextOrder);
+    const { searchKeyword } = getFormValues();
+    if (searchKeyword === '') {
+      loadSuppliers(0, pageSize, nextSortBy, nextOrder).then();
+    } else {
+      searchSuppliers(0, pageSize, searchKeyword, nextSortBy, nextOrder).then();
+    }
+  };
+
+  // Immediate settlement: initiate a settlement bill for the supplier, then open confirm modal
+  const initiateSettlement = async (record) => {
+    const res = await API.post('/api/admin/settlement/initiate', {
+      supplier_id: record.user_id,
+    });
+    const { success, message, data } = res.data;
+    if (!success) {
+      showError(message);
+      return;
+    }
+    setConfirmRecord(data);
+    setShowConfirm(true);
+  };
+
+  // Confirm (settle) the bill
+  const confirmSettlement = async (id, values) => {
+    const res = await API.post(`/api/admin/settlement/${id}/confirm`, values);
+    const { success, message } = res.data;
+    if (success) {
+      showSuccess(t('结算确认成功！'));
+      await refresh();
+      await loadSummary();
+      return true;
+    }
+    showError(message);
+    return false;
+  };
+
+  const closeConfirm = () => {
+    setShowConfirm(false);
+    setTimeout(() => setConfirmRecord(null), 300);
   };
 
   // Update supplier (priority / enabled / settlement_mode / settlement_cycle / remark)
@@ -127,22 +207,27 @@ export const useSuppliersData = () => {
     setActivePage(page);
     const { searchKeyword } = getFormValues();
     if (searchKeyword === '') {
-      loadSuppliers(page, pageSize).then();
+      loadSuppliers(page, pageSize, sortBy, sortOrder).then();
     } else {
-      searchSuppliers(page, pageSize, searchKeyword).then();
+      searchSuppliers(page, pageSize, searchKeyword, sortBy, sortOrder).then();
     }
   };
 
-  // Handle page size change
+  // Handle page size change (reset to first page, preserve sort & active search)
   const handlePageSizeChange = async (size) => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    loadSuppliers(activePage, size)
-      .then()
-      .catch((reason) => {
-        showError(reason);
-      });
+    const { searchKeyword } = getFormValues();
+    try {
+      if (searchKeyword === '') {
+        await loadSuppliers(1, size, sortBy, sortOrder);
+      } else {
+        await searchSuppliers(1, size, searchKeyword, sortBy, sortOrder);
+      }
+    } catch (reason) {
+      showError(reason);
+    }
   };
 
   // Handle table row styling for disabled suppliers
@@ -161,9 +246,9 @@ export const useSuppliersData = () => {
   const refresh = async (page = activePage) => {
     const { searchKeyword } = getFormValues();
     if (searchKeyword === '') {
-      await loadSuppliers(page, pageSize);
+      await loadSuppliers(page, pageSize, sortBy, sortOrder);
     } else {
-      await searchSuppliers(page, pageSize, searchKeyword);
+      await searchSuppliers(page, pageSize, searchKeyword, sortBy, sortOrder);
     }
   };
 
@@ -182,6 +267,11 @@ export const useSuppliersData = () => {
       .catch((reason) => {
         showError(reason);
       });
+    loadSummary()
+      .then()
+      .catch((reason) => {
+        showError(reason);
+      });
   }, []);
 
   return {
@@ -192,6 +282,22 @@ export const useSuppliersData = () => {
     pageSize,
     supplierCount,
     searching,
+
+    // Summary bar
+    summary,
+    loadSummary,
+
+    // Sorting
+    sortBy,
+    sortOrder,
+    handleSortChange,
+
+    // Immediate settlement
+    initiateSettlement,
+    confirmSettlement,
+    showConfirm,
+    confirmRecord,
+    closeConfirm,
 
     // Modal state
     showEditSupplier,

@@ -54,6 +54,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     user: true,
     subscription: true,
     suppliers: true,
+    supplier_overview_admin: true,
     settlement_review: true,
     setting: true,
   },

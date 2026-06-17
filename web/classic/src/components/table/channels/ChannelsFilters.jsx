@@ -34,6 +34,7 @@ const ChannelsFilters = ({
   groupOptions,
   loading,
   searching,
+  isSupplierMode,
   t,
 }) => {
   return (
@@ -105,6 +106,18 @@ const ChannelsFilters = ({
               pure
             />
           </div>
+          {!isSupplierMode && (
+            <div className='w-full md:w-44'>
+              <Form.Input
+                size='small'
+                field='searchSupplier'
+                prefix={<IconSearch />}
+                placeholder={t('供应商用户名/邮箱')}
+                showClear
+                pure
+              />
+            </div>
+          )}
           <div className='w-full md:w-32'>
             <Form.Select
               size='small'

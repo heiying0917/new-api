@@ -38,6 +38,8 @@ const SuppliersTable = (suppliersData) => {
     handlePageChange,
     handlePageSizeChange,
     handleRow,
+    handleSortChange,
+    onInitiateSettlement,
     setEditingSupplier,
     setShowEditSupplier,
     t,
@@ -55,8 +57,9 @@ const SuppliersTable = (suppliersData) => {
       onNavigateSettlement,
       setEditingSupplier,
       setShowEditSupplier,
+      onInitiateSettlement,
     });
-  }, [t, setEditingSupplier, setShowEditSupplier]);
+  }, [t, setEditingSupplier, setShowEditSupplier, onInitiateSettlement]);
 
   // Handle compact mode by removing fixed positioning
   const tableColumns = useMemo(() => {
@@ -76,6 +79,13 @@ const SuppliersTable = (suppliersData) => {
       columns={tableColumns}
       dataSource={suppliers}
       scroll={compactMode ? undefined : { x: 'max-content' }}
+      onChange={(changeInfo) => {
+        const sorter = changeInfo?.sorter;
+        if (sorter && sorter.dataIndex && handleSortChange) {
+          const order = sorter.sortOrder === 'ascend' ? 'asc' : 'desc';
+          handleSortChange(sorter.dataIndex, order);
+        }
+      }}
       pagination={{
         currentPage: activePage,
         pageSize: pageSize,

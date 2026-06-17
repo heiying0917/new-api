@@ -390,7 +390,7 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 	return channels, err
 }
 
-func SearchChannels(keyword string, group string, model string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+func SearchChannels(keyword string, group string, model string, idSort bool, supplierIds []int, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	modelsCol := "`models`"
 
@@ -415,12 +415,34 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 
+	// 供应商名模糊过滤:supplierIds 非空时按供应商 user_id 限制
+	if len(supplierIds) > 0 {
+		baseQuery = baseQuery.Where("supplier_id IN ?", supplierIds)
+	}
+
 	// 执行查询
 	err := order.Apply(baseQuery).Find(&channels).Error
 	if err != nil {
 		return nil, err
 	}
 	return channels, nil
+}
+
+// ResolveSupplierIdsByName 模糊匹配供应商(role=供应商)的用户名/邮箱/手机号,返回 user_id 列表。
+func ResolveSupplierIdsByName(keyword string) ([]int, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	like := "%" + keyword + "%"
+	var ids []int
+	if err := DB.Model(&User{}).
+		Where("role = ? AND (username LIKE ? OR email LIKE ? OR phone LIKE ?)",
+			common.RoleSupplierUser, like, like, like).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func GetChannelById(id int, selectAll bool) (*Channel, error) {

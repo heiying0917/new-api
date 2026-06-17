@@ -36,8 +36,8 @@ import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
-const ChannelsPage = () => {
-  const channelsData = useChannelsData();
+const ChannelsPage = ({ mode = 'admin' } = {}) => {
+  const channelsData = useChannelsData(mode);
   const isMobile = useIsMobile();
 
   return (
@@ -55,6 +55,7 @@ const ChannelsPage = () => {
         visible={channelsData.showEdit}
         handleClose={channelsData.closeEdit}
         editingChannel={channelsData.editingChannel}
+        apiMode={channelsData.isSupplierMode ? 'supplier' : 'admin'}
       />
       <BatchTagModal {...channelsData} />
       <ModelTestModal {...channelsData} />
@@ -63,6 +64,7 @@ const ChannelsPage = () => {
         onCancel={() => channelsData.setShowMultiKeyManageModal(false)}
         channel={channelsData.currentMultiKeyChannel}
         onRefresh={channelsData.refresh}
+        apiBase={channelsData.apiBase}
       />
       <ChannelUpstreamUpdateModal
         visible={channelsData.showUpstreamUpdateModal}

@@ -59,6 +59,7 @@ const SupplierDashboard = lazy(() => import('./pages/SupplierDashboard'));
 const SupplierChannels = lazy(() => import('./pages/SupplierChannels'));
 const SupplierSettlements = lazy(() => import('./pages/SupplierSettlements'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
+const SupplierOverviewAdmin = lazy(() => import('./pages/SupplierOverviewAdmin'));
 const SettlementReview = lazy(() => import('./pages/SettlementReview'));
 
 function DynamicOAuth2Callback() {
@@ -418,6 +419,16 @@ function App() {
             <AdminRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <Suppliers />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/supplier-overview'
+          element={
+            <AdminRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SupplierOverviewAdmin />
               </Suspense>
             </AdminRoute>
           }

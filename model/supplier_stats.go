@@ -380,6 +380,271 @@ func GetSupplierChannelRanking(channelIds []int, startTs, endTs int64) ([]Suppli
 	return rows, nil
 }
 
+// GetAllSuppliersPendingStat 一次聚合所有供应商未结算消费,返回 per-supplier map 与全局合计。
+// cross-DB safe, no JOIN:渠道→供应商映射(DB) + 日志按 channel_id 聚合(LOG_DB) → Go 折叠。
+func GetAllSuppliersPendingStat() (map[int]SupplierPendingStat, SupplierPendingStat, error) {
+	type chanRow struct {
+		Id         int
+		SupplierId int
+	}
+	var rows []chanRow
+	if err := DB.Model(&Channel{}).Select("id, supplier_id").
+		Where("supplier_id > 0").Scan(&rows).Error; err != nil {
+		return nil, SupplierPendingStat{}, err
+	}
+	perSupplier := make(map[int]SupplierPendingStat)
+	var global SupplierPendingStat
+	if len(rows) == 0 {
+		return perSupplier, global, nil
+	}
+	chanToSupplier := make(map[int]int, len(rows))
+	channelIds := make([]int, 0, len(rows))
+	for _, r := range rows {
+		chanToSupplier[r.Id] = r.SupplierId
+		channelIds = append(channelIds, r.Id)
+	}
+	type agg struct {
+		ChannelId   int
+		OfficialUsd float64
+		PayableCNY  float64
+		LogCount    int64
+	}
+	var aggs []agg
+	if err := LOG_DB.Model(&Log{}).
+		Select("channel_id AS channel_id, " +
+			"COALESCE(SUM(official_usd),0) AS official_usd, " +
+			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, " +
+			"COUNT(*) AS log_count").
+		Where("type = ? AND settlement_id = 0 AND channel_id IN ?", LogTypeConsume, channelIds).
+		Group("channel_id").Scan(&aggs).Error; err != nil {
+		return nil, SupplierPendingStat{}, err
+	}
+	for _, a := range aggs {
+		sid := chanToSupplier[a.ChannelId]
+		s := perSupplier[sid]
+		s.OfficialUsd += a.OfficialUsd
+		s.PayableCNY += a.PayableCNY
+		s.LogCount += a.LogCount
+		perSupplier[sid] = s
+		global.OfficialUsd += a.OfficialUsd
+		global.PayableCNY += a.PayableCNY
+		global.LogCount += a.LogCount
+	}
+	return perSupplier, global, nil
+}
+
+// SettlementTotals 某状态结算单的合计。
+type SettlementTotals struct {
+	OfficialUsd float64 `json:"official_usd"`
+	ComputedCNY float64 `json:"computed_cny"`
+	ActualCNY   float64 `json:"actual_cny"`
+	ActualUSD   float64 `json:"actual_usd"`
+	Count       int64   `json:"count"`
+}
+
+// GetSettlementTotalsByStatus 汇总指定状态结算单;actual_* 仅对已结算有意义,按币种拆分。
+func GetSettlementTotalsByStatus(status int) (SettlementTotals, error) {
+	var t SettlementTotals
+	var base struct {
+		OfficialUsd float64
+		ComputedCNY float64
+		Count       int64
+	}
+	if err := DB.Model(&Settlement{}).
+		Select("COALESCE(SUM(official_usd),0) AS official_usd, " +
+			"COALESCE(SUM(computed_cny),0) AS computed_cny, " +
+			"COUNT(*) AS count").
+		Where("status = ?", status).Scan(&base).Error; err != nil {
+		return t, err
+	}
+	t.OfficialUsd, t.ComputedCNY, t.Count = base.OfficialUsd, base.ComputedCNY, base.Count
+
+	type curRow struct {
+		ActualCurrency string
+		Amount         float64
+	}
+	var cur []curRow
+	if err := DB.Model(&Settlement{}).
+		Select("actual_currency AS actual_currency, COALESCE(SUM(actual_amount),0) AS amount").
+		Where("status = ?", status).Group("actual_currency").Scan(&cur).Error; err != nil {
+		return t, err
+	}
+	for _, c := range cur {
+		if c.ActualCurrency == "USD" {
+			t.ActualUSD += c.Amount
+		} else {
+			t.ActualCNY += c.Amount // CNY 或空币种归入人民币
+		}
+	}
+	return t, nil
+}
+
+// GetAllSuppliersSettledTotal per-supplier 已结算 computed_cny 合计。
+func GetAllSuppliersSettledTotal() (map[int]float64, error) {
+	type row struct {
+		SupplierId int
+		Total      float64
+	}
+	var rows []row
+	if err := DB.Model(&Settlement{}).
+		Select("supplier_id AS supplier_id, COALESCE(SUM(computed_cny),0) AS total").
+		Where("status = ?", SettlementStatusSettled).
+		Group("supplier_id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[int]float64, len(rows))
+	for _, r := range rows {
+		m[r.SupplierId] = r.Total
+	}
+	return m, nil
+}
+
+// SupplierOverviewSummary 全局供应商概览的汇总指标。
+type SupplierOverviewSummary struct {
+	SupplierTotal      int64 `json:"supplier_total"`
+	SupplierEnabled    int64 `json:"supplier_enabled"`
+	ChannelTotal       int64 `json:"channel_total"`
+	ChannelAvailable   int64 `json:"channel_available"`
+	ChannelUnavailable int64 `json:"channel_unavailable"`
+}
+
+// SupplierTypeGroup 某官方 key 类型下某分组的最低成本价。
+type SupplierTypeGroup struct {
+	Group       string  `json:"group"`
+	LowestPrice float64 `json:"lowest_price"`
+}
+
+// SupplierTypeStat 按官方 key 类型(= 渠道 type)聚合的供给统计。
+type SupplierTypeStat struct {
+	Type          int                 `json:"type"`
+	TypeName      string              `json:"type_name"`
+	SupplierCount int                 `json:"supplier_count"`
+	ChannelCount  int                 `json:"channel_count"`
+	Available     int                 `json:"available"`
+	Unavailable   int                 `json:"unavailable"`
+	LowestPrice   float64             `json:"lowest_price"`
+	Groups        []SupplierTypeGroup `json:"groups"`
+}
+
+// SupplierOverview 全局供应商概览：汇总 + 分类型供给。
+type SupplierOverview struct {
+	Summary SupplierOverviewSummary `json:"summary"`
+	ByType  []SupplierTypeStat      `json:"by_type"`
+}
+
+// GetSupplierOverview 全局供应商概览：供应商总数/启用数、渠道可用性、按官方 key 类型(渠道 type)的供给统计。
+//
+// 数据来源（cross-DB safe，无方言 SQL）：
+//   - SupplierTotal：role=RoleSupplierUser 的用户数。
+//   - SupplierEnabled：suppliers 表 enabled=true 的行数。
+//   - 渠道：一次 Find(&channels) 取 supplier_id>0 的全部渠道（避开保留字 group），在 Go 中折叠。
+//
+// 「可用」定义与 GetGroupMarketPrices 一致：status==ChannelStatusEnabled；
+// 最低价仅统计「启用且 cost_price>0」的渠道。
+func GetSupplierOverview() (SupplierOverview, error) {
+	var ov SupplierOverview
+
+	if err := DB.Model(&User{}).
+		Where("role = ?", common.RoleSupplierUser).
+		Count(&ov.Summary.SupplierTotal).Error; err != nil {
+		return SupplierOverview{}, err
+	}
+	if err := DB.Model(&Supplier{}).
+		Where("enabled = ?", true).
+		Count(&ov.Summary.SupplierEnabled).Error; err != nil {
+		return SupplierOverview{}, err
+	}
+
+	// 取全部供应商渠道（任意状态）。用整行 Find 避开保留字 group，三库安全。
+	var channels []Channel
+	if err := DB.Where("supplier_id > 0").Find(&channels).Error; err != nil {
+		return SupplierOverview{}, err
+	}
+
+	type typeAgg struct {
+		channelCount int
+		available    int
+		unavailable  int
+		suppliers    map[int]bool
+		lowestPrice  float64                       // 该 type 下启用且 cost_price>0 的最低价；0 表示无
+		groupPrices  map[string]float64            // group -> 最低价（启用且 cost_price>0）
+	}
+	byType := make(map[int]*typeAgg)
+
+	for i := range channels {
+		ch := &channels[i]
+		agg := byType[ch.Type]
+		if agg == nil {
+			agg = &typeAgg{suppliers: map[int]bool{}, groupPrices: map[string]float64{}}
+			byType[ch.Type] = agg
+		}
+		agg.channelCount++
+		agg.suppliers[ch.SupplierId] = true
+
+		enabled := ch.Status == common.ChannelStatusEnabled
+		if enabled {
+			agg.available++
+		} else {
+			agg.unavailable++
+		}
+		ov.Summary.ChannelTotal++
+		if enabled {
+			ov.Summary.ChannelAvailable++
+		} else {
+			ov.Summary.ChannelUnavailable++
+		}
+
+		// 最低价/分组价：仅启用且 cost_price>0。
+		if enabled && ch.CostPrice != nil && *ch.CostPrice > 0 {
+			price := *ch.CostPrice
+			if agg.lowestPrice == 0 || price < agg.lowestPrice {
+				agg.lowestPrice = price
+			}
+			for _, g := range ch.GetGroups() {
+				if g == "" {
+					continue
+				}
+				if cur, ok := agg.groupPrices[g]; !ok || price < cur {
+					agg.groupPrices[g] = price
+				}
+			}
+		}
+	}
+
+	ov.ByType = make([]SupplierTypeStat, 0, len(byType))
+	for typ, agg := range byType {
+		groups := make([]SupplierTypeGroup, 0, len(agg.groupPrices))
+		for g, p := range agg.groupPrices {
+			groups = append(groups, SupplierTypeGroup{Group: g, LowestPrice: p})
+		}
+		sort.Slice(groups, func(i, j int) bool {
+			if groups[i].LowestPrice != groups[j].LowestPrice {
+				return groups[i].LowestPrice < groups[j].LowestPrice
+			}
+			return groups[i].Group < groups[j].Group
+		})
+		ov.ByType = append(ov.ByType, SupplierTypeStat{
+			Type:          typ,
+			TypeName:      constant.GetChannelTypeName(typ),
+			SupplierCount: len(agg.suppliers),
+			ChannelCount:  agg.channelCount,
+			Available:     agg.available,
+			Unavailable:   agg.unavailable,
+			LowestPrice:   agg.lowestPrice,
+			Groups:        groups,
+		})
+	}
+	// 按 ChannelCount 降序，稳定展示；并列时按 Type 升序保证确定性。
+	sort.Slice(ov.ByType, func(i, j int) bool {
+		if ov.ByType[i].ChannelCount != ov.ByType[j].ChannelCount {
+			return ov.ByType[i].ChannelCount > ov.ByType[j].ChannelCount
+		}
+		return ov.ByType[i].Type < ov.ByType[j].Type
+	})
+
+	return ov, nil
+}
+
 // GetSupplierRealtimeStat 汇总给定渠道集合的实时统计。
 // Rpm/Tpm 取最近 60 秒：rpm=COUNT(*)，tpm=SUM(prompt_tokens+completion_tokens)。
 // Quota 取最近 24 小时：SUM(quota)。

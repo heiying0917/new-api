@@ -38,7 +38,7 @@ const getManualIgnoredModelCountFromSettings = (settings) => {
   return normalizeModelList(parsed.upstream_model_update_ignored_models).length;
 };
 
-export const useChannelUpstreamUpdates = ({ t, refresh }) => {
+export const useChannelUpstreamUpdates = ({ t, refresh, apiBase = '/api/channel' }) => {
   const [showUpstreamUpdateModal, setShowUpstreamUpdateModal] = useState(false);
   const [upstreamUpdateChannel, setUpstreamUpdateChannel] = useState(null);
   const [upstreamUpdateAddModels, setUpstreamUpdateAddModels] = useState([]);
@@ -114,7 +114,7 @@ export const useChannelUpstreamUpdates = ({ t, refresh }) => {
       );
 
       const res = await API.post(
-        '/api/channel/upstream_updates/apply',
+        `${apiBase}/upstream_updates/apply`,
         {
           id: upstreamUpdateChannel.id,
           add_models: normalizedSelectedAddModels,
@@ -214,7 +214,7 @@ export const useChannelUpstreamUpdates = ({ t, refresh }) => {
     detectChannelUpstreamUpdatesInFlightRef.current = true;
     try {
       const res = await API.post(
-        '/api/channel/upstream_updates/detect',
+        `${apiBase}/upstream_updates/detect`,
         {
           id: channel.id,
         },

@@ -151,20 +151,35 @@ func SetApiRouter(router *gin.Engine) {
 		supplierAdminRoute.Use(middleware.RootAuth())
 		{
 			supplierAdminRoute.GET("/", controller.GetAllSuppliers)
+			supplierAdminRoute.GET("/summary", controller.GetSupplierSummary)
 			supplierAdminRoute.GET("/search", controller.SearchSuppliers)
 			supplierAdminRoute.PUT("/", controller.UpdateSupplier)
+		}
+
+		supplierOverviewRoute := apiRouter.Group("/admin/supplier-overview")
+		supplierOverviewRoute.Use(middleware.AdminAuth())
+		{
+			supplierOverviewRoute.GET("/", controller.GetSupplierOverviewAdmin)
 		}
 
 		supplierSelfRoute := apiRouter.Group("/supplier/channel")
 		supplierSelfRoute.Use(middleware.SupplierAuth())
 		{
 			supplierSelfRoute.GET("/", controller.SupplierListChannels)
+			supplierSelfRoute.GET("/search", controller.SupplierSearchChannels)
 			supplierSelfRoute.GET("/:id", controller.SupplierGetChannel)
 			// 查看自己渠道明文 key：要求已开启 2FA/Passkey（不做每次输码挑战）。
 			supplierSelfRoute.GET("/:id/key", middleware.RequireTwoFAEnabled(), middleware.DisableCache(), controller.SupplierGetChannelKey)
 			supplierSelfRoute.POST("/", controller.SupplierAddChannel)
 			supplierSelfRoute.PUT("/", controller.SupplierUpdateChannel)
 			supplierSelfRoute.DELETE("/:id", controller.SupplierDeleteChannel)
+			// 行操作:与管理员对等,均限定本人渠道(handler 内归属校验)。
+			supplierSelfRoute.GET("/test/:id", controller.SupplierTestChannel)
+			supplierSelfRoute.GET("/update_balance/:id", controller.SupplierUpdateChannelBalance)
+			supplierSelfRoute.POST("/copy/:id", controller.SupplierCopyChannel)
+			supplierSelfRoute.POST("/multi_key/manage", controller.SupplierManageMultiKeys)
+			supplierSelfRoute.POST("/upstream_updates/detect", controller.SupplierDetectChannelUpstreamModelUpdates)
+			supplierSelfRoute.POST("/upstream_updates/apply", controller.SupplierApplyChannelUpstreamModelUpdates)
 		}
 
 		supplierMeRoute := apiRouter.Group("/supplier/self")
@@ -198,6 +213,7 @@ func SetApiRouter(router *gin.Engine) {
 		settlementAdminRoute.Use(middleware.RootAuth())
 		{
 			settlementAdminRoute.GET("/", controller.AdminListSettlements)
+			settlementAdminRoute.POST("/initiate", controller.AdminInitiateSettlement)
 			settlementAdminRoute.GET("/:id", controller.AdminGetSettlement)
 			settlementAdminRoute.GET("/:id/logs", controller.AdminGetSettlementLogs)
 			settlementAdminRoute.GET("/:id/breakdown", controller.AdminGetSettlementBreakdown)
@@ -283,6 +299,14 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
+		}
+		officialPriceBookRoute := apiRouter.Group("/pricing/official_book")
+		officialPriceBookRoute.Use(middleware.RootAuth())
+		{
+			officialPriceBookRoute.GET("/", controller.GetOfficialPriceBook)
+			officialPriceBookRoute.POST("/refresh", controller.RefreshOfficialPriceBook)
+			officialPriceBookRoute.POST("/preview", controller.PreviewOfficialPriceFill)
+			officialPriceBookRoute.POST("/apply", controller.ApplyOfficialPriceFill)
 		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())

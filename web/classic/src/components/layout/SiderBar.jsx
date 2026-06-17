@@ -54,6 +54,7 @@ const routerMap = {
   supplier_channels: '/console/supplier/channels',
   supplier_settlements: '/console/supplier/settlements',
   suppliers: '/console/suppliers',
+  supplier_overview_admin: '/console/supplier-overview',
   settlement_review: '/console/settlement-review',
 };
 
@@ -248,6 +249,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('供应商管理'),
         itemKey: 'suppliers',
         to: '/console/suppliers',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('供应商概览'),
+        itemKey: 'supplier_overview_admin',
+        to: '/console/supplier-overview',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

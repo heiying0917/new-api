@@ -390,3 +390,75 @@ export type UpstreamRatiosResponse = {
     test_results: TestResult[]
   }
 }
+
+// ---------------------------------------------------------------------------
+// Official price book (models.dev) — fill official prices into model ratios
+// ---------------------------------------------------------------------------
+
+export type OfficialPriceBookMeta = {
+  source: string
+  fetched_at: number
+  model_count: number
+  first_party_count: number
+}
+
+export type OfficialPriceBookMetaResponse = {
+  success: boolean
+  message: string
+  data: OfficialPriceBookMeta
+}
+
+export type OfficialFillScopeKind = 'all_missing' | 'channel' | 'models'
+
+export type OfficialFillScope = {
+  kind: OfficialFillScopeKind
+  channel_id?: number
+  models?: string[]
+}
+
+export type OfficialFillMode = 'missing_only' | 'refresh_latest'
+
+export type OfficialFillPreviewRequest = {
+  scope: OfficialFillScope
+  mode: OfficialFillMode
+}
+
+export type OfficialRatioSet = {
+  model_ratio?: number
+  completion_ratio?: number
+  cache_ratio?: number
+  create_cache_ratio?: number
+}
+
+export type OfficialFillAction = 'add' | 'update' | 'skip'
+
+export type OfficialFillPreviewRow = {
+  model: string
+  match_type: string
+  provider: string
+  first_party: boolean
+  action: OfficialFillAction
+  official: OfficialRatioSet | null
+  current: OfficialRatioSet | null
+}
+
+export type OfficialFillPreviewResult = {
+  rows: OfficialFillPreviewRow[]
+  unmatched: string[]
+}
+
+export type OfficialFillPreviewResponse = {
+  success: boolean
+  message: string
+  data: OfficialFillPreviewResult
+}
+
+export type OfficialFillApplyResponse = {
+  success: boolean
+  message: string
+  data: {
+    applied: string[]
+    applied_count: number
+    changed_keys: string[]
+  }
+}

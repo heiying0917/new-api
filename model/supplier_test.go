@@ -76,7 +76,7 @@ func TestGetAllSuppliers_MergesProfile(t *testing.T) {
 	require.NoError(t, DB.Create(&User{Id: 3, Username: "normal", Role: common.RoleCommonUser, AffCode: "aff3"}).Error)
 	require.NoError(t, UpdateSupplier(2, map[string]interface{}{"priority": 9, "remark": "VIP"}))
 
-	items, total, err := GetAllSuppliers(0, 20)
+	items, total, err := GetAllSuppliers(0, 20, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, items, 2)
@@ -95,7 +95,7 @@ func TestSearchSuppliers_ByKeyword(t *testing.T) {
 	seedSupplierUser(t, 1, "alice", "a@x.com", "13800000001")
 	seedSupplierUser(t, 2, "bob", "b@x.com", "13800000002")
 
-	items, total, err := SearchSuppliers("alice", 0, 20)
+	items, total, err := SearchSuppliers("alice", 0, 20, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, items, 1)
