@@ -54,7 +54,25 @@ const TypeDetailSheet = ({ visible, stat, onClose, t }) => {
     {
       title: t('分组'),
       dataIndex: 'group',
-      render: (v) => v || '—',
+      render: (v) => {
+        const first = (v || '').split(/[,，]/)[0].trim();
+        return v ? (
+          <Button
+            theme='borderless'
+            type='primary'
+            size='small'
+            className='!px-0'
+            onClick={() => {
+              onClose && onClose();
+              navigate('/console/channel?group=' + encodeURIComponent(first));
+            }}
+          >
+            {v}
+          </Button>
+        ) : (
+          '—'
+        );
+      },
     },
     {
       title: t('成本价'),

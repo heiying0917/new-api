@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Typography, Empty, Skeleton } from '@douyinfe/semi-ui';
+import { Card, Row, Col, Typography, Empty, Skeleton, Tooltip } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import {
   Wallet,
@@ -27,9 +27,7 @@ import {
   Activity,
   Gavel,
   TrendingDown,
-  Crown,
-  Trophy,
-  Medal,
+  Info,
 } from 'lucide-react';
 import { API, showError } from '../../helpers';
 import { CHANNEL_OPTIONS } from '../../constants';
@@ -142,56 +140,16 @@ const StatCard = ({ accent, icon: Icon, label, value, children }) => {
   );
 };
 
-// 排名徽标配色
-const RANK_STYLES = {
-  1: { bg: 'rgba(245, 158, 11, 0.16)', color: '#d97706', Icon: Crown },
-  2: { bg: 'rgba(148, 163, 184, 0.20)', color: '#64748b', Icon: Trophy },
-  3: { bg: 'rgba(180, 120, 70, 0.16)', color: '#b07142', Icon: Medal },
-};
-
-const RankBadge = ({ rank }) => {
-  const style = RANK_STYLES[rank];
-  if (style) {
-    const { bg, color, Icon } = style;
-    return (
-      <div
-        className='flex items-center justify-center shrink-0'
-        style={{ width: 26, height: 26, borderRadius: 8, background: bg, color }}
-      >
-        <Icon size={15} strokeWidth={2.4} />
-      </div>
-    );
-  }
-  return (
-    <div
-      className='flex items-center justify-center shrink-0'
-      style={{
-        width: 26,
-        height: 26,
-        borderRadius: 8,
-        background: 'var(--semi-color-fill-0)',
-        color: 'var(--semi-color-text-2)',
-        fontSize: 12,
-        fontWeight: 600,
-        fontVariantNumeric: 'tabular-nums',
-      }}
-    >
-      {rank}
-    </div>
-  );
-};
-
-// 单个竞价梯队卡片
+// 单个渠道类型卡片（行=该类型下各分组的市场行情）
 const BidCard = ({ bid }) => {
   const { t } = useTranslation();
   const typeLabel = getTypeLabel(bid.type, bid.type_name);
-  const ladder = Array.isArray(bid.bids) ? bid.bids : [];
-  const prices = ladder
-    .map((r) => Number(r.price))
+  const groups = Array.isArray(bid.groups) ? bid.groups : [];
+  const prices = groups
+    .map((g) => Number(g.lowest_price))
     .filter((p) => Number.isFinite(p) && p > 0);
   const minPrice = prices.length ? Math.min(...prices) : 0;
   const maxPrice = prices.length ? Math.max(...prices) : 0;
-  const lowest = ladder.length ? ladder[0]?.price : null;
 
   // 价格越低，条越长（最低=100%）。区间退化时给满条。
   const barWidth = (price) => {
@@ -202,58 +160,23 @@ const BidCard = ({ bid }) => {
     return Math.max(12, Math.round(ratio * 100));
   };
 
-  let footer;
-  if (bid.my_rank > 0) {
-    footer = (
-      <div
-        className='inline-flex items-center gap-1.5 rounded-full'
-        style={{
-          padding: '4px 10px',
-          background: 'var(--semi-color-primary-light-default)',
-          color: 'var(--semi-color-primary)',
-          fontSize: 12,
-          fontWeight: 600,
-        }}
-      >
-        {t('我的排名')}
-        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-          {bid.my_rank}/{bid.total}
-        </span>
-      </div>
-    );
-  } else if (ladder.length > 0) {
-    footer = (
-      <div
-        className='inline-flex items-center gap-1.5 rounded-full'
-        style={{
-          padding: '4px 10px',
-          background: 'var(--semi-color-fill-0)',
-          color: 'var(--semi-color-text-2)',
-          fontSize: 12,
-          fontWeight: 500,
-        }}
-      >
-        {t('未参与')}
-        <span style={{ color: 'var(--semi-color-text-1)' }}>
-          · {t('当前最低')} ¥{fixed2(lowest)}
-        </span>
-      </div>
-    );
-  } else {
-    footer = (
-      <div
-        className='inline-flex items-center rounded-full'
-        style={{
-          padding: '4px 10px',
-          background: 'var(--semi-color-fill-0)',
-          color: 'var(--semi-color-text-2)',
-          fontSize: 12,
-        }}
-      >
-        {t('暂无报价')}
-      </div>
-    );
-  }
+  const footer = (
+    <div
+      className='inline-flex items-center gap-1.5 rounded-full'
+      style={{
+        padding: '4px 10px',
+        background: 'var(--semi-color-primary-light-default)',
+        color: 'var(--semi-color-primary)',
+        fontSize: 12,
+        fontWeight: 600,
+      }}
+    >
+      {t('已上架')}
+      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+        {bid.my_count || 0}/{bid.total || 0} {t('分组')}
+      </span>
+    </div>
+  );
 
   return (
     <Card
@@ -266,7 +189,7 @@ const BidCard = ({ bid }) => {
         background: 'var(--semi-color-bg-1)',
       }}
     >
-      {/* 卡片头部：渠道 + 分组 + 报价数 */}
+      {/* 卡片头部：渠道类型 + 分组数 */}
       <div className='flex items-center justify-between gap-2 mb-3'>
         <div className='min-w-0'>
           <div
@@ -279,13 +202,6 @@ const BidCard = ({ bid }) => {
           >
             {typeLabel}
           </div>
-          <Text
-            type='tertiary'
-            className='truncate block'
-            style={{ fontSize: 12 }}
-          >
-            {bid.group}
-          </Text>
         </div>
         <div
           className='shrink-0 rounded-full'
@@ -298,20 +214,21 @@ const BidCard = ({ bid }) => {
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {bid.total} {t('个报价')}
+          {bid.total} {t('个分组')}
         </div>
       </div>
 
-      {/* 竞价梯队 */}
+      {/* 分组行情（行=分组） */}
       <div className='flex flex-col gap-1'>
-        {ladder.length === 0 && (
+        {groups.length === 0 && (
           <Text type='tertiary' style={{ fontSize: 12, padding: '8px 0' }}>
             {t('暂无报价')}
           </Text>
         )}
-        {ladder.map((row, i) => {
-          const rank = i + 1;
-          const mine = !!row.mine;
+        {groups.map((g, i) => {
+          const mine = !!g.mine;
+          const price = Number(g.lowest_price);
+          const hasPrice = Number.isFinite(price) && price > 0;
           return (
             <div
               key={i}
@@ -326,21 +243,34 @@ const BidCard = ({ bid }) => {
                   : 'none',
               }}
             >
-              {/* 相对价格条（背景层） */}
-              <div
-                className='absolute left-0 top-0 bottom-0 pointer-events-none'
-                style={{
-                  width: `${barWidth(row.price)}%`,
-                  background: mine
-                    ? 'rgba(59, 130, 246, 0.10)'
-                    : 'var(--semi-color-fill-0)',
-                  opacity: mine ? 1 : 0.6,
-                  borderRadius: 12,
-                  transition: 'width 0.3s ease',
-                }}
-              />
-              <div className='relative flex items-center gap-2.5 flex-1 min-w-0'>
-                <RankBadge rank={rank} />
+              {/* 相对价格条（背景层，价低条长） */}
+              {hasPrice && (
+                <div
+                  className='absolute left-0 top-0 bottom-0 pointer-events-none'
+                  style={{
+                    width: `${barWidth(price)}%`,
+                    background: mine
+                      ? 'rgba(59, 130, 246, 0.10)'
+                      : 'var(--semi-color-fill-0)',
+                    opacity: mine ? 1 : 0.6,
+                    borderRadius: 12,
+                    transition: 'width 0.3s ease',
+                  }}
+                />
+              )}
+              <div className='relative flex items-center gap-2 flex-1 min-w-0'>
+                <span
+                  className='truncate'
+                  title={g.group}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: mine ? 600 : 500,
+                    color: 'var(--semi-color-text-0)',
+                    minWidth: 0,
+                  }}
+                >
+                  {g.group}
+                </span>
                 {mine && (
                   <span
                     className='shrink-0 rounded-md'
@@ -356,17 +286,19 @@ const BidCard = ({ bid }) => {
                   </span>
                 )}
                 <span
-                  className='ml-auto'
+                  className='ml-auto shrink-0'
                   style={{
                     fontSize: 15,
                     fontWeight: mine ? 700 : 600,
-                    color: mine
-                      ? 'var(--semi-color-primary)'
-                      : 'var(--semi-color-text-0)',
+                    color: hasPrice
+                      ? mine
+                        ? 'var(--semi-color-primary)'
+                        : 'var(--semi-color-text-0)'
+                      : 'var(--semi-color-text-2)',
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  ¥{fixed2(row.price)}
+                  {hasPrice ? `¥${fixed2(price)}` : t('暂无报价')}
                 </span>
               </div>
             </div>
@@ -476,10 +408,43 @@ const SupplierOverview = () => {
             label={t('待结算')}
             value={`¥${fixed2(pending.payable_cny)}`}
           >
-            <Text type='tertiary' style={{ fontSize: 12 }}>
-              ${fixed2(pending.official_usd)} · {pending.log_count || 0}{' '}
-              {t('条')}
-            </Text>
+            <Tooltip
+              position='bottom'
+              content={
+                <div style={{ lineHeight: 1.8, maxWidth: 260 }}>
+                  <div>
+                    <b>{t('应收')}（¥）</b>：
+                    {t('按成本价×用量折算的人民币，即你将收到的金额')}
+                  </div>
+                  <div>
+                    <b>{t('官方价')}（$）</b>：{t('上游官方计费的美元金额')}
+                  </div>
+                  <div>
+                    <b>{t('笔数')}</b>：{t('当前待结算的调用条数')}
+                  </div>
+                </div>
+              }
+            >
+              <Text
+                type='tertiary'
+                style={{
+                  fontSize: 12,
+                  cursor: 'help',
+                  borderBottom: '1px dashed var(--semi-color-border)',
+                }}
+              >
+                ${fixed2(pending.official_usd)} · {pending.log_count || 0}{' '}
+                {t('条')}
+                <Info
+                  size={11}
+                  style={{
+                    marginLeft: 4,
+                    verticalAlign: 'middle',
+                    opacity: 0.6,
+                  }}
+                />
+              </Text>
+            </Tooltip>
           </StatCard>
         </Col>
 

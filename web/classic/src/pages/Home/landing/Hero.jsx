@@ -64,12 +64,12 @@ const Hero = () => {
     }
   }
 
-  // 正在托管的 Key（金额以美元计，依次降低）
+  // 正在托管的 Key（按官 Key 类型展示供应商数量 + 累计托管金额，金额以美元计依次降低）
   const sampleRows = [
-    { name: 'Claude (Anthropic)', masked: 'sk-ant-••••', amount: 8247360 },
-    { name: 'AWS Bedrock', masked: 'AKIA••••', amount: 4612980 },
-    { name: 'OpenRouter', masked: 'sk-or-••••', amount: 1358420 },
-    { name: 'OpenAI', masked: 'sk-••••', amount: 842170 },
+    { name: 'Claude (Anthropic)', suppliers: 18, amount: 8247360 },
+    { name: 'AWS Bedrock', suppliers: 26, amount: 4612980 },
+    { name: 'OpenRouter', suppliers: 8, amount: 1358420 },
+    { name: 'OpenAI', suppliers: 6, amount: 842170 },
   ];
   const total = sampleRows.reduce((sum, r) => sum + r.amount, 0);
 
@@ -124,7 +124,7 @@ const Hero = () => {
             <div className='landing-panel__row' key={r.name}>
               <div className='landing-panel__name'>
                 <div>{r.name}</div>
-                <div className='landing-panel__mask'>{r.masked} · {t('已加密')}</div>
+                <div className='landing-panel__mask'>{t('供应商数量')}：{r.suppliers} {t('个')}</div>
               </div>
               <div className='landing-panel__amt'>
                 <AnimatedAmount value={r.amount} delay={i * 140} />
@@ -132,7 +132,7 @@ const Hero = () => {
             </div>
           ))}
           <div className='landing-panel__total'>
-            <span>{t('累计托管收益')}</span>
+            <span>{t('累计托管金额')}</span>
             <span className='landing-panel__total-amt'>
               <AnimatedAmount value={total} delay={sampleRows.length * 140} />
             </span>

@@ -84,6 +84,7 @@ import {
   IconBolt,
   IconSearch,
   IconChevronDown,
+  IconHelpCircle,
 } from '@douyinfe/semi-icons';
 
 const { Text, Title } = Typography;
@@ -3643,10 +3644,32 @@ const EditChannelModal = (props) => {
                     }
                   />
 
-                  {/* Groups - Core Config */}
+                  {/* Groups - Core Config（分组即竞价池，给出竞价引导） */}
                   <Form.Select
                     field='groups'
-                    label={t('分组')}
+                    label={{
+                      text: t('分组'),
+                      extra: (
+                        <Tooltip
+                          content={
+                            <div style={{ maxWidth: 300, lineHeight: 1.6 }}>
+                              {t(
+                                '分组是「竞价池」：同一分组 + 同一模型下的所有渠道相互竞价。平台优先调用成本价最低的渠道，成本价相同时再按渠道优先级高者优先。请选择与该官 Key 匹配的标准分组，平台未使用的自定义分组不会有流量。',
+                              )}
+                            </div>
+                          }
+                          position='top'
+                        >
+                          <IconHelpCircle
+                            style={{
+                              color: 'var(--semi-color-text-2)',
+                              cursor: 'help',
+                              marginLeft: 4,
+                            }}
+                          />
+                        </Tooltip>
+                      ),
+                    }}
                     placeholder={t('请选择可以使用该渠道的分组')}
                     multiple
                     allowAdditions
@@ -3654,6 +3677,18 @@ const EditChannelModal = (props) => {
                     additionLabel={t(
                       '请在系统设置页面编辑分组倍率以添加新的分组：',
                     )}
+                    extraText={
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--semi-color-text-2)',
+                        }}
+                      >
+                        {t(
+                          '💡 分组即竞价池：同组同模型按成本价竞价，价低者先接量，同价看优先级',
+                        )}
+                      </span>
+                    }
                     optionList={groupOptions}
                     style={{ width: '100%' }}
                     position='top'

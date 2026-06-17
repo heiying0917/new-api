@@ -49,12 +49,13 @@ export const useChannelsData = (mode = 'admin') => {
   const isSupplierMode = mode === 'supplier';
   const apiBase = isSupplierMode ? '/api/supplier/channel' : '/api/channel';
 
-  // V12 深链：供应商概览/供应商管理点击跳转携带 ?supplier=<名字>，仅管理员模式生效
-  // （供应商模式后端强制本人渠道，忽略该参数）。
+  // V12/V13 深链：供应商概览点击跳转携带 ?supplier=<名字> / ?group=<分组>。
+  // supplier 仅管理员模式生效（供应商模式后端强制本人渠道）；group 两种模式都可按分组过滤。
   const [searchParams] = useSearchParams();
   const urlSupplier = isSupplierMode ? '' : searchParams.get('supplier') || '';
-  // 记录上次按 URL 应用过的供应商值，用于站内导航(带/不带 ?supplier= 互切)时正确同步、不留陈旧过滤。
-  const lastSupplierRef = useRef('');
+  const urlGroup = searchParams.get('group') || '';
+  // 记录上次按 URL 应用过的(供应商,分组)组合，用于站内导航(带/不带深链参数互切)时正确同步、不留陈旧过滤。
+  const lastDeepLinkRef = useRef(null);
 
   // Basic states
   const [channels, setChannels] = useState([]);
@@ -142,7 +143,7 @@ export const useChannelsData = (mode = 'admin') => {
 
   const formInitValues = {
     searchKeyword: '',
-    searchGroup: '',
+    searchGroup: urlGroup,
     searchModel: '',
     searchSupplier: urlSupplier,
   };
@@ -187,19 +188,22 @@ export const useChannelsData = (mode = 'admin') => {
     fetchGlobalPassThroughEnabled().then();
   }, []);
 
-  // V12 深链：表单就绪后按 ?supplier=<名字> 过滤渠道；站内从有→无 keyword 切换时重置为全部，不留陈旧过滤。
+  // V12/V13 深链：表单就绪后按 ?supplier= / ?group= 过滤渠道；站内深链参数变化(含切回无参)时同步，不留陈旧过滤。
   // formApi 由 ChannelsFilters 挂载时注入，故等其就绪再 setValue + 拉数据。
   useEffect(() => {
     if (!formApi) return;
-    if (urlSupplier === lastSupplierRef.current) return; // 与上次已应用值一致，跳过
-    lastSupplierRef.current = urlSupplier;
+    const key = urlSupplier + ' ' + urlGroup;
+    if (lastDeepLinkRef.current === key) return; // 与上次已应用组合一致，跳过
+    lastDeepLinkRef.current = key;
     formApi.setValue('searchSupplier', urlSupplier);
-    const run = urlSupplier
-      ? searchChannels(enableTagMode, 'all', statusFilter, 1, pageSize, idSort)
-      : loadChannels(1, pageSize, idSort, enableTagMode);
+    formApi.setValue('searchGroup', urlGroup);
+    const run =
+      urlSupplier !== '' || urlGroup !== ''
+        ? searchChannels(enableTagMode, 'all', statusFilter, 1, pageSize, idSort)
+        : loadChannels(1, pageSize, idSort, enableTagMode);
     run.then().catch((reason) => showError(reason));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlSupplier, formApi]);
+  }, [urlSupplier, urlGroup, formApi]);
 
   // Column visibility management
   const getDefaultColumnVisibility = () => {

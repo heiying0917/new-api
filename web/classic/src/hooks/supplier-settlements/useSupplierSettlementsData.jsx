@@ -32,15 +32,27 @@ export const useSupplierSettlementsData = () => {
   const [activePage, setActivePage] = useState(1);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [total, setTotal] = useState(0);
+  // 当前待结算汇总 {payable_cny, official_usd, log_count}；顶部摘要卡片展示
+  const [pending, setPending] = useState(null);
+
+  // Filters: status (0=全部 / 2=已完成 / 3=已取消) + 申请时间段(unix 秒, 0=不限)
+  const [statusFilter, setStatusFilter] = useState(0);
+  const [startTs, setStartTs] = useState(0);
+  const [endTs, setEndTs] = useState(0);
 
   // Load settlements list
   const loadSettlements = useCallback(
-    async (page = 1, size = pageSize) => {
+    async (page = 1, size = pageSize, filters = {}) => {
+      const s = filters.status !== undefined ? filters.status : statusFilter;
+      const st = filters.startTs !== undefined ? filters.startTs : startTs;
+      const et = filters.endTs !== undefined ? filters.endTs : endTs;
       setLoading(true);
       try {
-        const res = await API.get(
-          `/api/supplier/self/settlement/?p=${page}&page_size=${size}`,
-        );
+        let url = `/api/supplier/self/settlement/?p=${page}&page_size=${size}`;
+        if (s) url += `&status=${s}`;
+        if (st) url += `&start_timestamp=${st}`;
+        if (et) url += `&end_timestamp=${et}`;
+        const res = await API.get(url);
         const { success, message, data } = res.data;
         if (success) {
           setSettlements(data?.items || []);
@@ -56,7 +68,7 @@ export const useSupplierSettlementsData = () => {
         setLoading(false);
       }
     },
-    [pageSize],
+    [pageSize, statusFilter, startTs, endTs],
   );
 
   // Refresh current page
@@ -67,12 +79,13 @@ export const useSupplierSettlementsData = () => {
     [activePage, pageSize, loadSettlements],
   );
 
-  // Get current pending (unsettled) amount before applying
+  // Get current pending (unsettled) amount — caches into state for the top summary card.
   const getPendingAmount = useCallback(async () => {
     try {
       const res = await API.get('/api/supplier/self/pending');
       const { success, message, data } = res.data;
       if (success) {
+        setPending(data || null);
         return data || null;
       }
       showError(message);
@@ -92,6 +105,7 @@ export const useSupplierSettlementsData = () => {
       if (success) {
         showSuccess(t('结算申请成功！'));
         await loadSettlements(1, pageSize);
+        await getPendingAmount();
         return true;
       }
       showError(message);
@@ -102,7 +116,7 @@ export const useSupplierSettlementsData = () => {
     } finally {
       setApplying(false);
     }
-  }, [loadSettlements, pageSize, t]);
+  }, [loadSettlements, pageSize, t, getPendingAmount]);
 
   // Cancel a settlement (restore usage back to unsettled)
   const cancelSettlement = useCallback(
@@ -113,6 +127,7 @@ export const useSupplierSettlementsData = () => {
         if (success) {
           showSuccess(t('结算已取消！'));
           await refresh();
+          await getPendingAmount();
           return true;
         }
         showError(message);
@@ -122,7 +137,7 @@ export const useSupplierSettlementsData = () => {
         return false;
       }
     },
-    [refresh, t],
+    [refresh, t, getPendingAmount],
   );
 
   // Get a single settlement detail
@@ -220,11 +235,48 @@ export const useSupplierSettlementsData = () => {
     await loadSettlements(1, size);
   };
 
+  // 状态筛选：0=全部 / 2=已完成(已结算) / 3=已取消
+  const handleStatusChange = (value) => {
+    const v = value || 0;
+    setStatusFilter(v);
+    loadSettlements(1, pageSize, { status: v });
+  };
+
+  // 按申请时间段筛选：dateRange 返回 [Date, Date]，结束日覆盖到当天 23:59:59
+  const handleDateRangeChange = (range) => {
+    let st = 0;
+    let et = 0;
+    if (Array.isArray(range) && range[0] && range[1]) {
+      st = Math.floor(new Date(range[0]).getTime() / 1000);
+      et = Math.floor(new Date(range[1]).getTime() / 1000) + 86399;
+    }
+    setStartTs(st);
+    setEndTs(et);
+    loadSettlements(1, pageSize, { startTs: st, endTs: et });
+  };
+
   // Initial load
   useEffect(() => {
     loadSettlements(1, pageSize);
+    getPendingAmount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 待结算金额非轮询：页面重新获得焦点/变为可见时拉一次最新值，
+  // 避免长时间停留导致顶部金额陈旧（实际结算金额仍以后端原子快照为准）。
+  useEffect(() => {
+    const refreshPendingOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        getPendingAmount();
+      }
+    };
+    window.addEventListener('focus', refreshPendingOnVisible);
+    document.addEventListener('visibilitychange', refreshPendingOnVisible);
+    return () => {
+      window.removeEventListener('focus', refreshPendingOnVisible);
+      document.removeEventListener('visibilitychange', refreshPendingOnVisible);
+    };
+  }, [getPendingAmount]);
 
   return {
     // State
@@ -234,6 +286,10 @@ export const useSupplierSettlementsData = () => {
     activePage,
     pageSize,
     total,
+    pending,
+    statusFilter,
+    startTs,
+    endTs,
 
     // Functions
     loadSettlements,
@@ -247,6 +303,8 @@ export const useSupplierSettlementsData = () => {
     exportSettlement,
     handlePageChange,
     handlePageSizeChange,
+    handleStatusChange,
+    handleDateRangeChange,
 
     // Translation
     t,

@@ -85,58 +85,82 @@ const TypeCard = ({ stat, onClick, t }) => {
       </div>
       {topChannels.length > 0 && (
         <div
-          className='mt-3 pt-3 flex flex-col gap-1.5'
+          className='mt-3 pt-3'
           style={{ borderTop: '1px solid var(--semi-color-border)' }}
         >
-          {topChannels.map((c) => (
-            <div
-              key={c.channel_id}
-              className='flex items-center justify-between gap-2'
-              style={{ fontSize: 13, lineHeight: 1.7 }}
-            >
-              <span
-                className='flex items-baseline gap-1 min-w-0'
-                style={{ flex: 1 }}
-              >
-                <span
-                  onClick={(e) => {
-                    // 阻止冒泡到卡片 onClick（避免触发详情），跳转渠道管理并过滤该供应商
-                    e.stopPropagation();
-                    navigate(
-                      `/console/channel?supplier=${encodeURIComponent(c.supplier_name)}`,
-                    );
-                  }}
-                  className='cursor-pointer truncate hover:underline shrink-0'
-                  title={`${t('查看该供应商渠道')}: ${c.supplier_name}`}
-                  style={{ color: 'var(--semi-color-link)', fontWeight: 500 }}
-                >
-                  {c.supplier_name}
-                </span>
-                {c.group ? (
+          {/* 网格布局：供应商/分组/成本价/已跑金额 四列垂直对齐（分组不再紧贴供应商名） */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 5.5rem) minmax(0, 1fr) auto auto',
+              columnGap: 10,
+              rowGap: 6,
+              fontSize: 13,
+              lineHeight: 1.5,
+              alignItems: 'center',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {topChannels.map((c) => {
+              const firstGroup = (c.group || '').split(/[,，]/)[0].trim();
+              return (
+                <React.Fragment key={c.channel_id}>
                   <span
-                    className='truncate'
-                    style={{ color: 'var(--semi-color-text-2)', fontSize: 12 }}
+                    onClick={(e) => {
+                      // 阻止冒泡到卡片 onClick；跳转渠道管理并按供应商过滤
+                      e.stopPropagation();
+                      navigate(
+                        `/console/channel?supplier=${encodeURIComponent(c.supplier_name)}`,
+                      );
+                    }}
+                    className='cursor-pointer truncate hover:underline'
+                    title={`${t('查看该供应商渠道')}: ${c.supplier_name}`}
+                    style={{
+                      color: 'var(--semi-color-link)',
+                      fontWeight: 500,
+                      minWidth: 0,
+                    }}
                   >
-                    · {c.group}
+                    {c.supplier_name}
                   </span>
-                ) : null}
-              </span>
-              <span
-                className='shrink-0 flex items-center gap-2.5'
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                <span style={{ fontWeight: 600 }}>
-                  {c.cost_price > 0 ? `¥${Number(c.cost_price).toFixed(2)}` : '—'}
-                </span>
-                <span style={{ color: 'var(--semi-color-success)' }}>
-                  ${(Number(c.official_usd) || 0).toFixed(2)}
-                </span>
-              </span>
-            </div>
-          ))}
+                  {firstGroup ? (
+                    <span
+                      onClick={(e) => {
+                        // 阻止冒泡到卡片 onClick；跳转渠道管理并按分组过滤
+                        e.stopPropagation();
+                        navigate(
+                          `/console/channel?group=${encodeURIComponent(firstGroup)}`,
+                        );
+                      }}
+                      className='cursor-pointer truncate hover:underline'
+                      title={`${t('查看该分组渠道')}: ${c.group}`}
+                      style={{ color: 'var(--semi-color-link)', minWidth: 0 }}
+                    >
+                      {c.group}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--semi-color-text-2)' }}>—</span>
+                  )}
+                  <span style={{ textAlign: 'right', fontWeight: 600 }}>
+                    {c.cost_price > 0
+                      ? `¥${Number(c.cost_price).toFixed(2)}`
+                      : '—'}
+                  </span>
+                  <span
+                    style={{
+                      textAlign: 'right',
+                      color: 'var(--semi-color-success)',
+                    }}
+                  >
+                    ${(Number(c.official_usd) || 0).toFixed(2)}
+                  </span>
+                </React.Fragment>
+              );
+            })}
+          </div>
           {restCount > 0 && (
             <Text
-              className='hover:underline'
+              className='hover:underline mt-1.5 inline-block'
               style={{ fontSize: 12.5, color: 'var(--semi-color-link)' }}
             >
               {t('共 ${n} 条，点击查看全部').replace('${n}', channels.length)}
