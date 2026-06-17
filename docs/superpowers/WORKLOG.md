@@ -435,3 +435,58 @@
 - **效果**：失败时最多再试 10 次，按价格梯队依次降级；实际重试次数还受可用价位梯队数/渠道数约束（retry 超出梯队数会钳到最后一档），并由 shouldRetry + auto-ban 提前收敛。
 - **prod**：prod DB 仍是 RetryTimes 默认 0 + DispatchStrategy 默认 priority；要一致需在 prod 库同样设这两个 option（非代码发版）。
 - **提交状态**：DB option 仅本地；无代码改动（纯运行态配置）。
+
+### [2026-06-17] 概览卡片分组列垂直对齐 + 点击按分组筛选渠道（VER juhe-v13，**未提交**）
+- **需求**：概览卡片第二列(分组名)做垂直对齐、不紧贴供应商名；点击分组名跳转渠道管理并筛选该分组渠道。
+- **改动**：`TypeCard.jsx` 渠道列表从 flex 行改为 **CSS grid**(`供应商 5.5rem / 分组 1fr / 成本价 auto / 已跑 auto`)——分组成为独立对齐列；分组名加点击 → `/console/channel?group=<首个分组>`(多分组取第一个)。`useChannelsData.jsx` 深链扩展为同时读 `?supplier=` 与 `?group=`，formInitValues 预填 searchGroup，effect 用 (supplier,group) 组合 key 做陈旧过滤重置。`TypeDetailSheet.jsx` 详情表分组列也改为可点击(一致性)。i18n 加 `查看该分组渠道`。
+- **验证(真实截图，VER juhe-v13，superadmin)**：卡片分组列垂直对齐(claude速刷/OpenAI官key/… 同列对齐) ✅；点 claude官key → 渠道管理筛选下拉=claude官key、表格仅 3 条该分组渠道(不同供应商) ✅；成本价列同屏可见；console 0 error。
+- **提交状态**：**未 commit、未 push**。本地 5001 = juhe-v13。
+
+### [2026-06-17] 供应商视角体验评估（无代码改动）
+- 为体验供应商视角，临时用 admin API 把 tksupplier1(id=2,role=5) 密码改为 Tk888888，登录走查供应商端：概览(实时市场竞价/排名)、我的渠道(成本价/应收款/优先级/权重列)、账单结算(申请结算+历史)、数据看板(RPM/TPM+用量趋势+收益趋势+渠道排行)、添加渠道(复用管理员完整表单)。
+- 评估结论(详见对话)：① 切 bidding 后"优先级"列对供应商已是误导(调度只看价格);② 添加渠道表单太重(应给供应商精简版);③ 分组缺竞价引导;④ 看板用量趋势请求/Token 共轴、收益用$非¥;⑤ 账单混入已取消;⑥ 缺"我能赚多少"预估 + 官key额度预警。均为建议,未改代码。
+- ⚠️ 遗留：tksupplier1 密码被改成 Tk888888(测试号),需告知用户改回。
+
+### [2026-06-17] V14 需求开发（6 项，VER juhe-v14，**未提交**）
+- **item1 首页官 Key 面板改供应商数量**：`pages/Home/landing/Hero.jsx` 把右侧"已托管的官 Key"面板每行的 `sk-ant-•••• · 已加密`(暴露未加密观感)换成 `供应商数量：N 个`，四类硬编码 Claude 18 / AWS Bedrock 26 / OpenRouter 8 / OpenAI 6（与既有营销金额一致的展示数字）。
+- **item2 竞价同价按优先级调度(TDD)**：`model/channel.go` `dispatchEffectivePriority` bidding 分支由"只看成本价"改为 `-costMilli*1e6 + clamp(渠道优先级,[0,1e6))`——成本价主键(价低先)、**同价时渠道优先级次键(高先)**，价格仍绝对主导。先写 RED：`TestDispatchEffectivePriority_BiddingPriorityTieBreaker`(同价 -2000=-2000 必败)+`...PriceDominatesPriority`(回归守卫)+集成 `TestGetRandomSatisfiedChannel_BiddingPriceTiePriorityTiers`(retry0 选高优先级、retry1 选低)，GREEN 后 9 个 dispatch 测试全绿。回答用户："可以"——同类型同分组同价才看优先级。
+- **item3 分组竞价引导**：`EditChannelModal.jsx` 分组字段 label 加 `IconHelpCircle` tooltip(分组=竞价池/同组同模型相互竞价/价低先调用、同价看优先级/选匹配标准分组否则无流量)+ `extraText` 行内提示"💡 分组即竞价池…"。供应商/管理员共用表单都可见。
+- **item4 账单结算状态筛选 + item5 时间段搜索(TDD)**：后端 `model/settlement.go` `GetSettlementsBySupplier` 签名加 `status,startTs,endTs`(0=不限，按 created_at 过滤，GORM 占位符 cross-DB 安全)；`controller/settlement.go` `SupplierListSettlements` 读 `?status=&start_timestamp=&end_timestamp=`。RED `TestGetSettlementsBySupplier_StatusAndTimeFilter`(签名不存在→编译失败)→GREEN，并修 `settlement_test.go` 旧调用。前端 `useSupplierSettlementsData.jsx` 加 statusFilter/startTs/endTs + handleStatusChange/handleDateRangeChange(dateRange→[start00:00,end23:59:59])；`supplier-settlements/index.jsx` actionsArea 加状态下拉(全部/已完成=2/已取消=3)+ DatePicker(dateRange)。⚠️ 已申请(待审核,status=1)未做成独立选项(用户只列了 3 项)，仅"全部"可见——已在报告里提示用户。
+- **item6 待结算 tooltip**：`supplier-overview/index.jsx` 待结算卡片副文案加 lucide `Info` 图标 + Semi `Tooltip`，悬浮说明 应收(¥)=成本价×用量你将收到的金额 / 官方价($)=上游官方计费美元 / 笔数=待结算调用条数。
+- **i18n**：`zh-CN.json` 末尾加 10 个缺失键(供应商数量/已取消/应收/笔数/按申请时间段筛选 + tooltip/extraText 长文案)。
+- **本地部署踩坑(重要)**：`docker build`(完整 Dockerfile)在 docker 内 `bun run build` classic 时 **ResourceExhausted: cannot allocate memory**(Docker Desktop VM 内存上限)→ 镜像没更新(仍 46h 前旧镜像)。改用**宿主交叉编译**绕开：① 宿主 `bun run build` 两套前端(内存够,16.8MB/18.9MB)②`GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build`(CGO 关、sqlite 是纯 Go glebarez/modernc，可直接交叉编译，前端经 //go:embed 打进 90MB 二进制)③ 极简 Dockerfile 仅 `COPY tokenki /tokenki`。**注意 arch**：跑中的容器是 arm64 native(aarch64)，第一次误编 amd64 不匹配，重编 arm64 才对。
+- **容器重建**：运行栈是 compose project `newapi-juhe`(容器 `new-api`/`postgres`/`redis`，**库名 new-api 非 tokenki**)，与已改名为 tokenki 的 docker-compose.yml 漂移；故不能直接 `docker compose up`。改为 `docker stop/rm new-api` + `docker run` 复刻原配置(network `newapi-juhe_new-api-network`、`SQL_DSN=...postgres:5432/new-api`、REDIS、5001:3000、data/logs 绑定、`--log-dir /app/logs`)，**只换 app 容器，postgres/redis/数据 + 已持久化的 DispatchStrategy=bidding/RetryTimes=10 option 全保留**。
+- **验证(真实截图 + DOM + 功能实测，VER juhe-v14，tksupplier1 登录 5001)**：
+  - item1：面板四行 供应商数量 18/26/8/6 个，全页无 `已加密`/`sk-ant` ✅(截图)。
+  - item6：悬浮待结算 ⓘ → tooltip 应收/官方价/笔数 三行说明 ✅(截图)。
+  - item4：状态选"已完成"→ 表格仅 3 条(均已结算 id 5/2/1)、共 3 条 ✅(DOM 实测)。
+  - item5：日期选 2026-06-14~06-14 → 仅 4 条(申请时间均 06-14，id 6/5/4/3)、共 4 条，排除 06-13/05-25 ✅(DOM 实测)。
+  - item3：分组字段 ⓘ tooltip(竞价池长文案)+ 💡 行内提示均显示 ✅(截图)。
+  - item2：dispatch 逻辑无法截图，9 单测全绿覆盖。
+  - 结算页全新加载 console **0 error**(登录前的 401 风暴/key-gate 403/渠道测试 401 均非本次引入)。
+- **后端**：`go build ./...` 成功；`go test ./model/...` 全绿；`./controller/...` 唯一失败是白名单内 pre-existing `TestListModelsTokenLimitIncludesTieredBillingModel`(缺 Redis mock，与本次无关)。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v14。注意工作树同时含**之前未提交的 V13-new 3 文件**(TypeCard/TypeDetailSheet/useChannelsData)。⚠️ tksupplier1 密码仍是 Tk888888。
+
+### [2026-06-17] 实时市场竞价卡片重构：一类型一卡、行=分组(VER juhe-v14d，**未提交**)
+- **需求(AskUserQuestion 二选一确认)**：原「一个(类型,分组)一张卡、行=该分组匿名报价梯队」改为「一个渠道类型一张卡、行=该类型下的分组」，每行显示 分组名 + 市场最低价，供应商已上架的分组标【你】。
+- **后端(TDD)**：`model/supplier_stats.go` 新增 `GetSupplierMarketByType(supplierId)` → `[]MarketTypeBids{Type,TypeName,Groups[]MarketGroupRow{Group,LowestPrice,Mine,MyBest},MyCount,Total}`。类型范围=供应商参与的渠道类型；行范围=该类型下**所有**市场分组(自有 ∪ 他人启用正价的)，`mine` 标自有(任意状态)，`lowest_price`=该(type,group)启用且 cost_price>0 的市场最低价(nil=暂无报价)，`my_best`=供应商自己最低价。行排序：自有优先→价低优先(nil 沉底)→分组名。先写 RED `TestGetSupplierMarketByType`(覆盖 自有a/b、仅禁用c(暂无报价)、他人gpt(无你)、跨类型x 排除)→GREEN。保留旧 `GetSupplierMarketBids`(及其测试)不动，仅把 `controller/supplier_market.go` 的 overview 切到新函数(JSON 键仍叫 `bids`)。
+- **前端**：`supplier-overview/index.jsx` 重写 `BidCard`——头部去掉分组副标题、报价数改「N 个分组」；行从「排名图标+匿名价」改为「分组名 +【你】+ ¥市场最低价(或 暂无报价)」，价低条更长；底部「我的排名 X/Y」改「已上架 my_count/total 分组」。删除已无用的 `RankBadge`/`RANK_STYLES` 及 `Crown/Trophy/Medal` 导入。i18n 加 `个分组/暂无报价/你`。
+- **验证(真实截图+DOM，VER juhe-v14d，tksupplier1 登录 5001)**：原 OpenAI 两张卡(claude官key/claude速刷)合并为 **一张 OpenAI 卡**，行=claude速刷[你]¥1.80、claude官key[你]¥2.20(按价升序)，徽标「2 个分组」，底部「已上架 2/2 分组」✅；登录后 overview 0 render error(唯一 console error 是登录前的 session 过期提示)。
+- **部署**：沿用宿主交叉编译(arm64)+极简镜像重建容器流程；app 健康无 panic。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v14(含本次 bid 卡重构)。
+
+### [2026-06-17] V14 item7：账单结算页顶部「待结算汇总」卡片(VER juhe-v14e，**未提交**)
+- **需求**：账单结算页顶部清晰展示当前供应商待结算账单——应收金额、美金/人民币/笔数等全部信息；申请结算按钮放到待结算金额后面。
+- **Hook**(`useSupplierSettlementsData.jsx`)：新增 `pending` 状态({payable_cny,official_usd,log_count})；`getPendingAmount` 改为既 return 又 `setPending` 缓存(一次请求供顶卡+确认弹窗共用)；挂载时拉取、`applySettlement`/`cancelSettlement` 成功后刷新(申请后清零/取消后回升)；return 暴露 `pending`。
+- **前端**(`supplier-settlements/index.jsx`)：表格上方新增 `Card` 待结算汇总——左侧 Wallet 图标 + 「待结算金额（应收 ¥）」+ⓘtooltip(应收/官方价/笔数释义) + **大号 ¥应收 + 申请结算按钮(紧随金额，nothingToSettle 时禁用)**；右侧 官方价($) + 待结算笔数(笔)；底部一行说明「应收=成本价×用量；申请结算快照为待审核、提交后清零」。从表格 actionsArea **移除**申请结算按钮(上移)，表格标题改「结算记录」，筛选(全部/已完成/已取消 + 日期段)保留。i18n 加 5 键。
+- **验证(真实截图+DOM+0 error，VER juhe-v14e，tksupplier1)**：顶卡显示 ¥0.00 +申请结算(因应收0禁用) + 官方价$0.45 + 4 笔 + 说明行；下方「结算记录」表 6 行 + 筛选；结算页 console 0 error；app 健康无 panic。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v14(含 item7)。
+
+### [2026-06-17] item7 数据时效隐患排查 + 修复(VER juhe-v14f，**未提交**)
+- **用户疑问**：账单结算页数据是否实时？不实时刷新 / 点击申请结算那刻没拉到最新待结算金额，会不会出问题？
+- **排查结论**：
+  - **结算金额正确性：安全**。前端 POST `/api/supplier/self/settlement/` 不带金额；`model.CreateSettlement` 在该刻用 per-supplier 锁 + 原子 `UPDATE settlement_id` 打包所有 `settlement_id=0` 未结算日志，金额(官方价/应收/笔数)全后端现算、用每条冻结的 `cost_price_snapshot`。→ 前端数字纯预览，陈旧与否都不影响实际结算；并发/双击被锁挡(第二次"无可结算"报错)。
+  - **隐患(我 item7 引入，属可用性非金额错误)**：顶部 `pending` 非轮询，只在 进页面/申请后/取消后 刷新；且申请结算按钮 `disabled` 绑定该陈旧状态 → 若进页面时 ¥0、之后又跑量，按钮会一直禁用，供应商有钱可结却点不了须刷新。`handleApply` 点击时本会重拉最新，但被禁用按钮挡住兜底走不到。
+- **修复**：① 顶部申请结算按钮移除 `disabled={nothingToSettle}`(仅保留 loading) → 始终可点；点击 `handleApply` 重拉最新→弹窗按最新展示(无可结算时 OK 禁用 + "当前没有可结算的消费")→后端原子结算。② hook 加 `window focus`/`visibilitychange` 监听，页面重新可见时刷新 `pending`，避免久留陈旧。
+- **验证(DOM+实测，VER juhe-v14f，tksupplier1)**：¥0.00 时申请结算按钮 `disabled=false`(可点)；点击弹出确认框「当前没有可结算的消费」+ 提交说明(OK 禁用)→ 证明点击重拉+弹窗兜底可达，陈旧不再卡死；app 健康无 panic、0 console error。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v14(含 item7 + 时效修复)。
