@@ -30,9 +30,13 @@ func SupplierCreateSettlement(c *gin.Context) {
 }
 
 // SupplierListSettlements returns paginated settlements for the calling supplier.
+// Optional ?status=N (0=all), ?start_timestamp= & ?end_timestamp= (unix seconds, filter on 申请时间).
 func SupplierListSettlements(c *gin.Context) {
+	status, _ := strconv.Atoi(c.Query("status"))
+	startTs, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTs, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	pageInfo := common.GetPageQuery(c)
-	list, total, err := model.GetSettlementsBySupplier(c.GetInt("id"), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	list, total, err := model.GetSettlementsBySupplier(c.GetInt("id"), status, startTs, endTs, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return

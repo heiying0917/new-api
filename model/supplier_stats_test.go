@@ -84,6 +84,68 @@ func TestGetSupplierTodayUsage(t *testing.T) {
 	require.Equal(t, int64(0), tokens)
 }
 
+// TestGetSupplierMarketByType：新版竞价(行=分组)——每个供应商参与的类型一张卡，
+// 行覆盖该类型下所有市场分组(含他人提供的)；mine 标记供应商已上架的分组，
+// lowest_price=该分组市场最低价(启用且正价)，my_best=供应商自己的最低价。
+func TestGetSupplierMarketByType(t *testing.T) {
+	setupSupplierStatsTables(t)
+
+	// 供应商 7：type1 的 a(1.5)、b(2.0) 启用；c 仅有禁用渠道(0.5)。
+	require.NoError(t, DB.Create(&Channel{Name: "s7-a", Key: "k1", SupplierId: 7, Type: 1, Status: common.ChannelStatusEnabled, CostPrice: ptrFloat(1.5), Models: "m", Group: "a"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "s7-b", Key: "k2", SupplierId: 7, Type: 1, Status: common.ChannelStatusEnabled, CostPrice: ptrFloat(2.0), Models: "m", Group: "b"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "s7-c", Key: "k3", SupplierId: 7, Type: 1, Status: common.ChannelStatusManuallyDisabled, CostPrice: ptrFloat(0.5), Models: "m", Group: "c"}).Error)
+
+	// 竞争对手 9：type1 a(1.0 更低)、gpt(3.0，供应商7未参与)；type2 x(4.0，供应商7不在 type2)。
+	require.NoError(t, DB.Create(&Channel{Name: "s9-a", Key: "k4", SupplierId: 9, Type: 1, Status: common.ChannelStatusEnabled, CostPrice: ptrFloat(1.0), Models: "m", Group: "a"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "s9-gpt", Key: "k5", SupplierId: 9, Type: 1, Status: common.ChannelStatusEnabled, CostPrice: ptrFloat(3.0), Models: "m", Group: "gpt"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "s9-x", Key: "k6", SupplierId: 9, Type: 2, Status: common.ChannelStatusEnabled, CostPrice: ptrFloat(4.0), Models: "m", Group: "x"}).Error)
+
+	cards, err := GetSupplierMarketByType(7)
+	require.NoError(t, err)
+
+	// 仅 type1（供应商7参与的类型）；type2 不出现。
+	require.Len(t, cards, 1)
+	tc := cards[0]
+	require.Equal(t, 1, tc.Type)
+	require.Equal(t, constant.GetChannelTypeName(1), tc.TypeName)
+
+	byGroup := map[string]MarketGroupRow{}
+	for _, g := range tc.Groups {
+		byGroup[g.Group] = g
+	}
+	// 覆盖 a,b,c(自有) + gpt(他人，同类型)；不含 x(type2)。
+	require.Len(t, tc.Groups, 4)
+	require.Contains(t, byGroup, "a")
+	require.Contains(t, byGroup, "b")
+	require.Contains(t, byGroup, "c")
+	require.Contains(t, byGroup, "gpt")
+	require.NotContains(t, byGroup, "x")
+
+	// a：市场最低 1.0(对手)，mine，my_best 1.5。
+	require.NotNil(t, byGroup["a"].LowestPrice)
+	require.InDelta(t, 1.0, *byGroup["a"].LowestPrice, 1e-9)
+	require.True(t, byGroup["a"].Mine)
+	require.NotNil(t, byGroup["a"].MyBest)
+	require.InDelta(t, 1.5, *byGroup["a"].MyBest, 1e-9)
+
+	// b：市场最低 2.0，mine，my_best 2.0。
+	require.InDelta(t, 2.0, *byGroup["b"].LowestPrice, 1e-9)
+	require.True(t, byGroup["b"].Mine)
+
+	// c：自有但仅禁用渠道 → mine=true，无市场报价(lowest nil)。
+	require.True(t, byGroup["c"].Mine)
+	require.Nil(t, byGroup["c"].LowestPrice)
+
+	// gpt：他人分组 → mine=false，市场最低 3.0，my_best nil。
+	require.False(t, byGroup["gpt"].Mine)
+	require.NotNil(t, byGroup["gpt"].LowestPrice)
+	require.InDelta(t, 3.0, *byGroup["gpt"].LowestPrice, 1e-9)
+	require.Nil(t, byGroup["gpt"].MyBest)
+
+	require.Equal(t, 3, tc.MyCount) // a,b,c
+	require.Equal(t, 4, tc.Total)   // a,b,c,gpt
+}
+
 func TestGetSupplierMarketBids(t *testing.T) {
 	setupSupplierStatsTables(t)
 

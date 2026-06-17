@@ -531,13 +531,23 @@ func GetDispatchStrategy() string {
 // dispatchEffectivePriority 计算分层用有效优先级。
 //
 //	priority 策略：SupplierPriority 为主键，渠道优先级为辅（供应商优先级全 0 时等同原渠道优先级 → 向后兼容）。
-//	bidding 策略：成本价低者得到更高的有效优先级（先被调度）。
+//	bidding 策略：成本价低者优先（主键）；同一成本价时，渠道优先级高者优先（次键 tie-breaker，
+//	            即「同类型同分组同价 → 看优先级」）。无成本价渠道排最低（最后兜底）。
 func dispatchEffectivePriority(ch *Channel, strategy string) int64 {
 	if strategy == "bidding" {
 		if ch.CostPrice == nil || *ch.CostPrice <= 0 {
 			return math.MinInt64 / 2 // 无成本价（如管理员渠道）→ 竞价中排最低（最后兜底）
 		}
-		return -int64(*ch.CostPrice * 1000) // 价低→值大→优先
+		// 主键：成本价（×1e6 让价格占绝对主导）；次键：同价时渠道优先级。
+		// 优先级钳制到 [0, 1e6)，避免越界冲掉价格主键导致「高优先级反而压过更便宜渠道」。
+		costMilli := int64(*ch.CostPrice * 1000)
+		prio := ch.GetPriority()
+		if prio < 0 {
+			prio = 0
+		} else if prio > 999_999 {
+			prio = 999_999
+		}
+		return -costMilli*1_000_000 + prio // 价低→值大→优先；同价时优先级高→值大→优先
 	}
 	return int64(ch.SupplierPriority)*1_000_000_000 + ch.GetPriority()
 }

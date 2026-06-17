@@ -64,7 +64,7 @@ func SupplierOverview(c *gin.Context) {
 		return
 	}
 
-	bids, err := model.GetSupplierMarketBids(supplierId)
+	bids, err := model.GetSupplierMarketByType(supplierId)
 	if err != nil {
 		common.ApiError(c, err)
 		return

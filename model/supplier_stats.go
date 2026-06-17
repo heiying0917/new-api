@@ -319,6 +319,168 @@ func GetSupplierMarketBids(supplierId int) ([]MarketBidGroup, error) {
 	return result, nil
 }
 
+// MarketGroupRow 新版竞价卡片的一行：某类型下一个分组的市场行情。
+type MarketGroupRow struct {
+	Group       string   `json:"group"`
+	LowestPrice *float64 `json:"lowest_price"` // 该(type,group)启用且 cost_price>0 渠道的市场最低价；nil=暂无报价
+	Mine        bool     `json:"mine"`         // 供应商在该(type,group)是否有渠道(任意状态)
+	MyBest      *float64 `json:"my_best"`      // 供应商自己在该分组启用且正价渠道的最低价；nil=无
+}
+
+// MarketTypeBids 新版竞价卡片：一个渠道类型一张卡，行=该类型下的分组。
+type MarketTypeBids struct {
+	Type     int              `json:"type"`
+	TypeName string           `json:"type_name"`
+	Groups   []MarketGroupRow `json:"groups"`
+	MyCount  int              `json:"my_count"` // 供应商已上架的分组数
+	Total    int              `json:"total"`    // 该类型下分组总数
+}
+
+// GetSupplierMarketByType 构建「一个渠道类型一张卡、行=分组」的市场行情。
+//
+// 类型范围：仅供应商参与(拥有任意状态渠道)的渠道类型。
+// 行范围：该类型下所有市场分组——既包括供应商自己的分组(mine=true，任意状态)，
+//
+//	也包括同类型下其他供应商提供的分组(mine=false)。
+//
+// lowest_price=该(type,group)启用且 cost_price>0 渠道的市场最低价(nil=暂无报价)；
+// my_best=供应商自己在该分组启用且正价渠道的最低价。
+func GetSupplierMarketByType(supplierId int) ([]MarketTypeBids, error) {
+	// 1. 供应商自有渠道 → 参与的类型集合 + 自有 (type,group) 集合。
+	type ownRow struct {
+		Type  int
+		Group string
+	}
+	var ownChannels []ownRow
+	if err := DB.Model(&Channel{}).
+		Select("type, "+commonGroupCol).
+		Where("supplier_id = ?", supplierId).
+		Scan(&ownChannels).Error; err != nil {
+		return nil, err
+	}
+	supplierTypes := map[int]bool{}
+	mineSet := map[bidKey]bool{}
+	for _, oc := range ownChannels {
+		supplierTypes[oc.Type] = true
+		ch := Channel{Group: oc.Group}
+		for _, g := range ch.GetGroups() {
+			if g == "" {
+				continue
+			}
+			mineSet[bidKey{Type: oc.Type, Group: g}] = true
+		}
+	}
+	if len(supplierTypes) == 0 {
+		return []MarketTypeBids{}, nil
+	}
+
+	// 2. 全市场启用且正价渠道 → 每个 (type,group) 市场最低价 + 供应商自己最低价。
+	type bidRow struct {
+		SupplierId int
+		Type       int
+		Group      string
+		CostPrice  *float64
+	}
+	var rows []bidRow
+	if err := DB.Model(&Channel{}).
+		Select("supplier_id, type, "+commonGroupCol+", cost_price").
+		Where("status = ?", common.ChannelStatusEnabled).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	lowest := map[bidKey]float64{}   // 市场最低价
+	myLowest := map[bidKey]float64{} // 供应商自己最低价
+	for _, r := range rows {
+		if r.CostPrice == nil || *r.CostPrice <= 0 {
+			continue
+		}
+		if !supplierTypes[r.Type] {
+			continue // 只看供应商参与的类型
+		}
+		ch := Channel{Group: r.Group}
+		for _, g := range ch.GetGroups() {
+			if g == "" {
+				continue
+			}
+			key := bidKey{Type: r.Type, Group: g}
+			if cur, ok := lowest[key]; !ok || *r.CostPrice < cur {
+				lowest[key] = *r.CostPrice
+			}
+			if r.SupplierId == supplierId {
+				if cur, ok := myLowest[key]; !ok || *r.CostPrice < cur {
+					myLowest[key] = *r.CostPrice
+				}
+			}
+		}
+	}
+
+	// 3. 汇总需要展示的 (type,group)：市场有报价的 ∪ 供应商自有的(即使无启用报价也要展示)。
+	keySet := map[bidKey]bool{}
+	for k := range lowest {
+		keySet[k] = true
+	}
+	for k := range mineSet {
+		keySet[k] = true
+	}
+
+	// 4. 按类型分桶成行。
+	byType := map[int][]MarketGroupRow{}
+	for key := range keySet {
+		row := MarketGroupRow{Group: key.Group, Mine: mineSet[key]}
+		if lp, ok := lowest[key]; ok {
+			v := lp
+			row.LowestPrice = &v
+		}
+		if mb, ok := myLowest[key]; ok {
+			v := mb
+			row.MyBest = &v
+		}
+		byType[key.Type] = append(byType[key.Type], row)
+	}
+
+	// 5. 每个类型一张卡，行排序：自有优先 → 价低优先(nil 沉底) → 分组名。
+	result := make([]MarketTypeBids, 0, len(byType))
+	for typ, groups := range byType {
+		sort.Slice(groups, func(i, j int) bool {
+			gi, gj := groups[i], groups[j]
+			if gi.Mine != gj.Mine {
+				return gi.Mine // 自有在前
+			}
+			pi, pj := gi.LowestPrice, gj.LowestPrice
+			if (pi == nil) != (pj == nil) {
+				return pi != nil // 有报价在前，nil 沉底
+			}
+			if pi != nil && pj != nil && *pi != *pj {
+				return *pi < *pj // 价低在前
+			}
+			return gi.Group < gj.Group
+		})
+		myCount := 0
+		for _, g := range groups {
+			if g.Mine {
+				myCount++
+			}
+		}
+		result = append(result, MarketTypeBids{
+			Type:     typ,
+			TypeName: constant.GetChannelTypeName(typ),
+			Groups:   groups,
+			MyCount:  myCount,
+			Total:    len(groups),
+		})
+	}
+
+	// 6. 类型按名称排序。
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].TypeName != result[j].TypeName {
+			return result[i].TypeName < result[j].TypeName
+		}
+		return result[i].Type < result[j].Type
+	})
+	return result, nil
+}
+
 // SupplierDayPoint 供应商单日用量数据点。
 type SupplierDayPoint struct {
 	Day         int64   `json:"day" gorm:"column:day"`                   // bucket start (unix seconds)

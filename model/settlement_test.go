@@ -82,7 +82,7 @@ func TestListAndDetail(t *testing.T) {
 	setupSettlementTables(t)
 	seedForSettlement(t)
 	s, _ := CreateSettlement(7, "manual", 999)
-	list, total, err := GetSettlementsBySupplier(7, 0, 20)
+	list, total, err := GetSettlementsBySupplier(7, 0, 0, 0, 0, 20)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, list, 1)

@@ -34,6 +34,33 @@ func TestDispatchEffectivePriority_BiddingNilCostLast(t *testing.T) {
 	require.Greater(t, dispatchEffectivePriority(withCost, "bidding"), dispatchEffectivePriority(noCost, "bidding"))
 }
 
+// item2：bidding 下成本价相同时，渠道优先级高者有效优先级更大（先被调度）。
+func TestDispatchEffectivePriority_BiddingPriorityTieBreaker(t *testing.T) {
+	price := 2.0
+	hi := int64(10)
+	lo := int64(0)
+	highPrio := &Channel{CostPrice: &price, Priority: &hi}
+	lowPrio := &Channel{CostPrice: &price, Priority: &lo}
+	require.Greater(t,
+		dispatchEffectivePriority(highPrio, "bidding"),
+		dispatchEffectivePriority(lowPrio, "bidding"),
+		"同价时渠道优先级高者必须排前")
+}
+
+// item2：价格必须主导——更便宜的渠道即便优先级低，也排在更贵但高优先级渠道前面。
+func TestDispatchEffectivePriority_BiddingPriceDominatesPriority(t *testing.T) {
+	cheap := 1.5
+	expensive := 2.0
+	lo := int64(0)
+	hi := int64(999)
+	cheapLowPrio := &Channel{CostPrice: &cheap, Priority: &lo}
+	expensiveHiPrio := &Channel{CostPrice: &expensive, Priority: &hi}
+	require.Greater(t,
+		dispatchEffectivePriority(cheapLowPrio, "bidding"),
+		dispatchEffectivePriority(expensiveHiPrio, "bidding"),
+		"成本价是主键：便宜者必须排前，优先级只在同价时作为次键")
+}
+
 func TestGetRandomSatisfiedChannel_SupplierPriorityTiers(t *testing.T) {
 	// migrate + clean channels/abilities/suppliers
 	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Supplier{}))
@@ -129,6 +156,49 @@ func TestGetRandomSatisfiedChannel_BiddingCheapestFirst(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ch2)
 	require.Equal(t, 30, ch2.Id, "bidding: 无成本价渠道作为最后兜底")
+}
+
+// TestGetRandomSatisfiedChannel_BiddingPriceTiePriorityTiers：bidding 下同分组+模型+成本价相同的两个渠道，
+// 按渠道优先级分层——retry0 选高优先级，retry1 选低优先级（item2：同价看优先级）。
+func TestGetRandomSatisfiedChannel_BiddingPriceTiePriorityTiers(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Supplier{}))
+	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
+	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
+	require.NoError(t, DB.Exec("DELETE FROM suppliers").Error)
+
+	prev := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	defer func() { common.MemoryCacheEnabled = prev }()
+
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+	prevStrategy := common.OptionMap["DispatchStrategy"]
+	common.OptionMap["DispatchStrategy"] = "bidding"
+	defer func() { common.OptionMap["DispatchStrategy"] = prevStrategy }()
+
+	// 两个同成本价(¥2.0)渠道：10 优先级 10，20 优先级 0。
+	price := 2.0
+	hi := int64(10)
+	lo := int64(0)
+	require.NoError(t, DB.Create(&Channel{Id: 10, Name: "hiPrio", Key: "k1", Priority: &hi, CostPrice: &price, Models: "m", Group: "g", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Channel{Id: 20, Name: "loPrio", Key: "k2", Priority: &lo, CostPrice: &price, Models: "m", Group: "g", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Ability{Group: "g", Model: "m", ChannelId: 10, Enabled: true, Priority: &hi}).Error)
+	require.NoError(t, DB.Create(&Ability{Group: "g", Model: "m", ChannelId: 20, Enabled: true, Priority: &lo}).Error)
+
+	InitChannelCache()
+
+	// retry 0 → 同价中优先级高者 → channel 10。
+	ch0, err := GetRandomSatisfiedChannel("g", "m", 0)
+	require.NoError(t, err)
+	require.NotNil(t, ch0)
+	require.Equal(t, 10, ch0.Id, "bidding 同价：优先级高的渠道先被调度")
+
+	// retry 1 → 次梯队（同价低优先级）→ channel 20。
+	ch1, err := GetRandomSatisfiedChannel("g", "m", 1)
+	require.NoError(t, err)
+	require.NotNil(t, ch1)
+	require.Equal(t, 20, ch1.Id, "bidding 同价：优先级低的渠道作为第二梯队")
 }
 
 // repopulate transient supplier fields (SupplierPriority, SupplierEnabled) from the DB

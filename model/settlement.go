@@ -168,10 +168,21 @@ func ConfirmSettlement(settlementId int, actualAmount float64, currency, method,
 	return nil
 }
 
-func GetSettlementsBySupplier(supplierId, startIdx, num int) ([]*Settlement, int64, error) {
+// GetSettlementsBySupplier 分页列出某供应商的账单，可选按状态(status!=0)与申请时间段
+// (created_at，startTs/endTs>0 时生效)过滤。
+func GetSettlementsBySupplier(supplierId, status int, startTs, endTs int64, startIdx, num int) ([]*Settlement, int64, error) {
 	var list []*Settlement
 	var total int64
 	q := DB.Model(&Settlement{}).Where("supplier_id = ?", supplierId)
+	if status != 0 {
+		q = q.Where("status = ?", status)
+	}
+	if startTs > 0 {
+		q = q.Where("created_at >= ?", startTs)
+	}
+	if endTs > 0 {
+		q = q.Where("created_at <= ?", endTs)
+	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

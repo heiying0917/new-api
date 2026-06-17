@@ -36,6 +36,46 @@ func resetSettlementTables(t *testing.T) {
 	require.NoError(t, LOG_DB.Exec("DELETE FROM logs").Error)
 }
 
+// item4+5：GetSettlementsBySupplier 支持按状态(0=全部)与时间段(created_at，0=不限)过滤。
+func TestGetSettlementsBySupplier_StatusAndTimeFilter(t *testing.T) {
+	resetSettlementTables(t)
+	sup := 7
+	// supplier 7 三笔：已结算(t=100)、已取消(t=200)、已申请(t=300)；外加他人一笔。
+	require.NoError(t, DB.Create(&Settlement{Id: 1, SupplierId: sup, Status: SettlementStatusSettled, CreatedAt: 100}).Error)
+	require.NoError(t, DB.Create(&Settlement{Id: 2, SupplierId: sup, Status: SettlementStatusCancelled, CreatedAt: 200}).Error)
+	require.NoError(t, DB.Create(&Settlement{Id: 3, SupplierId: sup, Status: SettlementStatusApplied, CreatedAt: 300}).Error)
+	require.NoError(t, DB.Create(&Settlement{Id: 4, SupplierId: 99, Status: SettlementStatusSettled, CreatedAt: 150}).Error)
+
+	// 全部(status=0, 时间不限) → 仅 supplier 7 的 3 笔
+	list, total, err := GetSettlementsBySupplier(sup, 0, 0, 0, 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, list, 3)
+
+	// 仅已结算 → id=1
+	list, total, err = GetSettlementsBySupplier(sup, SettlementStatusSettled, 0, 0, 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, 1, list[0].Id)
+
+	// 仅已取消 → 1 笔
+	_, total, err = GetSettlementsBySupplier(sup, SettlementStatusCancelled, 0, 0, 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+
+	// 时间段 [150,250] → 仅 id=2(t=200)
+	list, total, err = GetSettlementsBySupplier(sup, 0, 150, 250, 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, 2, list[0].Id)
+
+	// 状态+时间段组合：已申请 且 t>=250 → id=3
+	list, total, err = GetSettlementsBySupplier(sup, SettlementStatusApplied, 250, 0, 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, 3, list[0].Id)
+}
+
 // TestGetSettlementChannelBreakdown 验证按渠道明细聚合正确：每渠道一行，
 // requests/tokens/official_usd 正确，回填 channel_name + cost_price，
 // receivable = official × cost，并按 official 降序排列。
