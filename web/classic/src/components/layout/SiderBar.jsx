@@ -210,6 +210,14 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const adminItems = useMemo(() => {
     const items = [
       {
+        // 供应商概览置顶（V11 item2）：管理员区第一位，渠道管理之上
+        text: t('供应商概览'),
+        itemKey: 'supplier_overview_admin',
+        to: '/console/supplier-overview',
+        // 概览对管理员+超管可见（V10 需求4）
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
         text: t('渠道管理'),
         itemKey: 'channel',
         to: '/channel',
@@ -246,22 +254,18 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
+        // 供应商管理为超管专属（V11 item4）：与 /api/supplier/* RootAuth 一致，避免管理员看到菜单却 403 空白
         text: t('供应商管理'),
         itemKey: 'suppliers',
         to: '/console/suppliers',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: isRoot() ? '' : 'tableHiddle',
       },
       {
-        text: t('供应商概览'),
-        itemKey: 'supplier_overview_admin',
-        to: '/console/supplier-overview',
-        className: isAdmin() ? '' : 'tableHiddle',
-      },
-      {
+        // 结算审核同为超管专属：与 settlementAdminRoute RootAuth 一致
         text: t('结算审核'),
         itemKey: 'settlement_review',
         to: '/console/settlement-review',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: isRoot() ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),

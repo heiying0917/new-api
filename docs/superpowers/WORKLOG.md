@@ -366,3 +366,72 @@
 - **如何验证**:`go build ./...`/`go vet` ✓;`go test ./middleware ./service ./model` 全绿、`controller` 改动相关测试全绿(仅预存在 panic 测试 `TestListModelsTokenLimitIncludesTieredBillingModel` 除外);`bun run build`(classic)✓;zh-CN.json JSON 校验 ✓。
 - **未做(待定)**:本地部署 + Playwright e2e 实测(需改生产环境,待用户指令);预存在的多 Key ChannelInfo 修复(超范围,待用户定)。
 - **提交状态**:**未 commit、未 push**(等用户指令)。
+
+### [2026-06-17] 合并供应商功能分支 + V11 四项需求 + 本地实测(**未提交**)
+- **背景**:用户问"V10 需求4(管理员/超管可见供应商概览)做了吗"。排查发现该功能在 `de059221 第八版` 提交里、但只在分支 `feat/tokenki-p1a-supplier-backend`,**从未合进 main**(main 与该分支自首发 v2026.06.16.1 起平行分叉,各有一个"第十版")。
+- **合并分支(经用户指令)**:`git merge --no-ff origin/feat/tokenki-p1a-supplier-backend` → merge commit,**0 冲突**(dry-run + `git cherry` 确认 4 个分支提交全是 main 没有的);新增 25 文件,含管理员概览页 `pages/SupplierOverviewAdmin/` + `components/supplier-overview-admin/` + `SuppliersSummaryBar.jsx` + 官方价手册 `service/official_pricing/*` + 渠道页复用。验证:`go build`/`go test` 全绿(仅白名单 `TestListModelsTokenLimitIncludesTieredBillingModel`)、`bun run build` classic ✓、交叉编译部署本地容器 `new-api`(VER juhe-merge-req4)启动无 panic、以超管 token 实调 `/api/admin/supplier-overview/` 返回真实聚合(供应商4/渠道8)。
+- **V11 item1 文案**:`components/table/channels/modals/EditChannelModal.jsx` `t('供应商渠道必填，用于结算')` → `t('供应商渠道必填，用于结算和竞价排名，价格低会被优先消耗')`;`i18n/locales/zh-CN.json` 同步改键。
+- **V11 item2 菜单置顶**:`components/layout/SiderBar.jsx` adminItems 把 `供应商概览(supplier_overview_admin)` 移到**第一位**(渠道管理之上)。
+- **V11 item3 概览每类目供应商名单(TDD)**:后端 `model/supplier_stats.go` `SupplierTypeStat` 加 `Suppliers []SupplierBrief{user_id,name}`,聚合时按 user_id 升序、**最多5条**(SupplierCount 仍为真实总数),名字一次性查 users 表;先写失败测试 `TestGetSupplierOverviewPerTypeSupplierBriefs` + `TestGetSupplierOverviewSupplierListCappedAt5`(RED→GREEN)。前端 `components/supplier-overview-admin/TypeCard.jsx` 渲染名单 chips、点名字 `navigate('/console/suppliers?keyword='+name)`(stopPropagation 防触发卡片详情);`hooks/suppliers/useSuppliersData.jsx` 读 URL `?keyword=` 预填搜索框 + 挂载即搜该供应商。
+- **V11 item4 供应商管理页空白修复**:根因排查——后端 `/api/supplier/` 正常返回 4 条、渲染路径无崩溃,真实问题是**菜单 `isAdmin()`(role≥10) 而 `/api/supplier/*` 是 `RootAuth()`(role≥100 超管专属)** → 普通管理员看到菜单却 403 空白。经用户决策:`SiderBar.jsx` `供应商管理(suppliers)` + `结算审核(settlement_review)` 菜单 `isAdmin()`→`isRoot()`(与 API 一致);`供应商概览` **保持 `isAdmin()`**(守住 V10 需求4)。
+- **本地实测(Playwright,超管 superadmin 登录 localhost:5001 VER juhe-v11)**:item2 概览菜单已在管理员区第一;item3 OpenAI 卡显示 tksupplier1/tkadmin/test1、Anthropic 卡显示 test1,点 tksupplier1 → `/console/suppliers?keyword=tksupplier1` 搜索框预填且表格仅 1 条;item4 用 localStorage role=10 软刷新验证 → 供应商管理/结算审核/系统设置 隐藏、供应商概览/渠道管理 可见;item1 新文案已进 dist 产物。后端 `go build`/`go test` 全绿(仅白名单)。
+- **遗留/待用户定**:① 整条分支合并(含官方价手册等)**仅本地、未 push/未部署 prod**;② item3 概览→供应商管理 下钻对 role≥10 管理员失效(概览 admin 可见但管理页已超管专属,本地仅 root 账号未触发);③ 供应商名单按 user_id 排序,是否改按最低价排序待定。
+- **提交状态**:**未 commit、未 push**(等用户指令)。
+
+### [2026-06-17] 修复供应商管理页"空白"真因(CSS table-scroll-card 塌宽) + item3 陈旧过滤(**未提交**)
+- **用户反馈**:供应商管理页一直空白看不到列表。我先前用无障碍快照(accessibility snapshot)"验证"过有 4 行——**但快照只反映 DOM,不反映绘制**,漏掉了视觉 bug。改用**真实截图**复现:汇总条在、整张表格卡片不可见。
+- **根因(浏览器实测定位)**:`.table-scroll-card`(`src/index.css`,CardPro 的卡片类)只设了 `display:flex; flex-direction:column; height:calc(100vh-110px)`,**没设宽度**。在供应商管理页(CardPro 上方还有一个 SuppliersSummaryBar 同级元素)这个 flex 列容器的 auto 宽度塌成 ~6px(≈滚动条宽),整张表被挤到视口右侧外(left=1809 > 视口 1836)→ 看似"空白"。其它表格页(结算审核/渠道/用户)CardPro 是页面唯一子元素,不塌,所以只有供应商管理页中招。
+- **修复**:`src/index.css` `.table-scroll-card` 加 `width: 100%;`(浏览器注入实测:6px→1592px,表格立即可见)。全局安全:对本就满宽的其它页是 no-op。
+- **附带修复 item3 陈旧过滤**:`hooks/suppliers/useSuppliersData.jsx` 改用 `useSearchParams` 响应式读取 `?keyword=`,站内从概览带 keyword 跳进来、再点"供应商管理"菜单回普通列表时会正确重置(原先一次性读 window.location 会留陈旧过滤,只剩 1 行)。
+- **验证(真实截图,VER juhe-v11c,superadmin 全新加载)**:供应商管理页完整显示 4 供应商表格 ✅;供应商概览 item3 名单 chips(OpenAI: tksupplier1/tkadmin/test1,Anthropic: test1)✅;结算审核 6 行 ✅;渠道管理完整表格 ✅(无回归)。
+- **教训**:UI 验证必须截图,不能只靠 accessibility snapshot(后者会把 DOM 里但绘制不可见的元素也列出来)。
+- **提交状态**:**未 commit、未 push**(等用户指令)。
+
+### [2026-06-17] V12 需求开发：供应商管理「已上架」列 + 概览渠道明细列表（**未提交**）
+- **需求澄清**：用户在 AskUserQuestion 中纠正——概览列表里「令牌名字」写错了，**实际是分组名字**；每行=一个渠道，颗粒度=(分组+渠道)；已跑金额按**累计总消费(历史全部)**；卡片内最多5条按**成本价从低到高**，详情同序展示全部。
+- **req1 已上架列(TDD)**：后端 `model/supplier_stats.go` 新增 `GetAllSuppliersChannelCounts() map[int]{Total,Enabled}`(一次取 supplier_id>0 的 (supplier_id,status) 在 Go 折叠，cross-DB 安全，admin 渠道 supplier_id=0 排除)；`SupplierListItem` 加 `ChannelTotal/ChannelEnabled`，`fillSupplierStats` 回填。先写失败测试 `TestGetAllSuppliersChannelCounts` + `TestFillSupplierStatsChannelCounts`(RED→GREEN)。前端 `SuppliersColumnDefs.jsx` 加「已上架」列显示 `上架数/启用数`(如 3/1，可点)，`SuppliersTable.jsx` 注入 `onNavigateChannels` → `/console/channel?supplier=<用户名>`。
+- **req2 概览渠道明细(TDD)**：后端 `model/supplier_stats.go` 新增 `GetTotalOfficialUsdByChannels`(累计口径，**不带** settlement_id 过滤，区别于未结算版)；`SupplierChannelBrief{channel_id,supplier_id,supplier_name,group,cost_price,official_usd}`；`SupplierTypeStat` 加 `Channels []SupplierChannelBrief`，`GetSupplierOverview` 一次 LOG_DB 聚合累计已跑金额、每类目装配渠道明细并**按成本价升序、未定价(<=0)沉底**(同价按已跑金额降序、再 channel_id 升序)。先写失败测试 `TestGetTotalOfficialUsdByChannels` + `TestGetSupplierOverviewPerTypeChannelsV12`(RED→GREEN)；`resetSupplierOverviewTables` 加 migrate Log。前端 `TypeCard.jsx` 把 V11 供应商 chips 换成渠道迷你列表(top5：供应商名(链接)·分组 ¥成本价 $已跑金额 + "共 N 条")；`TypeDetailSheet.jsx` 加「渠道明细」全量表格(供应商/分组/成本价/已跑金额，与卡片字段一致)、宽度 420→560。i18n `zh-CN.json` 加 8 个键。
+- **深链 + 陈旧过滤兜底**：`hooks/channels/useChannelsData.jsx` 加 `useSearchParams` 读 `?supplier=`(仅管理员模式)，`formInitValues.searchSupplier` 预填；effect 在 formApi 就绪后按供应商名搜索，并用 `lastSupplierRef` 记录上次应用值——**站内从 ?supplier=X 切到无参数(点渠道管理菜单)时正确重置为全部**，不留陈旧过滤(复用 V11 item3 教训)。渠道管理后端早已支持 `supplier_name` → `ResolveSupplierIdsByName`，无需改后端。
+- **验证(真实截图，VER juhe-v12b，superadmin 登录 localhost:5001)**：
+  - 供应商管理「已上架」列：test1=3/1、tksupplier1=3/2(可点)、ceshi1/tkadmin11=0(纯文本) ✅；点 3/1 → 渠道管理搜索框预填 test1、仅显示 test1 的 3 条(全部3/OpenAI1/Anthropic2) ✅。
+  - 供应商概览卡片：OpenAI 卡按成本价升序显示 5 条(¥1.80→¥2.50)+「共6条」、Anthropic 卡 2 条，每行 供应商(链接)·分组 ¥价 $已跑 ✅。
+  - 点卡片 → 详情抽屉「OpenAI·供应明细」展示全部 6 条(含卡片省略的第6条 tksupplier1·claude官key ¥3.00)+ 竞价分组最低价 ✅；详情内点 test1 → 关闭抽屉 + 渠道管理过滤 test1 ✅。
+  - 回归：plain /console/channel 加载全部渠道(多供应商) ✅；?supplier=X→点渠道管理菜单重置为全部 ✅；console 0 error。
+- **后端**：`go build ./...` 成功，`go test ./model/` 全绿。
+- **提交状态**：**未 commit、未 push、未上 prod**(prod 仍 v2026.06.17.1)。本地 5001 = juhe-v12b。
+
+### [2026-06-17] V12 概览卡片放大 + 渠道很多(10+)的布局（VER juhe-v12c，**未提交**）
+- **用户反馈**：卡片太小、文字太小；并要求考虑渠道变多(如 10+)时的排版。
+- **放大卡片**：`pages/SupplierOverviewAdmin/index.jsx` 栅格 `xs=12/sm=8/md=6/lg=4`(每行6)→ `xs=24/sm=12/lg=8`(每行3，卡片约 2× 宽)，gutter 12→16。`TypeCard.jsx` 字号整体上调：标题 13→16、家供应数字 20→26、可用/最低价 11/12→13/15、渠道行 11→13、分组 10→12、底部「共N条」10→12.5 且改为蓝色链接色；padding 14→18、行距/间距加大。
+- **10+ 渠道布局**：卡片**恒定只展示前 5 条**(`CARD_CHANNEL_LIMIT=5`)+「共 N 条，点击查看全部」→ 卡片高度有界、栅格不会被撑乱，无论 6 条还是 60 条；完整列表在详情抽屉，`TypeDetailSheet.jsx` 渠道明细表 **>10 条自动分页(10/页)**，抽屉宽 560→620。
+- **验证(真实截图，临时 seed 8 条让 OpenAI 达 14 条，截后已 DELETE 清理，DB 复原为 6)**：卡片明显变大更易读、3 列布局；OpenAI 卡显示 top5(按成本价 ¥1.68→升序)+「共 14 条」；点开详情抽屉「渠道明细」分页 第1-10条/共14条 + 翻页 1 2 ✅；竞价分组最低价同屏。console 0 error。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v12c。
+
+### [2026-06-17] 渠道管理增加「成本价」列（VER juhe-v12d，**未提交**）
+- **需求**：渠道管理表格加一列「成本价」，放在「已用/剩余」之后，供应商与管理员都可见。
+- **改动**：`components/table/channels/ChannelsColumnDefs.jsx`——① 删除供应商模式原先放在「创建者」位的 `成本` 列(避免重复)，保留 `应收款`；② 在 `COLUMN_KEYS.BALANCE`(已用/剩余)列**之后**新增统一 `成本价` 列(`key:'cost_price'`, `dataIndex:'cost_price'`)，**不在 isSupplierMode 条件内**→ 两种角色都显示；渲染 `cost_price>0 → ¥X.XX，否则 -`(tag 聚合行不显示)。
+- **数据**：`cost_price` 是 Channel 持久化字段(`json:"cost_price"`)，admin/supplier 列表接口都已下发(仅 `Omit("key")`)，无需改后端。列可见性 filter 为 `visibleColumns[key]!==false`，`'cost_price'` 不在列开关默认表里 → 默认可见、不进列显隐开关(与原供应商成本/应收款列一致)。i18n `成本价` 已存在。
+- **验证(真实截图+DOM，VER juhe-v12d，superadmin)**：admin 渠道管理表头顺序 `…响应时间, 已用/剩余, 成本价, 优先级, 权重` ✅；成本价单元格 ¥4.50/¥3.00/¥2.20/¥2.00/¥1.80… 正常，admin 自有渠道(cost=0)显示 `-`；console 0 error。供应商模式因列在条件外、同一代码路径，必然可见(无供应商账号密码未单独截图)。
+- **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v12d。
+
+### [2026-06-17] 调度机制审计 + 本地切换为按价格(bidding)（**未提交**）
+- **审计结论**：本部署开了 Redis → `main.go` 强制 `MemoryCacheEnabled=true` → 走内存缓存调度(`channel_cache.go`)，用 `dispatchEffectivePriority` 排序；全局 `DispatchStrategy` 此前 DB 无记录 = 默认 `priority`。
+  - priority 策略：有效优先级 = `供应商优先级×1e9 + 渠道优先级` → **供应商管理里的优先级是决定性主键**（实证：分组 claude官key 里 tksupplier1(供应商优先级5)的 ¥2.5 渠道压过 tkadmin 的 ¥2.2 更便宜渠道，贵的反而先被消耗）。
+  - 价格(cost_price/bidding)此前**完全不参与调度**，与渠道页文案"价格低优先消耗"矛盾。
+  - 若关掉 Redis/内存缓存 → 退回 DB/ability 路径(`ability.go`)，只认 `ability.priority(=渠道优先级)+权重`，供应商优先级与价格全失效。
+- **用户决策**：改成按价格(bidding)，先只在本地验证。
+- **改动**：`options` 表 upsert `DispatchStrategy=bidding`（运行态生效，无需改二进制；重启后 `loadOptionsFromDatabase` 载入 OptionMap，InitChannelCache 按价格重排）。本地 5001 已重启加载。
+- **新增回归测试(TDD)**：`model/dispatch_test.go` `TestGetRandomSatisfiedChannel_BiddingCheapestFirst`——bidding 下选择层实测：最便宜渠道(¥1.5)最先被选(retry0)、次便宜(¥3.0,retry1)、无成本价渠道兜底(retry2)，且**供应商优先级被忽略**(贵渠道即便供应商优先级9也排后)。PASS。
+- **验证**：6 个既有 dispatch 单测 + 新增选择层测试全绿；运行中应用 `GET /api/option` 返回 `DispatchStrategy="bidding"`（已登录实测）→ 线上 OptionMap 已是 bidding。
+- **副作用提示**：bidding 下①供应商优先级不再影响路由(仅 UI 展示，切回 priority 才生效)；②无成本价的 admin 渠道沦为最后兜底；③同价渠道按权重加权随机。
+- **prod 影响**：prod DB 没设该 option，仍是默认 priority。若要 prod 也按价格，需在 prod 库同样 upsert（非代码发版）。本地 = juhe-v12d + DB option bidding。
+- **提交状态**：**未 commit、未 push**（dispatch_test.go 新增；DB option 仅本地）。
+
+### [2026-06-17] 重试机制审计 + 本地启用 RetryTimes=10（**未提交**）
+- **审计**：relay 重试循环 `for retry:=0; retry<=RetryTimes; retry++`，总尝试 = RetryTimes+1；每次重试 `retry` 序号传给渠道选择 → bidding 下**自动降到下一价位梯队**(retry0最便宜→retry1次便宜→…→无价兜底)。`shouldRetry` 门控：渠道类错误/5xx/连接失败→重试；400/内容违规/skip-retry→不重试。
+- **此前现状**：`RetryTimes=0`(默认，DB/env 均未设) → 实际**只尝试 1 次、不重试** → 最低价渠道挂了直接报错，bidding 的价格降级容错形同虚设（仅 auto-ban 异步禁用坏渠道做被动兜底，但当次请求仍失败）。
+- **用户决策**：设置 RetryTimes=10。
+- **改动**：`PUT /api/option/ {key:RetryTimes,value:10}`（RootAuth，updateOptionMap 同步更新 `common.RetryTimes` 运行态 + DB 持久化，无需重启）。本地实测 `GET /api/option` 返回 `RetryTimes=10` & `DispatchStrategy=bidding`。
+- **效果**：失败时最多再试 10 次，按价格梯队依次降级；实际重试次数还受可用价位梯队数/渠道数约束（retry 超出梯队数会钳到最后一档），并由 shouldRetry + auto-ban 提前收敛。
+- **prod**：prod DB 仍是 RetryTimes 默认 0 + DispatchStrategy 默认 priority；要一致需在 prod 库同样设这两个 option（非代码发版）。
+- **提交状态**：DB option 仅本地；无代码改动（纯运行态配置）。

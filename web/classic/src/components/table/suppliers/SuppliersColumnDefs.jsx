@@ -106,6 +106,36 @@ const renderEnabled = (enabled, t) => {
 };
 
 /**
+ * Render 已上架 column: 上架渠道数/启用渠道数, clickable → 渠道管理 filtered by supplier (V12)
+ */
+const renderChannels = (record, { onNavigateChannels, t }) => {
+  const total = Number(record.channel_total) || 0;
+  const enabled = Number(record.channel_enabled) || 0;
+  if (total === 0) {
+    return <Text type='tertiary'>0</Text>;
+  }
+  return (
+    <Tooltip
+      content={t('上架 ${total} / 启用 ${enabled}，点击查看该供应商渠道')
+        .replace('${total}', total)
+        .replace('${enabled}', enabled)}
+      position='top'
+      showArrow
+    >
+      <Button
+        theme='borderless'
+        type='primary'
+        size='small'
+        className='!px-0'
+        onClick={() => onNavigateChannels && onNavigateChannels(record)}
+      >
+        {total}/{enabled}
+      </Button>
+    </Tooltip>
+  );
+};
+
+/**
  * Render settlement mode tag
  */
 const renderSettlementMode = (mode, t) => {
@@ -163,6 +193,7 @@ const renderOperations = (
 export const getSuppliersColumns = ({
   t,
   onNavigateSettlement,
+  onNavigateChannels,
   setEditingSupplier,
   setShowEditSupplier,
   onInitiateSettlement,
@@ -194,6 +225,12 @@ export const getSuppliersColumns = ({
       title: t('启用'),
       dataIndex: 'enabled',
       render: (text) => renderEnabled(text, t),
+    },
+    {
+      title: t('已上架'),
+      dataIndex: 'channel_total',
+      render: (text, record) =>
+        renderChannels(record, { onNavigateChannels, t }),
     },
     {
       title: t('待结算'),

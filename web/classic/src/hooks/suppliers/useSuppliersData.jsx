@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { API, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
@@ -52,9 +53,12 @@ export const useSuppliersData = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmRecord, setConfirmRecord] = useState(null);
 
-  // Form initial values
+  // URL ?keyword= 响应式读取（供应商概览点供应商名跳转，V11 item3）。
+  // 用 useSearchParams 而非一次性读 window.location，保证站内导航(带/不带 keyword 互切)能正确同步、不留陈旧过滤。
+  const [searchParams] = useSearchParams();
+  const urlKeyword = searchParams.get('keyword') || '';
   const formInitValues = {
-    searchKeyword: '',
+    searchKeyword: urlKeyword,
   };
 
   // Form API reference
@@ -260,19 +264,25 @@ export const useSuppliersData = () => {
     });
   };
 
-  // Initialize data on component mount
+  // 初始化 + 响应 URL keyword 变化：带 keyword 则搜该供应商，否则列全部；并同步搜索框（V11 item3）。
+  // 修复：站内从 ?keyword=xxx 切到无 keyword（如点"供应商管理"菜单）时正确重置为全部列表，不再留陈旧过滤。
   useEffect(() => {
-    loadSuppliers(0, pageSize)
-      .then()
-      .catch((reason) => {
-        showError(reason);
-      });
+    if (formApi) {
+      formApi.setValue('searchKeyword', urlKeyword);
+    }
+    const initLoad = urlKeyword
+      ? searchSuppliers(0, pageSize, urlKeyword)
+      : loadSuppliers(0, pageSize);
+    initLoad.then().catch((reason) => {
+      showError(reason);
+    });
     loadSummary()
       .then()
       .catch((reason) => {
         showError(reason);
       });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKeyword]);
 
   return {
     // Data state

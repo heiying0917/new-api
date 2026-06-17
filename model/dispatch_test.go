@@ -78,7 +78,59 @@ func TestGetRandomSatisfiedChannel_SupplierPriorityTiers(t *testing.T) {
 	require.Equal(t, 20, ch2.Id)
 }
 
-// TestCacheUpdateChannel_PreservesSupplierFields verifies Fix A: CacheUpdateChannel must
+// TestGetRandomSatisfiedChannel_BiddingCheapestFirst：bidding 策略下，同分组+模型按成本价低者优先调度，
+// 且供应商优先级被忽略（贵渠道即便供应商优先级高，也排在便宜渠道之后）；无成本价渠道兜底排最后。
+func TestGetRandomSatisfiedChannel_BiddingCheapestFirst(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Supplier{}))
+	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
+	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
+	require.NoError(t, DB.Exec("DELETE FROM suppliers").Error)
+
+	prev := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	defer func() { common.MemoryCacheEnabled = prev }()
+
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+	prevStrategy := common.OptionMap["DispatchStrategy"]
+	common.OptionMap["DispatchStrategy"] = "bidding"
+	defer func() { common.OptionMap["DispatchStrategy"] = prevStrategy }()
+
+	// 贵渠道 10 属高优先级供应商(prio 9)；便宜渠道 20 属普通供应商(prio 0)；无价渠道 30(admin)。
+	require.NoError(t, DB.Create(&Supplier{UserId: 1, Priority: 9, Enabled: true}).Error)
+	require.NoError(t, DB.Create(&Supplier{UserId: 2, Priority: 0, Enabled: true}).Error)
+	p0 := int64(0)
+	expensive := 3.0
+	cheap := 1.5
+	require.NoError(t, DB.Create(&Channel{Id: 10, Name: "expensive", Key: "k1", SupplierId: 1, Priority: &p0, CostPrice: &expensive, Models: "m", Group: "g", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Channel{Id: 20, Name: "cheap", Key: "k2", SupplierId: 2, Priority: &p0, CostPrice: &cheap, Models: "m", Group: "g", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Channel{Id: 30, Name: "nocost", Key: "k3", SupplierId: 0, Priority: &p0, CostPrice: nil, Models: "m", Group: "g", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Ability{Group: "g", Model: "m", ChannelId: 10, Enabled: true, Priority: &p0}).Error)
+	require.NoError(t, DB.Create(&Ability{Group: "g", Model: "m", ChannelId: 20, Enabled: true, Priority: &p0}).Error)
+	require.NoError(t, DB.Create(&Ability{Group: "g", Model: "m", ChannelId: 30, Enabled: true, Priority: &p0}).Error)
+
+	InitChannelCache()
+
+	// retry 0 → 最便宜 → channel 20（尽管 channel 10 的供应商优先级 9 更高，bidding 下被忽略）。
+	ch, err := GetRandomSatisfiedChannel("g", "m", 0)
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+	require.Equal(t, 20, ch.Id, "bidding: 最便宜(¥1.5)的渠道必须最先被选，供应商优先级被忽略")
+
+	// retry 1 → 次便宜 → channel 10（¥3.0）。
+	ch1, err := GetRandomSatisfiedChannel("g", "m", 1)
+	require.NoError(t, err)
+	require.NotNil(t, ch1)
+	require.Equal(t, 10, ch1.Id, "bidding: 第二梯队是次便宜的有价渠道")
+
+	// retry 2 → 无成本价渠道兜底 → channel 30。
+	ch2, err := GetRandomSatisfiedChannel("g", "m", 2)
+	require.NoError(t, err)
+	require.NotNil(t, ch2)
+	require.Equal(t, 30, ch2.Id, "bidding: 无成本价渠道作为最后兜底")
+}
+
 // repopulate transient supplier fields (SupplierPriority, SupplierEnabled) from the DB
 // so the cached channel retains the correct tier after an incremental update.
 func TestCacheUpdateChannel_PreservesSupplierFields(t *testing.T) {

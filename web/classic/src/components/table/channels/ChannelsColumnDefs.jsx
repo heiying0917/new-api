@@ -491,18 +491,9 @@ export const getChannelsColumns = ({
         </div>
       ),
     },
-    // 供应商模式:去掉「创建者」,换成「成本 / 应收款」两列;管理员模式保持「创建者」。
+    // 供应商模式:去掉「创建者」,展示「应收款」;成本价列对供应商与管理员统一放在「已用/剩余」之后（V13）。
     ...(isSupplierMode
       ? [
-          {
-            key: 'cost_price',
-            title: t('成本'),
-            dataIndex: 'cost_price',
-            render: (text, record) =>
-              record.children === undefined ? (
-                <span>{text != null && text !== '' ? `¥${text}` : '-'}</span>
-              ) : null,
-          },
           {
             key: 'receivable',
             title: t('应收款'),
@@ -624,6 +615,20 @@ export const getChannelsColumns = ({
           );
         }
       },
+    },
+    {
+      // 成本价：放在「已用/剩余」之后，供应商与管理员均可见（V13）。
+      key: 'cost_price',
+      title: t('成本价'),
+      dataIndex: 'cost_price',
+      render: (text, record) =>
+        record.children === undefined ? (
+          <span>
+            {text != null && text !== '' && Number(text) > 0
+              ? `¥${Number(text).toFixed(2)}`
+              : '-'}
+          </span>
+        ) : null,
     },
     {
       key: COLUMN_KEYS.PRIORITY,

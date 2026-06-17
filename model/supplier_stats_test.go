@@ -375,3 +375,74 @@ func TestGetSupplierChannelIds(t *testing.T) {
 		require.Equal(t, 7, ch.SupplierId)
 	}
 }
+
+// V12：累计已跑金额($)——不带 settlement_id 过滤，统计渠道历史全部消费（含已结算）。
+func TestGetTotalOfficialUsdByChannels(t *testing.T) {
+	setupSupplierStatsTables(t)
+
+	// ch101: 未结算 1.0 + 已结算(id=99) 2.0 => 累计 3.0。
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 101, OfficialUsd: 1.0, SettlementId: 0, CreatedAt: 100}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 101, OfficialUsd: 2.0, SettlementId: 99, CreatedAt: 110}).Error)
+	// ch102: 已结算 4.0 => 4.0（累计口径仍计入）。
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 102, OfficialUsd: 4.0, SettlementId: 5, CreatedAt: 120}).Error)
+	// 非消费类型 => 排除。
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume + 1, ChannelId: 101, OfficialUsd: 99, SettlementId: 0, CreatedAt: 130}).Error)
+	// 未请求的渠道 => 排除。
+	require.NoError(t, LOG_DB.Create(&Log{Type: LogTypeConsume, ChannelId: 999, OfficialUsd: 8.0, SettlementId: 0, CreatedAt: 140}).Error)
+
+	m, err := GetTotalOfficialUsdByChannels([]int{101, 102, 103})
+	require.NoError(t, err)
+	require.InDelta(t, 3.0, m[101], 1e-9) // 含已结算
+	require.InDelta(t, 4.0, m[102], 1e-9)
+	_, ok := m[103]
+	require.False(t, ok, "ch103 无日志 => 不在 map 中")
+	_, ok = m[999]
+	require.False(t, ok, "ch999 未请求 => 不在 map 中")
+
+	empty, err := GetTotalOfficialUsdByChannels(nil)
+	require.NoError(t, err)
+	require.Len(t, empty, 0)
+	require.NotNil(t, empty)
+}
+
+// V12：每供应商渠道计数（上架=全部状态，启用=status=enabled），admin 渠道(supplier_id=0)排除。
+func TestGetAllSuppliersChannelCounts(t *testing.T) {
+	setupSupplierStatsTables(t)
+	// supplier 7: 2 enabled + 2 disabled。
+	require.NoError(t, DB.Create(&Channel{Name: "a", Key: "c1", SupplierId: 7, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "b", Key: "c2", SupplierId: 7, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "c", Key: "c3", SupplierId: 7, Status: common.ChannelStatusManuallyDisabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "d", Key: "c4", SupplierId: 7, Status: common.ChannelStatusAutoDisabled, Models: "m", Group: "g"}).Error)
+	// supplier 9: 1 enabled。
+	require.NoError(t, DB.Create(&Channel{Name: "e", Key: "c5", SupplierId: 9, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+	// admin 渠道(supplier_id=0)排除。
+	require.NoError(t, DB.Create(&Channel{Name: "f", Key: "c6", SupplierId: 0, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+
+	m, err := GetAllSuppliersChannelCounts()
+	require.NoError(t, err)
+	require.Equal(t, 4, m[7].Total)
+	require.Equal(t, 2, m[7].Enabled)
+	require.Equal(t, 1, m[9].Total)
+	require.Equal(t, 1, m[9].Enabled)
+	_, ok := m[0]
+	require.False(t, ok, "admin 渠道(supplier_id=0)不计入")
+}
+
+// V12：供应商列表项回填渠道总数/启用数。
+func TestFillSupplierStatsChannelCounts(t *testing.T) {
+	setupSupplierStatsTables(t)
+	require.NoError(t, DB.Create(&Channel{Name: "a", Key: "d1", SupplierId: 7, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "b", Key: "d2", SupplierId: 7, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "c", Key: "d3", SupplierId: 7, Status: common.ChannelStatusManuallyDisabled, Models: "m", Group: "g"}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "e", Key: "d4", SupplierId: 9, Status: common.ChannelStatusEnabled, Models: "m", Group: "g"}).Error)
+
+	items := []*SupplierListItem{{UserId: 7}, {UserId: 9}, {UserId: 11}}
+	require.NoError(t, fillSupplierStats(items))
+
+	require.Equal(t, 3, items[0].ChannelTotal)
+	require.Equal(t, 2, items[0].ChannelEnabled)
+	require.Equal(t, 1, items[1].ChannelTotal)
+	require.Equal(t, 1, items[1].ChannelEnabled)
+	require.Equal(t, 0, items[2].ChannelTotal)
+	require.Equal(t, 0, items[2].ChannelEnabled)
+}

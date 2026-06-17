@@ -2717,7 +2717,7 @@ const EditChannelModal = (props) => {
                       step={0.1}
                       extraText={
                         isSupplierMode
-                          ? t('供应商渠道必填，用于结算')
+                          ? t('供应商渠道必填，用于结算和竞价排名，价格低会被优先消耗')
                           : t('选填，代供应商上传时填写，用于结算')
                       }
                       rules={

@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -142,6 +143,32 @@ func GetUnsettledReceivableByChannels(channelIds []int) (map[int]float64, error)
 	}
 	for _, r := range rows {
 		result[r.ChannelId] = r.Receivable
+	}
+	return result, nil
+}
+
+// GetTotalOfficialUsdByChannels 汇总给定渠道集合「累计」(不分是否已结算)的 official_usd（按渠道分组）。
+// 与 GetUnsettledOfficialUsdByChannels 区别：不带 settlement_id 过滤，统计渠道历史全部消费（V12 已跑金额）。
+// 条件：type=LogTypeConsume AND channel_id IN channelIds，GROUP BY channel_id。
+// 返回 map[channelId]totalOfficialUsd，仅含有消费日志的渠道。channelIds 为空时返回空 map（非 nil）。
+func GetTotalOfficialUsdByChannels(channelIds []int) (map[int]float64, error) {
+	result := make(map[int]float64)
+	if len(channelIds) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		ChannelId int
+		Total     float64
+	}
+	if err := LOG_DB.Model(&Log{}).
+		Select("channel_id, COALESCE(SUM(official_usd), 0) as total").
+		Where("type = ? AND channel_id IN ?", LogTypeConsume, channelIds).
+		Group("channel_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		result[r.ChannelId] = r.Total
 	}
 	return result, nil
 }
@@ -499,6 +526,39 @@ func GetAllSuppliersSettledTotal() (map[int]float64, error) {
 	return m, nil
 }
 
+// SupplierChannelCount 单供应商渠道计数：Total=上架(全部状态)，Enabled=启用(status=enabled)。
+type SupplierChannelCount struct {
+	Total   int `json:"total"`
+	Enabled int `json:"enabled"`
+}
+
+// GetAllSuppliersChannelCounts 一次性统计每个供应商的渠道总数与启用数（V12，cross-DB safe）。
+// 取 supplier_id>0 的 (supplier_id,status) 全量行在 Go 折叠，避免 SUM(CASE) 方言差异；
+// admin 渠道(supplier_id=0) 不计入。
+func GetAllSuppliersChannelCounts() (map[int]SupplierChannelCount, error) {
+	type row struct {
+		SupplierId int
+		Status     int
+	}
+	var rows []row
+	if err := DB.Model(&Channel{}).
+		Select("supplier_id, status").
+		Where("supplier_id > 0").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[int]SupplierChannelCount)
+	for _, r := range rows {
+		c := m[r.SupplierId]
+		c.Total++
+		if r.Status == common.ChannelStatusEnabled {
+			c.Enabled++
+		}
+		m[r.SupplierId] = c
+	}
+	return m, nil
+}
+
 // SupplierOverviewSummary 全局供应商概览的汇总指标。
 type SupplierOverviewSummary struct {
 	SupplierTotal      int64 `json:"supplier_total"`
@@ -514,16 +574,35 @@ type SupplierTypeGroup struct {
 	LowestPrice float64 `json:"lowest_price"`
 }
 
+// SupplierBrief 概览列表里的供应商条目（V11 item3）：展示名字 + 点击跳转用。
+type SupplierBrief struct {
+	UserId int    `json:"user_id"`
+	Name   string `json:"name"`
+}
+
+// SupplierChannelBrief 概览卡片/详情里的单渠道条目（V12）。
+// 颗粒度 = 一个渠道；展示其所属供应商、分组名、成本价(¥)、累计已跑金额($)。
+type SupplierChannelBrief struct {
+	ChannelId    int     `json:"channel_id"`
+	SupplierId   int     `json:"supplier_id"`
+	SupplierName string  `json:"supplier_name"`
+	Group        string  `json:"group"`        // 渠道分组（多个用 ", " 连接）
+	CostPrice    float64 `json:"cost_price"`   // 成本价 ¥/$（0 表示未定价）
+	OfficialUsd  float64 `json:"official_usd"` // 累计已跑金额 $
+}
+
 // SupplierTypeStat 按官方 key 类型(= 渠道 type)聚合的供给统计。
 type SupplierTypeStat struct {
-	Type          int                 `json:"type"`
-	TypeName      string              `json:"type_name"`
-	SupplierCount int                 `json:"supplier_count"`
-	ChannelCount  int                 `json:"channel_count"`
-	Available     int                 `json:"available"`
-	Unavailable   int                 `json:"unavailable"`
-	LowestPrice   float64             `json:"lowest_price"`
-	Groups        []SupplierTypeGroup `json:"groups"`
+	Type          int                    `json:"type"`
+	TypeName      string                 `json:"type_name"`
+	SupplierCount int                    `json:"supplier_count"`
+	ChannelCount  int                    `json:"channel_count"`
+	Available     int                    `json:"available"`
+	Unavailable   int                    `json:"unavailable"`
+	LowestPrice   float64                `json:"lowest_price"`
+	Groups        []SupplierTypeGroup    `json:"groups"`
+	Suppliers     []SupplierBrief        `json:"suppliers"` // 该类目下供应商名单，最多 5 条（V11 item3）
+	Channels      []SupplierChannelBrief `json:"channels"`  // 该类目下渠道明细，按成本价升序、未定价沉底（V12，详情展示全部）
 }
 
 // SupplierOverview 全局供应商概览：汇总 + 分类型供给。
@@ -561,13 +640,48 @@ func GetSupplierOverview() (SupplierOverview, error) {
 		return SupplierOverview{}, err
 	}
 
+	// 供应商 id -> 用户名（用于每类目的供应商名单，V11 item3）。一次性查询，避免循环内 N 次查库。
+	supplierNames := map[int]string{}
+	{
+		idSet := map[int]struct{}{}
+		for i := range channels {
+			if channels[i].SupplierId > 0 {
+				idSet[channels[i].SupplierId] = struct{}{}
+			}
+		}
+		if len(idSet) > 0 {
+			ids := make([]int, 0, len(idSet))
+			for id := range idSet {
+				ids = append(ids, id)
+			}
+			var us []User
+			if err := DB.Model(&User{}).Select("id", "username").Where("id IN ?", ids).Find(&us).Error; err != nil {
+				return SupplierOverview{}, err
+			}
+			for _, u := range us {
+				supplierNames[u.Id] = u.Username
+			}
+		}
+	}
+
+	// 累计已跑金额($)按渠道（V12）。一次 LOG_DB 聚合，循环内不再查库。
+	channelIds := make([]int, 0, len(channels))
+	for i := range channels {
+		channelIds = append(channelIds, channels[i].Id)
+	}
+	totalUsd, err := GetTotalOfficialUsdByChannels(channelIds)
+	if err != nil {
+		return SupplierOverview{}, err
+	}
+
 	type typeAgg struct {
 		channelCount int
 		available    int
 		unavailable  int
 		suppliers    map[int]bool
-		lowestPrice  float64                       // 该 type 下启用且 cost_price>0 的最低价；0 表示无
-		groupPrices  map[string]float64            // group -> 最低价（启用且 cost_price>0）
+		lowestPrice  float64                // 该 type 下启用且 cost_price>0 的最低价；0 表示无
+		groupPrices  map[string]float64     // group -> 最低价（启用且 cost_price>0）
+		channels     []SupplierChannelBrief // 该 type 下渠道明细（V12）
 	}
 	byType := make(map[int]*typeAgg)
 
@@ -609,6 +723,24 @@ func GetSupplierOverview() (SupplierOverview, error) {
 				}
 			}
 		}
+
+		// 渠道明细条目（V12）：含所属供应商、分组、成本价、累计已跑金额。
+		cp := 0.0
+		if ch.CostPrice != nil {
+			cp = *ch.CostPrice
+		}
+		sname := supplierNames[ch.SupplierId]
+		if sname == "" {
+			sname = fmt.Sprintf("供应商#%d", ch.SupplierId)
+		}
+		agg.channels = append(agg.channels, SupplierChannelBrief{
+			ChannelId:    ch.Id,
+			SupplierId:   ch.SupplierId,
+			SupplierName: sname,
+			Group:        strings.Join(ch.GetGroups(), ", "),
+			CostPrice:    cp,
+			OfficialUsd:  totalUsd[ch.Id],
+		})
 	}
 
 	ov.ByType = make([]SupplierTypeStat, 0, len(byType))
@@ -623,6 +755,41 @@ func GetSupplierOverview() (SupplierOverview, error) {
 			}
 			return groups[i].Group < groups[j].Group
 		})
+
+		// 供应商名单：按 user_id 升序，最多 5 条（V11 item3）。SupplierCount 仍为真实总数。
+		supIds := make([]int, 0, len(agg.suppliers))
+		for id := range agg.suppliers {
+			supIds = append(supIds, id)
+		}
+		sort.Ints(supIds)
+		briefs := make([]SupplierBrief, 0, 5)
+		for _, id := range supIds {
+			if len(briefs) >= 5 {
+				break
+			}
+			name := supplierNames[id]
+			if name == "" {
+				name = fmt.Sprintf("供应商#%d", id) // 兜底：名字缺失时用 id
+			}
+			briefs = append(briefs, SupplierBrief{UserId: id, Name: name})
+		}
+
+		// 渠道明细排序（V12）：成本价升序、未定价(<=0)沉底；同价按已跑金额降序，再按 channel_id 升序。
+		chans := agg.channels
+		sort.SliceStable(chans, func(i, j int) bool {
+			ipriced, jpriced := chans[i].CostPrice > 0, chans[j].CostPrice > 0
+			if ipriced != jpriced {
+				return ipriced
+			}
+			if ipriced && chans[i].CostPrice != chans[j].CostPrice {
+				return chans[i].CostPrice < chans[j].CostPrice
+			}
+			if chans[i].OfficialUsd != chans[j].OfficialUsd {
+				return chans[i].OfficialUsd > chans[j].OfficialUsd
+			}
+			return chans[i].ChannelId < chans[j].ChannelId
+		})
+
 		ov.ByType = append(ov.ByType, SupplierTypeStat{
 			Type:          typ,
 			TypeName:      constant.GetChannelTypeName(typ),
@@ -632,6 +799,8 @@ func GetSupplierOverview() (SupplierOverview, error) {
 			Unavailable:   agg.unavailable,
 			LowestPrice:   agg.lowestPrice,
 			Groups:        groups,
+			Suppliers:     briefs,
+			Channels:      chans,
 		})
 	}
 	// 按 ChannelCount 降序，稳定展示；并列时按 Type 升序保证确定性。

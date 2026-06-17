@@ -51,10 +51,18 @@ const SuppliersTable = (suppliersData) => {
     navigate('/console/settlement-review?supplier_id=' + record.user_id);
   };
 
+  // V12: 点击「已上架」跳转渠道管理并按供应商名过滤
+  const onNavigateChannels = (record) => {
+    navigate(
+      '/console/channel?supplier=' + encodeURIComponent(record.username || ''),
+    );
+  };
+
   const columns = useMemo(() => {
     return getSuppliersColumns({
       t,
       onNavigateSettlement,
+      onNavigateChannels,
       setEditingSupplier,
       setShowEditSupplier,
       onInitiateSettlement,

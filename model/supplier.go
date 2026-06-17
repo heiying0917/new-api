@@ -62,6 +62,8 @@ type SupplierListItem struct {
 	PendingCNY      float64 `json:"pending_cny"` // 待结算应付人民币 = GetSupplierPendingStat.PayableCNY
 	PendingUsd      float64 `json:"pending_usd"` // 待结算官方价($) = GetSupplierPendingStat.OfficialUsd
 	SettledCNY      float64 `json:"settled_cny"` // 已结算人民币总额 = Σ settled settlements.computed_cny
+	ChannelTotal    int     `json:"channel_total"`   // 上架渠道数（全部状态，V12）
+	ChannelEnabled  int     `json:"channel_enabled"` // 启用渠道数（status=enabled，V12）
 }
 
 // CreateSupplierProfile 为供应商用户创建资料，幂等。
@@ -281,12 +283,20 @@ func fillSupplierStats(items []*SupplierListItem) error {
 	if err != nil {
 		return err
 	}
+	channelCounts, err := GetAllSuppliersChannelCounts()
+	if err != nil {
+		return err
+	}
 	for _, it := range items {
 		if p, ok := perSupplier[it.UserId]; ok {
 			it.PendingCNY = p.PayableCNY
 			it.PendingUsd = p.OfficialUsd
 		}
 		it.SettledCNY = settledTotal[it.UserId]
+		if cc, ok := channelCounts[it.UserId]; ok {
+			it.ChannelTotal = cc.Total
+			it.ChannelEnabled = cc.Enabled
+		}
 	}
 	return nil
 }

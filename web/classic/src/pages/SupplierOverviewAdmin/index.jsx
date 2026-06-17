@@ -122,9 +122,9 @@ const SupplierOverviewAdmin = () => {
             />
           </Card>
         ) : (
-          <Row gutter={[12, 12]}>
+          <Row gutter={[16, 16]}>
             {byType.map((stat) => (
-              <Col key={stat.type} xs={12} sm={8} md={6} lg={4}>
+              <Col key={stat.type} xs={24} sm={12} lg={8}>
                 <TypeCard stat={stat} onClick={setDetail} t={t} />
               </Col>
             ))}

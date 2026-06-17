@@ -869,6 +869,9 @@ html.dark .with-pastel-balls::before {
 .table-scroll-card {
   display: flex;
   flex-direction: column;
+  /* 修复：flex 列容器在有同级元素(如供应商管理页的汇总条)时 auto 宽度会塌成 ~0,
+     导致表格被挤到视口外不可见(整页"空白")。显式 100% 宽度兜底,对其它页是无害的(本就应满宽)。 */
+  width: 100%;
   height: calc(100vh - 110px);
   max-height: calc(100vh - 110px);
 }
