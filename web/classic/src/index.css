@@ -21,6 +21,12 @@
   --app-header-height: 64px;
 }
 
+/* 英文菜单文案更长（如 Supplier Management / Channel Management），
+   侧栏加宽以完整显示；中文保持紧凑 180px。由 <html lang> 驱动。 */
+html[lang='en'] {
+  --sidebar-width: 230px;
+}
+
 body.sidebar-collapsed {
   --sidebar-current-width: var(--sidebar-width-collapsed);
 }

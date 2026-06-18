@@ -31,11 +31,16 @@ import PageLayout from './components/layout/PageLayout';
 import './i18n/i18n';
 import './index.css';
 import { LocaleProvider } from '@douyinfe/semi-ui';
+import { useTranslation } from 'react-i18next';
 import zh_CN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN';
+import en_US from '@douyinfe/semi-ui/lib/es/locale/source/en_US';
+import { normalizeLanguage } from './i18n/language';
 
-// 本项目仅支持简体中文（zh-CN）。
+// Semi UI 内置组件文案（分页、日期选择器、表格空态等）跟随界面语言。
 function SemiLocaleWrapper({ children }) {
-  return <LocaleProvider locale={zh_CN}>{children}</LocaleProvider>;
+  const { i18n } = useTranslation();
+  const locale = normalizeLanguage(i18n.language) === 'en' ? en_US : zh_CN;
+  return <LocaleProvider locale={locale}>{children}</LocaleProvider>;
 }
 
 // 欢迎信息（二次开发者未经允许不准将此移除）

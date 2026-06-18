@@ -117,12 +117,13 @@ body[theme-mode='dark'] .supplier-landing {
 }
 
 .landing-hero__title {
-  font-size: 52px;
-  line-height: 1.14;
+  font-size: 46px;
+  line-height: 1.12;
   font-weight: 800;
-  letter-spacing: -1px;
+  letter-spacing: -0.8px;
   color: var(--semi-color-text-0);
   margin: 0 0 22px;
+  overflow-wrap: break-word;
 }
 
 .landing-hero__sub {
@@ -167,18 +168,24 @@ body[theme-mode='dark'] .supplier-landing {
   overflow: hidden;
 }
 .landing-stats__item {
-  padding: 20px 22px;
+  padding: 18px 16px;
+  min-width: 0;
   border-right: 1px solid var(--semi-color-border);
 }
 .landing-stats__item:last-child {
   border-right: none;
 }
 .landing-stats__value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--semi-color-text-0);
-  letter-spacing: -0.5px;
-  line-height: 1.2;
+  letter-spacing: -0.4px;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  /* 预留两行高度并垂直居中：英文长词（如 Multi-currency）换行时，四格仍等高、下方说明对齐 */
+  min-height: 2.4em;
+  display: flex;
+  align-items: center;
 }
 .landing-stats__label {
   font-size: 13px;

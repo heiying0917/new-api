@@ -490,3 +490,51 @@
 - **修复**：① 顶部申请结算按钮移除 `disabled={nothingToSettle}`(仅保留 loading) → 始终可点；点击 `handleApply` 重拉最新→弹窗按最新展示(无可结算时 OK 禁用 + "当前没有可结算的消费")→后端原子结算。② hook 加 `window focus`/`visibilitychange` 监听，页面重新可见时刷新 `pending`，避免久留陈旧。
 - **验证(DOM+实测，VER juhe-v14f，tksupplier1)**：¥0.00 时申请结算按钮 `disabled=false`(可点)；点击弹出确认框「当前没有可结算的消费」+ 提交说明(OK 禁用)→ 证明点击重拉+弹窗兜底可达，陈旧不再卡死；app 健康无 panic、0 console error。
 - **提交状态**：**未 commit、未 push、未上 prod**。本地 5001 = juhe-v14(含 item7 + 时效修复)。
+
+### [2026-06-18] 全站中英双语 Phase 1：i18n 基建(classic，**未提交**)
+- **需求**：classic 主题全面支持中文+英文。AskUserQuestion 定：① 默认语言=浏览器识别"非中文即英文"(中文浏览器→中文，其余→英文)，保留手动切换+记住；② 范围=全面双语(基建 + 3914 key 译英 + 扫所有用户可见硬编码中文)。仅动 web/classic，不碰 web/default，不重新引入 fr/ru/ja/vi，保留"中文原文做 key"约定，不动 tokenki/QuantumNous 溯源。
+- **现状探查**：classic 原被砍成纯中文——`i18n.js` 硬编码 lng=zh-CN；`language.js` `normalizeLanguage` 恒返回 zh-CN；`LanguageSelector.jsx` 直接 return null；`index.jsx` Semi locale 硬编码 zh_CN；`PreferencesSettings` 只列简体中文。但顶栏切换链路(useHeaderBar `handleLanguageChange`/`currentLang` + ActionButtons)与后端/localStorage 持久化都还在。只有 `zh-CN.json`(3914 key，**中文原文做 key**)，无 en.json。classic **无单测框架**(改用 Bun 内置 `bun test`)，构建是 rsbuild。
+- **TDD**(`src/i18n/language.test.js`，bun:test，9 test/29 expect 全绿)：先 RED(`pickLanguage` 未导出)→实现 `language.js`：`normalizeLanguage(lng)` zh*→zh-CN / 其余→en / **空值→null**(兼容现有 guard 调用点)；纯函数 `pickLanguage({stored,languages})` 已存偏好优先、否则浏览器语言归一、全空→zh-CN；薄封装 `detectInitialLanguage()` 读 localStorage+navigator；`supportedLanguages=['zh-CN','en']`。
+- **接线**：`i18n.js` 注册 en 资源 + `lng:detectInitialLanguage()` + supportedLngs ['zh-CN','en']，fallbackLng 仍 zh-CN(英文缺失回退中文、不露原始 key)；`en.json` 先建占位 `{"translation":{}}`(Phase 2 填)；`LanguageSelector.jsx` 实现真实下拉(简体中文/English，仿 ThemeToggle，语言名母语原名)；`PreferencesSettings.jsx` 下拉加 English；`index.jsx` `SemiLocaleWrapper` 改响应式(useTranslation→normalizeLanguage→en_US/zh_CN，让分页/日期选择器等 Semi 内置文案随语言)；`i18next.config.js` locales 收敛 ['zh-CN','en']。
+- **验证**：`bun test` 9/9 绿；`bun run build`(rsbuild)成功无报错。
+- **提交状态**：**未 commit、未 push**。下一步 Phase 2 译 3914 key。
+
+### [2026-06-18] 全站中英双语 Phase 2：3914 个 key 译英 → en.json(classic，**未提交**)
+- **做法**：`split.mjs` 把 zh-CN.json 的 translation(3914 key，中文原文做 key)按 250/批切成 16 批(/tmp/i18n-build/batches)。先跑 1 个试点批次(general-purpose subagent)校验质量过关，再并行扇出其余 15 批。每个 subagent 带统一术语表+保护词规则(占位符 `{{}}`/printf/HTML/emoji/换行精确保留；tokenki/QuantumNous/new-api/厂商名/模型 id/技术词原样不译；全角标点转英文；`_other` 复数后缀只在 key 不进 value)，把 {中文key:英文} 写到 /tmp/i18n-build/en/en-batch-NN.json。
+- **合并校验**(`merge.mjs`)：16 批合并 → `web/classic/src/i18n/locales/en.json`(结构 `{"translation":{...}}`)。全量校验结果：**3914/3914 key 对齐(0 missing/0 extra/0 跨批冲突)、占位符 `{{}}` 0 错配、保护词(tokenki/QuantumNous/new-api/One API) 0 丢失、英文值 0 残留中文(CJK)**。仅 4 个量词(个/家/单/笔)译为空串——英文无量词分类词，i18next 默认 returnEmptyString 渲染为空，正确。
+- **抽查**：供应商+管理员高频词条语境通顺(供应商→Supplier、中转→relay、待结算→Pending Settlement、累计托管金额→Total Managed Amount、渠道优先级→Channel Priority、两步验证→Two-Factor Authentication…)。
+- **验证**：`bun run build` 成功；en.json 309KB，index bundle 1759KB→2046KB(含进 en)。
+- **提交状态**：**未 commit、未 push**。下一步 Phase 3 扫用户可见硬编码中文。
+
+### [2026-06-18] 全站中英双语 Phase 3+4：硬编码扫除 + 对账 + 浏览器回归(classic，**未提交**)
+- **Phase 3 扫硬编码**：`scan.mjs` 盘点出 1328 候选行/185 文件(剥离 t()/注释/console/import)。`partition.mjs` 按行数均衡分 12 批(文件互不相交)。先 pilot batch-00 验证规则(发现候选含大量注释误报、多数文件早已 i18n 化，且 pilot 顺手修了几处"模板字符串塞进 t() 生成永不匹配动态 key"的 pre-existing bug)，再扇出 11 批 general-purpose subagent。规则：只 wrap 用户可见(JSX 文本/showError 等通知/Modal/placeholder 等 props)；React 组件用 useTranslation 的 t；非组件模块在**函数体内**用 `i18n.t()`(禁止模块级常量初始化器，避免冻结语言)；模板字面量转 `{{}}` 插值；常量 label 映射多由消费处 `t(label)` 已处理→只需补 locale；不碰品牌/溯源/注释/console/逻辑比较值；不确定就 SKIP 上报。各 subagent 收集 wrap 的中文到 `/tmp/i18n-build/wrapped/*.json`。12 批共 wrap ~320 key，构建通过无破坏。
+- **全量对账**(`reconcile.mjs`)：扫所有 `t()`/`i18n.t()` 引用的中文 key(R=3845) + label-value 中文(C=194) + agent wrap(W=320)，并 escape 求值(避免 `\n` 不匹配)，减去 zh-CN.json 现有 → 589 新 key，过滤 12 个 `${}` 模板片段 → 577 干净新 key。切 3 批并行译英 → 合并进 en.json + zh-CN.json(中文 identity)，校验 4491/4491 对齐、0 占位符错配、0 保护词丢失、0 残留中文。
+- **兜底再扫**(`final-scan.mjs`)：抓 src 所有中文字面量(含 `t(函数())`/`return '中文'` 这类静态扫不到的间接 key)，又发现 119 漏网(EditChannelModal 按类型返回的鉴权密钥占位符、CodexUsageModal 标签、render.jsx 计费文案、UpstreamConflictModal 字段名等)。译英合并 → **4610/4610 对齐**。再跑 final-scan = **0 残留**(classic 全库每个中文字面量都已是 en/zh 双语 key，英文模式不会再漏中文；仅语言母语名 日本語/繁體中文/简体中文 故意保留)。
+- **Phase 4 浏览器回归**(Playwright，dev server :5180 临时代理到 :5001 后端，验完还原 rsbuild.config)：
+  - **检测**：无存储偏好 + navigator=zh-CN → 正确显示中文(实测"中文浏览器→中文"方向；"非中文→英文"有 9 单测覆盖)。切换器(顶栏新 LanguageSelector + 偏好设置)中/EN 切换**即时生效+localStorage 持久化**。
+  - **供应商端**(tksupplier1)：登录页、总览(Pending Settlement/Live Market Bidding/卡片)、账单结算(顶部汇总卡 Request Settlement + Settlement Records 表 + 筛选 + 状态 Cancelled/Settled + Semi 分页) 全英文 ✅；切回中文往返正常 ✅。
+  - **管理员端**(tkadmin，**可逆**临时改密验证后逐字符还原原哈希)：仪表盘、Channel Management(工具栏/表头/Enabled/Disabled/Relay/Not tested)、System Settings、User Management、Add Channel 弹窗、Supplier Management、Settlement Review 全英文、0 残留中文 ✅(用户数据如中文渠道名正确保留不译)。
+  - **修 1 处浏览器抓到的漏网**：Add Channel 鉴权密钥占位符 `请输入渠道对应的鉴权密钥`(`type2secretPrompt` 返回，调用点已 `t(func())` 但中文串非 en key)→ 已随 119 兜底补译，复验 0 CJK。
+  - Semi UI 内置文案(分页/日期/空态)随语言切换(`index.jsx` SemiLocaleWrapper 改响应式 en_US/zh_CN) ✅。品牌 Tokenki + QuantumNous/new-api 溯源全程保留 ✅。1 个 console error 是预存 `icononly` 非布尔属性 React 警告，与 i18n 无关。
+  - 证据：`docs/superpowers/i18n-verification/` 10 张截图。
+- **最终**：`bun test` 9/9 绿；`bun run build`(production)成功，en/zh 各 4610 key。临时改动(rsbuild.config proxy/port、tkadmin 密码)全部还原。dev server 已停。
+- **收尾润色(全角标点)**：浏览器发现英文下若干硬编码全角标点(非 CJK 未被扫到)——供应商 tooltip/结算卡 `（$）（¥）：`→半角 `($) (¥): `(supplier-overview/supplier-settlements)；仪表盘问候 `👋${greeting}，${username}` 改为可翻译模板 `t('👋{{greeting}}，{{username}}')`(英文逗号半角)。最终 **en/zh 各 4611 key 完全对齐、0 残留中文、源码兜底再扫 0**。
+- **改动清单**：64 改 + 3 新(en.json / language.test.js / 截图目录)。基建 7 文件(i18n.js/language.js/language.test.js/LanguageSelector.jsx/PreferencesSettings.jsx/index.jsx/i18next.config.js)+ ~52 组件/hook wrap + zh-CN.json/en.json。**未碰 web/default**。
+- **提交状态**：**未 commit、未 push、未上 prod**(等用户指令)。
+
+### [2026-06-18] 英文首页 Hero UI 修复 + 本地 :5001 重建(classic，**未提交**)
+- **本地重建 :5001**：宿主重建 classic → `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build`(嵌入两套 dist，87MB arm64) → 极简镜像(FROM 原镜像+换 /tokenki) → 按 `docker inspect` 原配置(env/网络 newapi-juhe_new-api-network/5001:3000/data+logs 挂载/restart always)停旧起新。version=juhe-i18n，健康无 panic，DB/Redis/data + bidding option 全保留。
+- **英文 Hero 问题**(用户截图反馈)：英文文案比中文长，导致 `landing-hero__title`(52px 固定)换 5 行过重、`landing-stats` 4 等宽格里大字(Around the clock 等)换行+高度参差"破相"。
+- **修复=精简文案(仅 Hero 专属 key)+CSS 容错**：
+  - 文案：先 grep 确认 `全天候/全球企业客户/订单不间断/企业级标题` **仅 Hero 用**(可安全改英文)，而 `多币种/端到端/实时结算/加密隔离/数百家` 多页共用(不动，靠 CSS 容纳)。改 en.json：标题去掉 platform/the/market、`全天候`→**24/7**、`全球企业客户`→Global enterprises、`订单不间断`→Nonstop orders。
+  - CSS(`landing.css`)：`.landing-hero__title` 52→46px + line-height 1.12 + overflow-wrap；`.landing-stats__value` 20→18px + **min-height:2.4em + flex 垂直居中**(英文长词如 Multi-currency 换行时四格仍等高、说明对齐)；`.landing-stats__item` padding 收紧 + min-width:0。
+- **浏览器复验**(:5001 production，截图 i18n-12~14)：英文标题 5→4 行匀称；4 统计格**等高各 123px**、大字垂直居中、说明基本对齐；中文首页不受影响(标题 2 行、统计整齐)。两语言首页均友好展现。
+- **改动**：`landing.css` + `en.json`(4 条 Hero 文案)。**未碰 web/default、未 commit/push/prod**。
+
+### [2026-06-18] 英文侧栏菜单截断修复 + 回归盲区复盘(classic，**未提交**)
+- **用户反馈**：英文侧栏菜单显示不全(Channel Manage… / Supplier Over… / Token Manage… 等被截断)，质疑回归是否做到位。
+- **回归盲区(诚实复盘)**：我的浏览器回归用 **accessibility 快照 + DOM 文本 + CJK 扫描**——但 CSS `text-overflow:ellipsis`(Tailwind `truncate`)截断时 **DOM 文本仍是完整全名**，快照查不出"视觉截断"。已存记忆 [[ui-verify-visual-truncation]]：今后须查 `scrollWidth>clientWidth` + 真看截图，重点盯 en 比 zh 长的固定宽容器。
+- **根因**：侧栏固定 `--sidebar-width:180px`(`src/index.css`)，文字区仅 ~112px；菜单文案 `SiderBar.jsx` 用 `truncate` 单行省略。中文 4 字够,英文长标签(Supplier Management 等)必截。
+- **修复(按语言区分宽度,不改文案/不动 web/default)**：① `i18n.js` 加 `syncHtmlLang`——init + languageChanged 时设 `document.documentElement.lang`(en/zh-CN)；② `index.css` 加 `html[lang='en']{ --sidebar-width:230px }`(中文仍 180px 紧凑)。保留 `truncate` 作超长兜底。
+- **复验(程序检测 scrollWidth>clientWidth + 看截图 i18n-15)**：英文 lang=en/侧栏 230px/**13 菜单 0 截断**(全名完整)；中文 lang=zh-CN/侧栏 180px/0 截断(未被误伤)。两语言侧栏均完整显示。
+- **改动**：`i18n.js` + `index.css`。**未碰 web/default、未 commit/push/prod**。本地 :5001 已含全部修复(version juhe-i18n)。

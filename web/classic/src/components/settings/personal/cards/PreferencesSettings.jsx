@@ -25,8 +25,11 @@ import { API, showSuccess, showError } from "../../../../helpers";
 import { UserContext } from "../../../../context/User";
 import { normalizeLanguage } from "../../../../i18n/language";
 
-// 本项目仅支持简体中文（zh-CN）。
-const languageOptions = [{ value: 'zh-CN', label: '简体中文' }];
+// 简体中文（zh-CN）与英文（en）。语言名以各自母语原名展示。
+const languageOptions = [
+	{ value: 'zh-CN', label: '简体中文' },
+	{ value: 'en', label: 'English' },
+];
 
 const PreferencesSettings = ({ t }) => {
 	const { i18n } = useTranslation();

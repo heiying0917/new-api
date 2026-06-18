@@ -177,10 +177,10 @@ const OtherSetting = () => {
     try {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Logo: true }));
       await updateOption('Logo', inputs.Logo);
-      showSuccess('Logo 已更新');
+      showSuccess(t('Logo 已更新'));
     } catch (error) {
       console.error('Logo 更新失败', error);
-      showError('Logo 更新失败');
+      showError(t('Logo 更新失败'));
     } finally {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Logo: false }));
     }
@@ -193,10 +193,10 @@ const OtherSetting = () => {
         HomePageContent: true,
       }));
       await updateOption(key, inputs[key]);
-      showSuccess('首页内容已更新');
+      showSuccess(t('首页内容已更新'));
     } catch (error) {
       console.error('首页内容更新失败', error);
-      showError('首页内容更新失败');
+      showError(t('首页内容更新失败'));
     } finally {
       setLoadingInput((loadingInput) => ({
         ...loadingInput,
@@ -209,10 +209,10 @@ const OtherSetting = () => {
     try {
       setLoadingInput((loadingInput) => ({ ...loadingInput, About: true }));
       await updateOption('About', inputs.About);
-      showSuccess('关于内容已更新');
+      showSuccess(t('关于内容已更新'));
     } catch (error) {
       console.error('关于内容更新失败', error);
-      showError('关于内容更新失败');
+      showError(t('关于内容更新失败'));
     } finally {
       setLoadingInput((loadingInput) => ({ ...loadingInput, About: false }));
     }
@@ -222,10 +222,10 @@ const OtherSetting = () => {
     try {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Footer: true }));
       await updateOption('Footer', inputs.Footer);
-      showSuccess('页脚内容已更新');
+      showSuccess(t('页脚内容已更新'));
     } catch (error) {
       console.error('页脚内容更新失败', error);
-      showError('页脚内容更新失败');
+      showError(t('页脚内容更新失败'));
     } finally {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Footer: false }));
     }
@@ -289,7 +289,7 @@ const OtherSetting = () => {
 
       const { tag_name, body } = res;
       if (tag_name === statusState?.status?.version) {
-        showSuccess(`已是最新版本：${tag_name}`);
+        showSuccess(t('已是最新版本：{{tag}}', { tag: tag_name }));
       } else {
         setUpdateData({
           tag_name: tag_name,
@@ -299,7 +299,7 @@ const OtherSetting = () => {
       }
     } catch (error) {
       console.error('Failed to check for updates:', error);
-      showError('检查更新失败，请稍后再试');
+      showError(t('检查更新失败，请稍后再试'));
     } finally {
       setLoadingInput((loadingInput) => ({
         ...loadingInput,
@@ -536,9 +536,9 @@ const OtherSetting = () => {
               </Button>
               <Form.TextArea
                 label={t('首页供应商数据（信任数据条）')}
-                placeholder={
-                  '可选。JSON 数组，最多 4 项，例如：\n[{"value":"500+","label":"企业客户","caption":""},{"value":"","label":"持续","caption":"充足订单"}]\n留空则使用定性默认（不展示具体数字）。'
-                }
+                placeholder={t(
+                  '可选。JSON 数组，最多 4 项，例如：\n[{"value":"500+","label":"企业客户","caption":""},{"value":"","label":"持续","caption":"充足订单"}]\n留空则使用定性默认（不展示具体数字）。',
+                )}
                 field={'HomeSupplierStats'}
                 onChange={handleInputChange}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}

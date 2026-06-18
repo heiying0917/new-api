@@ -438,8 +438,9 @@ const EditChannelModal = (props) => {
   const initialModelsRef = useRef([]);
   const initialModelMappingRef = useRef('');
   const initialStatusCodeMappingRef = useRef('');
-  const doubaoCodingPlanDeprecationMessage =
-    'Doubao Coding Plan 不再允许新增。根据火山方舟文档，Coding 套餐额度仅适用于 AI Coding 产品内调用，不适用于单独 API 调用；在非 AI Coding 产品中使用对应的 Base URL 和 API Key 可能被视为违规，并可能导致订阅停用或账号封禁。';
+  const doubaoCodingPlanDeprecationMessage = t(
+    'Doubao Coding Plan 不再允许新增。根据火山方舟文档，Coding 套餐额度仅适用于 AI Coding 产品内调用，不适用于单独 API 调用；在非 AI Coding 产品中使用对应的 Base URL 和 API Key 可能被视为违规，并可能导致订阅停用或账号封禁。',
+  );
   const canKeepDeprecatedDoubaoCodingPlan =
     initialBaseUrlRef.current === DEPRECATED_DOUBAO_CODING_PLAN_BASE_URL;
   const doubaoCodingPlanOptionLabel = (
@@ -622,9 +623,10 @@ const EditChannelModal = (props) => {
 
     if (name === 'base_url' && value.endsWith('/v1')) {
       Modal.confirm({
-        title: '警告',
-        content:
+        title: t('警告'),
+        content: t(
           '不需要在末尾加/v1，Tokenki会自动处理，添加后可能导致请求失败，是否继续？',
+        ),
         onOk: () => {
           setInputs((inputs) => ({ ...inputs, [name]: value }));
         },
@@ -3228,9 +3230,9 @@ const EditChannelModal = (props) => {
                       <Form.Input
                         field='other'
                         label={t('模型版本')}
-                        placeholder={
-                          '请输入星火大模型版本，注意是接口地址中的版本号，例如：v2.1'
-                        }
+                        placeholder={t(
+                          '请输入星火大模型版本，注意是接口地址中的版本号，例如：v2.1',
+                        )}
                         onChange={(value) => handleInputChange('other', value)}
                         showClear
                       />
@@ -3261,7 +3263,7 @@ const EditChannelModal = (props) => {
                       <Form.Input
                         field='other'
                         label={t('知识库 ID')}
-                        placeholder={'请输入知识库 ID，例如：123456'}
+                        placeholder={t('请输入知识库 ID，例如：123456')}
                         onChange={(value) => handleInputChange('other', value)}
                         showClear
                       />
@@ -3271,9 +3273,9 @@ const EditChannelModal = (props) => {
                       <Form.Input
                         field='other'
                         label='Account ID'
-                        placeholder={
-                          '请输入Account ID，例如：d6b5da8hk1awo8nap34ube6gh'
-                        }
+                        placeholder={t(
+                          '请输入Account ID，例如：d6b5da8hk1awo8nap34ube6gh',
+                        )}
                         onChange={(value) => handleInputChange('other', value)}
                         showClear
                       />
@@ -3283,7 +3285,7 @@ const EditChannelModal = (props) => {
                       <Form.Input
                         field='other'
                         label={t('智能体ID')}
-                        placeholder={'请输入智能体ID，例如：7342866812345'}
+                        placeholder={t('请输入智能体ID，例如：7342866812345')}
                         onChange={(value) => handleInputChange('other', value)}
                         showClear
                       />

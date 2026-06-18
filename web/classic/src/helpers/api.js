@@ -25,6 +25,7 @@ import {
 } from './utils';
 import axios from 'axios';
 import { MESSAGE_ROLES } from '../constants/playground.constants';
+import i18n from '../i18n/i18n';
 
 export let API = axios.create({
   baseURL: import.meta.env.VITE_REACT_APP_SERVER_URL
@@ -222,7 +223,7 @@ export const processGroupsData = (data, userGroup) => {
   if (groupOptions.length === 0) {
     groupOptions = [
       {
-        label: '用户分组',
+        label: i18n.t('用户分组'),
         value: '',
         ratio: 1,
       },
@@ -346,7 +347,9 @@ export async function onCustomOAuthClicked(provider, options = {}) {
         provider.authorization_endpoint,
       );
       showError(
-        'OAuth 配置错误：授权端点必须是完整的 URL（以 http:// 或 https:// 开头）',
+        i18n.t(
+          'OAuth 配置错误：授权端点必须是完整的 URL（以 http:// 或 https:// 开头）',
+        ),
       );
       return;
     }
@@ -363,7 +366,7 @@ export async function onCustomOAuthClicked(provider, options = {}) {
     redirectToOAuthUrl(authUrl);
   } catch (error) {
     console.error('Failed to initiate custom OAuth:', error);
-    showError('OAuth 登录失败：' + (error.message || '未知错误'));
+    showError(i18n.t('OAuth 登录失败：') + (error.message || i18n.t('未知错误')));
   }
 }
 

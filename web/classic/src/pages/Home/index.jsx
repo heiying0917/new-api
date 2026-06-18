@@ -60,7 +60,7 @@ const Home = () => {
       }
     } else {
       showError(message);
-      setHomePageContent('加载首页内容失败...');
+      setHomePageContent(i18n.t('加载首页内容失败...'));
     }
     setHomePageContentLoaded(true);
   };

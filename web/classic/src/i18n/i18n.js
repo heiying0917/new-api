@@ -21,14 +21,19 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import zhCNTranslation from './locales/zh-CN.json';
+import enTranslation from './locales/en.json';
+import { detectInitialLanguage, normalizeLanguage } from './language';
 
-// 本项目仅支持简体中文（zh-CN）。已移除其他语言与自动检测以减小包体。
+// 本项目支持简体中文（zh-CN）与英文（en）。
+// 初始语言：已保存偏好优先，否则按浏览器语言（非中文即英文）。
+// fallbackLng=zh-CN：英文缺失的 key 回退到中文，绝不暴露原始 key。
 i18n.use(initReactI18next).init({
   load: 'currentOnly',
-  lng: 'zh-CN',
-  supportedLngs: ['zh-CN'],
+  lng: detectInitialLanguage(),
+  supportedLngs: ['zh-CN', 'en'],
   resources: {
     'zh-CN': zhCNTranslation,
+    en: enTranslation,
   },
   fallbackLng: 'zh-CN',
   nsSeparator: false,
@@ -38,5 +43,14 @@ i18n.use(initReactI18next).init({
 });
 
 window.__i18n = i18n;
+
+// 同步 <html lang>，供按语言差异化样式（如英文侧栏更宽以容纳更长的菜单文案）与无障碍。
+const syncHtmlLang = (lng) => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = normalizeLanguage(lng) || 'zh-CN';
+  }
+};
+syncHtmlLang(i18n.language);
+i18n.on('languageChanged', syncHtmlLang);
 
 export default i18n;

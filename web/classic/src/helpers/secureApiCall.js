@@ -22,6 +22,8 @@ For commercial licensing, please contact support@quantumnous.com
  * 自动处理需要验证的 403 错误，透明地触发验证流程
  */
 
+import i18next from 'i18next';
+
 /**
  * 检查错误是否是需要安全验证的错误
  * @param {Error} error - 错误对象
@@ -59,7 +61,7 @@ export function extractVerificationInfo(error) {
 
   return {
     code: data.code,
-    message: data.message || '需要安全验证',
+    message: data.message || i18next.t('需要安全验证'),
     required: true,
   };
 }

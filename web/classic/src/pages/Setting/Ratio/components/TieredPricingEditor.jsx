@@ -290,7 +290,7 @@ function ConditionRow({ cond, onChange, onRemove, t }) {
       >
         {VAR_OPTIONS.map((v) => (
           <Select.Option key={v.value} value={v.value}>
-            {v.label}
+            {t(v.label)}
           </Select.Option>
         ))}
       </Select>
@@ -863,7 +863,7 @@ function PresetSection({ applyPreset, t }) {
             </Tag>
             {g.presets.map((p) => (
               <Button key={p.key} size='small' theme='light' onClick={() => applyPreset(p)}>
-                {p.label}
+                {t(p.label)}
               </Button>
             ))}
           </div>
