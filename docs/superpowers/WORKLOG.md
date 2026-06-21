@@ -538,3 +538,17 @@
 - **修复(按语言区分宽度,不改文案/不动 web/default)**：① `i18n.js` 加 `syncHtmlLang`——init + languageChanged 时设 `document.documentElement.lang`(en/zh-CN)；② `index.css` 加 `html[lang='en']{ --sidebar-width:230px }`(中文仍 180px 紧凑)。保留 `truncate` 作超长兜底。
 - **复验(程序检测 scrollWidth>clientWidth + 看截图 i18n-15)**：英文 lang=en/侧栏 230px/**13 菜单 0 截断**(全名完整)；中文 lang=zh-CN/侧栏 180px/0 截断(未被误伤)。两语言侧栏均完整显示。
 - **改动**：`i18n.js` + `index.css`。**未碰 web/default、未 commit/push/prod**。本地 :5001 已含全部修复(version juhe-i18n)。
+
+### [2026-06-18] 生产发版 v2026.06.18.2（中英双语，/tke-release 全流程）
+- **提交**：发版前 `git commit` 全部双语改动 → `14d39cd6` feat(i18n): classic 全站中英双语支持(69 文件，+6014/-310，含 en.json/language.test.js)。截图产物移出仓库(/tmp)保持工作树干净。
+- **/tke-release 6 Phase 全过**：P1 预检(main / go build / go test 仅白名单内 pre-existing 失败 / 版本 v2026.06.18.2) → P2 push main+tag、Actions run 27762584569 watch+JSON 二次校验 success → P3 master 1/1 + slave 2/2 滚动收敛、健康 success:true、**无 panic** → P4 冒烟(status✅ / relay 路径 model_not_found 非 panic / 真实补全因 token 0 模型跳过，用户确认 / **前端 prod tokenki.com 实测**：英文 Hero 4 行+统计等高、侧栏 en230/zh180 生效、0 console error) → P6 监控 6/6 轮真实 5xx=0(仅自测 2×503 user2)。
+- **结果**：✅ 发版成功，prod=v2026.06.18.2。bidding/RetryTimes option 沿用上版不动。发版报告 `docs/deploy/report/2026-06-18-tokenki-prod-v2026.06.18.2.md`。
+- **回归教训**：本轮发版前曾两次被用户发现英文视觉问题(Hero 文案溢出、侧栏菜单截断)——根因是回归只看 DOM/无障碍快照(查不出 CSS ellipsis)。已修复并存记忆 [[ui-verify-visual-truncation]](查 scrollWidth>clientWidth + 真看截图)。
+- **提交状态**：代码已 commit+push(14d39cd6)、tag 已推、prod 已部署。**发版报告 + 本 WORKLOG 条目尚未 commit**(等用户指令)。
+
+### [2026-06-21] 渠道管理：成本价表头点击排序（feat）
+- **需求**：渠道管理页点「成本价」表头升序/降序排序（用户确认空成本价当 0 参与）。
+- **后端**(`model/channel.go`)：`channelSortColumns` 白名单加 `cost_price`；`Apply()` 特判 `ORDER BY COALESCE(cost_price,0) ASC|DESC`——NULL/未设按 0、三库一致(Rule 2)，方向受控常量无注入。
+- **后端测试**(新增 `model/channel_cost_sort_test.go`，TDD 先红后绿)：cost_price 被接受/非法字段拦截、升降序正确、NULL 与 0 落最便宜端。`model` 全包 100 passed，`go build ./...` ✅。
+- **前端**(`web/classic` 3 文件)：`useChannelsData` 加 `sortBy/sortOrder`+`handleSortChange`，`sort_by/sort_order` 拼进列表/搜索请求(**标签聚合模式不下发**)，翻页/刷新/筛选保留排序；`ChannelsColumnDefs` 成本价列 `sorter:true`；`ChannelsTable` 接 `onChange`(升↔降、三击清除回落默认、仅响应 sorter 事件)。classic `bun run build` ✅。
+- **提交状态**：仅 5 个功能文件 commit `254f142c`（**未 push、未部署**）。上一轮 v2026.06.18.2 的 WORKLOG/部署报告未提交项保持原状，等用户单独指令。当前线上仍是旧前端包，需重新构建部署后方能在浏览器验收。
