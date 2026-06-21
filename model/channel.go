@@ -96,6 +96,7 @@ var channelSortColumns = map[string]string{
 	"balance":       "balance",
 	"response_time": "response_time",
 	"test_time":     "test_time",
+	"cost_price":    "cost_price",
 }
 
 func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {
@@ -116,6 +117,16 @@ func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) Channel
 }
 
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
+	// cost_price 列可空（*float64，列允许 NULL）：用 COALESCE 把 NULL 视为 0，
+	// 保证 SQLite/MySQL/PostgreSQL 三库 NULL 落位一致，且符合「未设成本价按 0 处理」的语义。
+	// COALESCE 与列名 cost_price 三库通用、非保留字，无需引号；方向为受控常量，无注入风险。
+	if options.SortBy == "cost_price" {
+		direction := "DESC"
+		if options.SortOrder == "asc" {
+			direction = "ASC"
+		}
+		return query.Order("COALESCE(cost_price, 0) " + direction)
+	}
 	if columnName, ok := channelSortColumns[options.SortBy]; ok {
 		return query.Order(clause.OrderByColumn{
 			Column: clause.Column{Name: columnName},

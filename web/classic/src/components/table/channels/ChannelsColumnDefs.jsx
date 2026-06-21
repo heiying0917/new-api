@@ -621,6 +621,8 @@ export const getChannelsColumns = ({
       key: 'cost_price',
       title: t('成本价'),
       dataIndex: 'cost_price',
+      // 点击表头按成本价升/降序（服务端排序，见 useChannelsData.handleSortChange）。
+      sorter: true,
       render: (text, record) =>
         record.children === undefined ? (
           <span>

@@ -62,6 +62,9 @@ export const useChannelsData = (mode = 'admin') => {
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState(1);
   const [idSort, setIdSort] = useState(false);
+  // 表头点击排序:sortBy 为空=后端默认顺序(id_sort/优先级);目前仅「成本价」列接入。
+  const [sortBy, setSortBy] = useState('');
+  const [sortOrder, setSortOrder] = useState('desc');
   const [searching, setSearching] = useState(false);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [channelCount, setChannelCount] = useState(0);
@@ -363,6 +366,8 @@ export const useChannelsData = (mode = 'admin') => {
     enableTagMode,
     typeKey = activeTypeKey,
     statusF,
+    sortByParam = sortBy,
+    sortOrderParam = sortOrder,
   ) => {
     if (statusF === undefined) statusF = statusFilter;
 
@@ -382,6 +387,8 @@ export const useChannelsData = (mode = 'admin') => {
         page,
         pageSize,
         idSort,
+        sortByParam,
+        sortOrderParam,
       );
       setLoading(false);
       return;
@@ -391,8 +398,13 @@ export const useChannelsData = (mode = 'admin') => {
     setLoading(true);
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+    // 标签聚合模式下成本价排序无意义(父行无成本价),不下发排序参数。
+    const sortParam =
+      sortByParam && !enableTagMode
+        ? `&sort_by=${sortByParam}&sort_order=${sortOrderParam}`
+        : '';
     const res = await API.get(
-      `${apiBase}/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `${apiBase}/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}${sortParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -425,6 +437,8 @@ export const useChannelsData = (mode = 'admin') => {
     page = 1,
     pageSz = pageSize,
     sortFlag = idSort,
+    sortByParam = sortBy,
+    sortOrderParam = sortOrder,
   ) => {
     const { searchKeyword, searchGroup, searchModel, searchSupplier } =
       getFormValues();
@@ -443,14 +457,20 @@ export const useChannelsData = (mode = 'admin') => {
           enableTagMode,
           typeKey,
           statusF,
+          sortByParam,
+          sortOrderParam,
         );
         return;
       }
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+      const sortParam =
+        sortByParam && !enableTagMode
+          ? `&sort_by=${sortByParam}&sort_order=${sortOrderParam}`
+          : '';
       const res = await API.get(
-        `${apiBase}/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&supplier_name=${encodeURIComponent(searchSupplier)}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `${apiBase}/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&supplier_name=${encodeURIComponent(searchSupplier)}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}${sortParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -468,6 +488,46 @@ export const useChannelsData = (mode = 'admin') => {
       }
     } finally {
       setSearching(false);
+    }
+  };
+
+  // 表头点击排序:更新排序态并回到第 1 页重载(标签聚合模式忽略,父行无成本价)。
+  const handleSortChange = (nextSortBy, nextSortOrder) => {
+    if (enableTagMode) return;
+    setSortBy(nextSortBy);
+    setSortOrder(nextSortOrder);
+    setActivePage(1);
+    const { searchKeyword, searchGroup, searchModel, searchSupplier } =
+      getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchModel === '' &&
+      searchSupplier === ''
+    ) {
+      loadChannels(
+        1,
+        pageSize,
+        idSort,
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        nextSortBy,
+        nextSortOrder,
+      )
+        .then()
+        .catch((reason) => showError(reason));
+    } else {
+      searchChannels(
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        1,
+        pageSize,
+        idSort,
+        nextSortBy,
+        nextSortOrder,
+      );
     }
   };
 
@@ -1263,6 +1323,8 @@ export const useChannelsData = (mode = 'admin') => {
     channelCount,
     groupOptions,
     idSort,
+    sortBy,
+    sortOrder,
     enableTagMode,
     enableBatchDelete,
     statusFilter,
@@ -1342,6 +1404,7 @@ export const useChannelsData = (mode = 'admin') => {
     manageTag,
     handlePageChange,
     handlePageSizeChange,
+    handleSortChange,
     copySelectedChannel,
     updateChannelProperty,
     submitTagEdit,

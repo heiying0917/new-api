@@ -40,6 +40,7 @@ const ChannelsTable = (channelsData) => {
     setSelectedChannels,
     handlePageChange,
     handlePageSizeChange,
+    handleSortChange,
     handleRow,
     t,
     COLUMN_KEYS,
@@ -140,6 +141,20 @@ const ChannelsTable = (channelsData) => {
       columns={tableColumns}
       dataSource={channels}
       scroll={compactMode ? undefined : { x: 'max-content' }}
+      onChange={(changeInfo) => {
+        const sorter = changeInfo?.sorter;
+        if (!sorter || !handleSortChange) return;
+        // 仅响应排序变化，避免分页/过滤等事件误触发。
+        const changeType = changeInfo?.extra?.changeType;
+        if (changeType && changeType !== 'sorter') return;
+        // 第三次点击清除排序 → 传空 sortBy，回落后端默认顺序。
+        if (!sorter.sortOrder) {
+          handleSortChange('', 'desc');
+          return;
+        }
+        const order = sorter.sortOrder === 'ascend' ? 'asc' : 'desc';
+        handleSortChange(sorter.dataIndex, order);
+      }}
       pagination={{
         currentPage: activePage,
         pageSize: pageSize,
