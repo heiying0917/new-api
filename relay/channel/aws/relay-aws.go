@@ -23,10 +23,8 @@ import (
 
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	bedrockruntimeTypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
-	"github.com/aws/smithy-go/auth/bearer"
 )
 
 // getAwsErrorStatusCode extracts HTTP status code from AWS SDK error
@@ -61,31 +59,16 @@ func newAwsClient(c *gin.Context, info *relaycommon.RelayInfo) (*bedrockruntime.
 		httpClient = service.GetHttpClient()
 	}
 
+	// 按 | 分段数判断模式：2 段为 APIKey|Region，3 段为 AK|SK|Region（向后兼容，不变）
 	awsSecret := strings.Split(info.ApiKey, "|")
-	var client *bedrockruntime.Client
 	switch len(awsSecret) {
 	case 2:
-		apiKey := awsSecret[0]
-		region := awsSecret[1]
-		client = bedrockruntime.New(bedrockruntime.Options{
-			Region:                  region,
-			BearerAuthTokenProvider: bearer.StaticTokenProvider{Token: bearer.Token{Value: apiKey}},
-			HTTPClient:              httpClient,
-		})
+		return BuildBedrockRuntimeClient(dto.AwsKeyTypeApiKey, "", "", awsSecret[0], awsSecret[1], httpClient)
 	case 3:
-		ak := awsSecret[0]
-		sk := awsSecret[1]
-		region := awsSecret[2]
-		client = bedrockruntime.New(bedrockruntime.Options{
-			Region:      region,
-			Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(ak, sk, "")),
-			HTTPClient:  httpClient,
-		})
+		return BuildBedrockRuntimeClient(dto.AwsKeyTypeAKSK, awsSecret[0], awsSecret[1], "", awsSecret[2], httpClient)
 	default:
 		return nil, errors.New("invalid aws secret key")
 	}
-
-	return client, nil
 }
 
 func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor, requestBody io.Reader) (any, error) {
@@ -98,10 +81,14 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 	// 获取对应的AWS模型ID
 	awsModelId := getAwsModelID(info.UpstreamModelName)
 
-	awsRegionPrefix := getAwsRegionPrefix(awsCli.Options().Region)
-	canCrossRegion := awsModelCanCrossRegion(awsModelId, awsRegionPrefix)
-	if canCrossRegion {
-		awsModelId = awsModelCrossRegion(awsModelId, awsRegionPrefix)
+	if info.ChannelOtherSettings.AwsForceGlobal {
+		// 强制 Global：无条件加 global. 前缀，绕过 per-model 跨区白名单
+		awsModelId = "global." + awsModelId
+	} else {
+		awsRegionPrefix := getAwsRegionPrefix(awsCli.Options().Region)
+		if awsModelCanCrossRegion(awsModelId, awsRegionPrefix) {
+			awsModelId = awsModelCrossRegion(awsModelId, awsRegionPrefix)
+		}
 	}
 
 	// init empty request.header

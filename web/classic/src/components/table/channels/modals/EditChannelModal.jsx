@@ -27,7 +27,7 @@ import {
   verifyJSON,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
-import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES } from '../../../../constants';
+import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES, AWS_BEDROCK_REGIONS } from '../../../../constants';
 import {
   SideSheet,
   Space,
@@ -49,6 +49,7 @@ import {
   Tooltip,
   Collapse,
   Dropdown,
+  Select,
 } from '@douyinfe/semi-ui';
 import {
   getChannelModels,
@@ -204,6 +205,8 @@ const EditChannelModal = (props) => {
     vertex_key_type: 'json',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
     aws_key_type: 'ak_sk',
+    // 仅 AWS: 强制使用 Global 跨区域推理（存入 settings.aws_force_global）
+    aws_force_global: false,
     // 企业账户设置
     is_enterprise_account: false,
     // 字段透传控制默认值
@@ -253,6 +256,10 @@ const EditChannelModal = (props) => {
   const [channelSearchValue, setChannelSearchValue] = useState('');
   const [useManualInput, setUseManualInput] = useState(false); // 是否使用手动输入模式
   const [keyMode, setKeyMode] = useState('append'); // 密钥模式：replace（覆盖）或 append（追加）
+  // 仅 AWS: 区域多选 / 测试结果 / 测试中状态（均为临时 UI 态，不持久化）
+  const [awsRegions, setAwsRegions] = useState([]);
+  const [awsRegionTestResult, setAwsRegionTestResult] = useState({});
+  const [awsRegionTesting, setAwsRegionTesting] = useState(false);
   const [isEnterpriseAccount, setIsEnterpriseAccount] = useState(false); // 是否为企业账户
   const [doubaoApiEditUnlocked, setDoubaoApiEditUnlocked] = useState(false); // 豆包渠道自定义 API 地址隐藏入口
   const redirectModelList = useMemo(() => {
@@ -905,8 +912,9 @@ const EditChannelModal = (props) => {
             parsedSettings.azure_responses_version || '';
           // 读取 Vertex 密钥格式
           data.vertex_key_type = parsedSettings.vertex_key_type || 'json';
-          // 读取 AWS 密钥格式和区域
+          // 读取 AWS 密钥格式和 Global 跨区域推理开关
           data.aws_key_type = parsedSettings.aws_key_type || 'ak_sk';
+          data.aws_force_global = parsedSettings.aws_force_global || false;
           // 读取企业账户设置
           data.is_enterprise_account =
             parsedSettings.openrouter_enterprise === true;
@@ -943,6 +951,7 @@ const EditChannelModal = (props) => {
           data.region = '';
           data.vertex_key_type = 'json';
           data.aws_key_type = 'ak_sk';
+          data.aws_force_global = false;
           data.is_enterprise_account = false;
           data.allow_service_tier = false;
           data.disable_store = false;
@@ -961,6 +970,7 @@ const EditChannelModal = (props) => {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
         data.vertex_key_type = 'json';
         data.aws_key_type = 'ak_sk';
+        data.aws_force_global = false;
         data.is_enterprise_account = false;
         data.allow_service_tier = false;
         data.disable_store = false;
@@ -1797,9 +1807,10 @@ const EditChannelModal = (props) => {
         localInputs.is_enterprise_account === true;
     }
 
-    // type === 33 (AWS): 保存 aws_key_type 到 settings
+    // type === 33 (AWS): 保存 aws_key_type 与 aws_force_global 到 settings
     if (localInputs.type === 33) {
       settings.aws_key_type = localInputs.aws_key_type || 'ak_sk';
+      settings.aws_force_global = localInputs.aws_force_global === true;
     }
 
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
@@ -1862,8 +1873,9 @@ const EditChannelModal = (props) => {
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
-    // 顶层的 aws_key_type 不应发送给后端
+    // 顶层的 aws_key_type / aws_force_global 不应发送给后端（已并入 settings）
     delete localInputs.aws_key_type;
+    delete localInputs.aws_force_global;
     // 清理字段透传控制的临时字段
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
@@ -1985,6 +1997,120 @@ const EditChannelModal = (props) => {
     } else {
       showSuccess(message);
     }
+  };
+
+  // 从密钥框第一非空行解析出凭证主体（忽略行内已写的 region）
+  const parseAwsCredentialParts = () => {
+    const firstLine =
+      (formApiRef.current?.getValue('key') || inputs.key || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)[0] || '';
+    return firstLine.split('|');
+  };
+
+  // 从已选模型里挑一个用于测试：仅 Claude（探测用 Anthropic 格式），便宜优先 haiku>sonnet>opus
+  const pickAwsTestModel = (models) => {
+    const claudeModels = (models || []).filter((m) =>
+      String(m).toLowerCase().includes('claude'),
+    );
+    if (claudeModels.length === 0) return 'claude-haiku-4-5-20251001';
+    const tier = (m) => {
+      const s = String(m).toLowerCase();
+      if (s.includes('haiku')) return 0;
+      if (s.includes('sonnet')) return 1;
+      if (s.includes('opus')) return 2;
+      return 3;
+    };
+    return [...claudeModels].sort(
+      (a, b) => tier(a) - tier(b) || String(a).localeCompare(String(b)),
+    )[0];
+  };
+
+  // 测试可用区域：对全量 AWS_BEDROCK_REGIONS 并发探测，回填结果并默认选中可用项
+  const handleTestAwsRegions = async () => {
+    const keyType = inputs.aws_key_type || 'ak_sk';
+    const parts = parseAwsCredentialParts();
+    const payload = {
+      aws_key_type: keyType,
+      regions: AWS_BEDROCK_REGIONS.map((r) => r.region),
+      model: pickAwsTestModel(inputs.models),
+    };
+    if (keyType === 'api_key') {
+      if (!parts[0]) {
+        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+        return;
+      }
+      payload.api_key = parts[0];
+    } else {
+      if (!parts[0] || !parts[1]) {
+        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+        return;
+      }
+      payload.access_key = parts[0];
+      payload.secret_key = parts[1];
+    }
+
+    setAwsRegionTesting(true);
+    try {
+      const res = await API.post('/api/channel/aws/test_regions', payload);
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message || t('测试失败'));
+        return;
+      }
+      const resultMap = {};
+      (data || []).forEach((item) => {
+        resultMap[item.region] = item;
+      });
+      setAwsRegionTestResult(resultMap);
+      const available = (data || [])
+        .filter((item) => item.ok)
+        .map((item) => item.region);
+      setAwsRegions(available);
+      showSuccess(
+        t('测试完成：{{count}} 个区域可用', { count: available.length }),
+      );
+    } catch (e) {
+      showError(t('测试失败'));
+    } finally {
+      setAwsRegionTesting(false);
+    }
+  };
+
+  // 生成密钥并写回密钥框：当前凭证主体 × 已选区域，去重后写入 key 字段
+  const handleGenerateAwsKeys = () => {
+    const keyType = inputs.aws_key_type || 'ak_sk';
+    if (!awsRegions || awsRegions.length === 0) {
+      showInfo(t('请先选择至少一个区域'));
+      return;
+    }
+    const parts = parseAwsCredentialParts();
+    let prefix;
+    if (keyType === 'api_key') {
+      if (!parts[0]) {
+        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+        return;
+      }
+      prefix = parts[0];
+    } else {
+      if (!parts[0] || !parts[1]) {
+        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+        return;
+      }
+      prefix = `${parts[0]}|${parts[1]}`;
+    }
+    const lines = awsRegions.map((region) => `${prefix}|${region}`);
+    const text = Array.from(new Set(lines)).join('\n');
+    if (formApiRef.current) {
+      formApiRef.current.setValue('key', text);
+    }
+    handleInputChange('key', text);
+    showSuccess(
+      t('已写回 {{count}} 行密钥，建议勾选「批量创建」+「密钥聚合模式」', {
+        count: awsRegions.length,
+      }),
+    );
   };
 
   const addCustomModels = () => {
@@ -2759,6 +2885,67 @@ const EditChannelModal = (props) => {
                             'AK/SK 模式：使用 AccessKey 和 SecretAccessKey；API Key 模式：使用 API Key',
                           )}
                         />
+                        <Form.Switch
+                          field='aws_force_global'
+                          label={t('强制使用 Global 跨区域推理')}
+                          checkedText={t('开')}
+                          uncheckedText={t('关')}
+                          value={inputs.aws_force_global || false}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'aws_force_global',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            '启用后模型 ID 使用 global. 前缀，请求可路由到全球任意支持区域。需该模型已开通 Global 跨区域推理。',
+                          )}
+                        />
+                        <Select
+                          multiple
+                          filter
+                          style={{ width: '100%', marginTop: 8 }}
+                          placeholder={t('选择要测试 / 写回的区域')}
+                          value={awsRegions}
+                          onChange={setAwsRegions}
+                          optionList={AWS_BEDROCK_REGIONS.map((r) => {
+                            const res = awsRegionTestResult[r.region];
+                            let suffix = '';
+                            if (res) {
+                              suffix = res.ok
+                                ? ` ✓ ${res.latency_ms}ms`
+                                : ` ✗ ${res.message || res.status_code}`;
+                            }
+                            return {
+                              value: r.region,
+                              label: `${r.label}${suffix}`,
+                            };
+                          })}
+                        />
+                        <div
+                          className='flex items-center gap-2 flex-wrap'
+                          style={{ marginTop: 8 }}
+                        >
+                          <Button
+                            theme='light'
+                            loading={awsRegionTesting}
+                            onClick={handleTestAwsRegions}
+                          >
+                            {t('测试可用区域')}
+                          </Button>
+                          <Button
+                            theme='light'
+                            type='secondary'
+                            onClick={handleGenerateAwsKeys}
+                          >
+                            {t('生成密钥（写回密钥框）')}
+                          </Button>
+                          <Text type='tertiary' size='small'>
+                            {t(
+                              '填一对凭证 → 测试 → 勾选可用区域 → 写回，再勾选「批量创建」+「密钥聚合模式」提交',
+                            )}
+                          </Text>
+                        </div>
                       </>
                     )}
 

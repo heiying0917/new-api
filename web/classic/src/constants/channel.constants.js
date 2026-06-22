@@ -197,3 +197,30 @@ export const MODEL_FETCHABLE_CHANNEL_TYPES = new Set([
 ]);
 
 export const MODEL_TABLE_PAGE_SIZE = 10;
+
+// AWS Bedrock 区域列表（单点维护）。geo 对应后端 us/eu/ap 跨区前缀识别范围。
+// 列表偏「广覆盖」，个别区域可能没有 Claude；测试不可用的默认不选中，用户可手动剔除。
+export const AWS_BEDROCK_REGIONS = [
+  // US
+  { region: 'us-east-1', label: 'us-east-1 (N. Virginia)', geo: 'us' },
+  { region: 'us-east-2', label: 'us-east-2 (Ohio)', geo: 'us' },
+  { region: 'us-west-1', label: 'us-west-1 (N. California)', geo: 'us' },
+  { region: 'us-west-2', label: 'us-west-2 (Oregon)', geo: 'us' },
+  // EU
+  { region: 'eu-west-1', label: 'eu-west-1 (Ireland)', geo: 'eu' },
+  { region: 'eu-west-2', label: 'eu-west-2 (London)', geo: 'eu' },
+  { region: 'eu-west-3', label: 'eu-west-3 (Paris)', geo: 'eu' },
+  { region: 'eu-central-1', label: 'eu-central-1 (Frankfurt)', geo: 'eu' },
+  { region: 'eu-central-2', label: 'eu-central-2 (Zurich)', geo: 'eu' },
+  { region: 'eu-north-1', label: 'eu-north-1 (Stockholm)', geo: 'eu' },
+  { region: 'eu-south-1', label: 'eu-south-1 (Milan)', geo: 'eu' },
+  { region: 'eu-south-2', label: 'eu-south-2 (Spain)', geo: 'eu' },
+  // APAC
+  { region: 'ap-northeast-1', label: 'ap-northeast-1 (Tokyo)', geo: 'ap' },
+  { region: 'ap-northeast-2', label: 'ap-northeast-2 (Seoul)', geo: 'ap' },
+  { region: 'ap-northeast-3', label: 'ap-northeast-3 (Osaka)', geo: 'ap' },
+  { region: 'ap-south-1', label: 'ap-south-1 (Mumbai)', geo: 'ap' },
+  { region: 'ap-south-2', label: 'ap-south-2 (Hyderabad)', geo: 'ap' },
+  { region: 'ap-southeast-1', label: 'ap-southeast-1 (Singapore)', geo: 'ap' },
+  { region: 'ap-southeast-2', label: 'ap-southeast-2 (Sydney)', geo: 'ap' },
+];
