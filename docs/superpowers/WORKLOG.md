@@ -551,4 +551,5 @@
 - **后端**(`model/channel.go`)：`channelSortColumns` 白名单加 `cost_price`；`Apply()` 特判 `ORDER BY COALESCE(cost_price,0) ASC|DESC`——NULL/未设按 0、三库一致(Rule 2)，方向受控常量无注入。
 - **后端测试**(新增 `model/channel_cost_sort_test.go`，TDD 先红后绿)：cost_price 被接受/非法字段拦截、升降序正确、NULL 与 0 落最便宜端。`model` 全包 100 passed，`go build ./...` ✅。
 - **前端**(`web/classic` 3 文件)：`useChannelsData` 加 `sortBy/sortOrder`+`handleSortChange`，`sort_by/sort_order` 拼进列表/搜索请求(**标签聚合模式不下发**)，翻页/刷新/筛选保留排序；`ChannelsColumnDefs` 成本价列 `sorter:true`；`ChannelsTable` 接 `onChange`(升↔降、三击清除回落默认、仅响应 sorter 事件)。classic `bun run build` ✅。
-- **提交状态**：仅 5 个功能文件 commit `254f142c`（**未 push、未部署**）。上一轮 v2026.06.18.2 的 WORKLOG/部署报告未提交项保持原状，等用户单独指令。当前线上仍是旧前端包，需重新构建部署后方能在浏览器验收。
+- **发版**：`254f142c` 经 `/tke-release` 上线 → tag **v2026.06.21.1**、push main(merge 拉入 origin `a4d66cec` .claude/settings.json,无冲突)、Actions run 27908439741 `completed/success`、master+slave 滚动部署成功、健康 200 success:true。
+- **冒烟/监控**：status✅;本功能 SQL 在**生产 PostgreSQL** 验证 `COALESCE(cost_price,0)` 升/降序正确(升 11(0)→13(4.5)、降反之,0/NULL 落便宜端)——补上 SQLite 单测覆盖不到的跨库一致(Rule 2)。relay 真实补全受 smoke token(user2)组 `default` 无渠道限制 → model_not_found(非回归,与上版一致,用户已确认);派发基础设施经 "channels synced" + distributor 正常返回验证健康。P6 真实用户 5xx=0(仅自测 4×503 user2)。报告 `docs/deploy/report/2026-06-21-tokenki-prod-v2026.06.21.1.md`。前端已嵌入镜像(Dockerfile builder-classic),admin 渠道页可浏览器验收。
