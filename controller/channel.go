@@ -964,6 +964,7 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
+	Mode         string  `json:"mode"`           // 编辑时为 "multi_to_single" 则把单 key 渠道转为多 key（如 AWS 批量生成可用区域密钥）
 	MultiKeyMode *string `json:"multi_key_mode"`
 	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
 }
@@ -1000,6 +1001,20 @@ func UpdateChannel(c *gin.Context) {
 	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
 	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
 		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
+	}
+
+	// 编辑时把单 key 渠道转为多 key（multi_to_single）：用于 AWS「批量生成可用区域密钥」，
+	// 把密钥框里的多行 key 作为聚合密钥保存。仅在显式传入该模式时生效，不影响常规编辑。
+	if channel.Mode == "multi_to_single" {
+		channel.ChannelInfo.IsMultiKey = true
+		cleanKeys := make([]string, 0)
+		for _, k := range strings.Split(channel.Key, "\n") {
+			if k = strings.TrimSpace(k); k != "" {
+				cleanKeys = append(cleanKeys, k)
+			}
+		}
+		channel.Key = strings.Join(cleanKeys, "\n")
+		channel.ChannelInfo.MultiKeySize = len(cleanKeys)
 	}
 
 	// 处理多key模式下的密钥追加/覆盖逻辑

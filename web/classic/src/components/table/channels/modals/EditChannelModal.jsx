@@ -174,7 +174,7 @@ const EditChannelModal = (props) => {
   };
   const originInputs = {
     name: '',
-    type: 1,
+    type: 33,
     key: '',
     openai_organization: '',
     max_input_tokens: 0,
@@ -1439,6 +1439,10 @@ const EditChannelModal = (props) => {
     resetKeyDisplayState();
     // 重置剪贴板检测状态
     setClipboardConfig(null);
+    // 重置 AWS 区域测试状态，避免下次打开创建窗口残留上次的测试结果与勾选
+    setAwsRegions([]);
+    setAwsRegionTestResult({});
+    setAwsRegionTesting(false);
   };
 
   const handleVertexUploadChange = ({ fileList }) => {
@@ -1922,11 +1926,18 @@ const EditChannelModal = (props) => {
         res = await API.post('/api/supplier/channel/', supplierPayload);
       }
     } else if (isEdit) {
-      res = await API.put(`/api/channel/`, {
+      // 编辑时把当前单 key 渠道转为多 key：仅当原渠道非多 key 且已开启批量+聚合（如 AWS 批量生成可用区域密钥）
+      const convertToMultiKey = !isMultiKeyChannel && batch && multiToSingle;
+      const editPayload = {
         ...localInputs,
         id: parseInt(channelId),
         key_mode: isMultiKeyChannel ? keyMode : undefined, // 只在多key模式下传递
-      });
+      };
+      if (convertToMultiKey) {
+        editPayload.mode = 'multi_to_single';
+        editPayload.multi_key_mode = multiKeyMode;
+      }
+      res = await API.put(`/api/channel/`, editPayload);
     } else {
       res = await API.post(`/api/channel/`, {
         mode: mode,
@@ -2053,7 +2064,12 @@ const EditChannelModal = (props) => {
 
     setAwsRegionTesting(true);
     try {
-      const res = await API.post('/api/channel/aws/test_regions', payload);
+      const res = await API.post(
+        isSupplierMode
+          ? '/api/supplier/channel/aws/test_regions'
+          : '/api/channel/aws/test_regions',
+        payload,
+      );
       const { success, message, data } = res.data;
       if (!success) {
         showError(message || t('测试失败'));
@@ -2106,8 +2122,12 @@ const EditChannelModal = (props) => {
       formApiRef.current.setValue('key', text);
     }
     handleInputChange('key', text);
+    // 自动开启「批量创建」+「密钥聚合模式」；编辑模式下据此把单 key 渠道转为多 key（见 submit）
+    setBatch(true);
+    setMultiToSingle(true);
+    setInputs((prev) => ({ ...prev, multi_key_mode: multiKeyMode }));
     showSuccess(
-      t('已写回 {{count}} 行密钥，建议勾选「批量创建」+「密钥聚合模式」', {
+      t('已写回 {{count}} 行密钥，已自动开启「批量创建」+「密钥聚合模式」', {
         count: awsRegions.length,
       }),
     );
@@ -2149,7 +2169,7 @@ const EditChannelModal = (props) => {
     }
   };
 
-  const batchAllowed = (!isEdit || isMultiKeyChannel) && inputs.type !== 57;
+  const batchAllowed = (!isEdit || isMultiKeyChannel || inputs.type === 33) && inputs.type !== 57;
   const batchExtra = batchAllowed ? (
     <Space>
       {!isEdit && (
@@ -2885,67 +2905,6 @@ const EditChannelModal = (props) => {
                             'AK/SK 模式：使用 AccessKey 和 SecretAccessKey；API Key 模式：使用 API Key',
                           )}
                         />
-                        <Form.Switch
-                          field='aws_force_global'
-                          label={t('强制使用 Global 跨区域推理')}
-                          checkedText={t('开')}
-                          uncheckedText={t('关')}
-                          value={inputs.aws_force_global || false}
-                          onChange={(value) =>
-                            handleChannelOtherSettingsChange(
-                              'aws_force_global',
-                              value,
-                            )
-                          }
-                          extraText={t(
-                            '启用后模型 ID 使用 global. 前缀，请求可路由到全球任意支持区域。需该模型已开通 Global 跨区域推理。',
-                          )}
-                        />
-                        <Select
-                          multiple
-                          filter
-                          style={{ width: '100%', marginTop: 8 }}
-                          placeholder={t('选择要测试 / 写回的区域')}
-                          value={awsRegions}
-                          onChange={setAwsRegions}
-                          optionList={AWS_BEDROCK_REGIONS.map((r) => {
-                            const res = awsRegionTestResult[r.region];
-                            let suffix = '';
-                            if (res) {
-                              suffix = res.ok
-                                ? ` ✓ ${res.latency_ms}ms`
-                                : ` ✗ ${res.message || res.status_code}`;
-                            }
-                            return {
-                              value: r.region,
-                              label: `${r.label}${suffix}`,
-                            };
-                          })}
-                        />
-                        <div
-                          className='flex items-center gap-2 flex-wrap'
-                          style={{ marginTop: 8 }}
-                        >
-                          <Button
-                            theme='light'
-                            loading={awsRegionTesting}
-                            onClick={handleTestAwsRegions}
-                          >
-                            {t('测试可用区域')}
-                          </Button>
-                          <Button
-                            theme='light'
-                            type='secondary'
-                            onClick={handleGenerateAwsKeys}
-                          >
-                            {t('生成密钥（写回密钥框）')}
-                          </Button>
-                          <Text type='tertiary' size='small'>
-                            {t(
-                              '填一对凭证 → 测试 → 勾选可用区域 → 写回，再勾选「批量创建」+「密钥聚合模式」提交',
-                            )}
-                          </Text>
-                        </div>
                       </>
                     )}
 
@@ -3363,6 +3322,72 @@ const EditChannelModal = (props) => {
                       </>
                     )}
 
+                    {inputs.type === 33 && (
+                      <>
+                        <Select
+                          multiple
+                          filter
+                          style={{ width: '100%', marginTop: 8 }}
+                          placeholder={t('选择要测试 / 写回的区域')}
+                          value={awsRegions}
+                          onChange={setAwsRegions}
+                          optionList={AWS_BEDROCK_REGIONS.map((r) => {
+                            const res = awsRegionTestResult[r.region];
+                            let suffix = '';
+                            if (res) {
+                              suffix = res.ok
+                                ? ` ✓ ${res.latency_ms}ms`
+                                : ` ✗ ${res.message || res.status_code}`;
+                            }
+                            return {
+                              value: r.region,
+                              label: `${r.label}${suffix}`,
+                            };
+                          })}
+                        />
+                        <div
+                          className='flex items-center gap-2 flex-wrap'
+                          style={{ marginTop: 8 }}
+                        >
+                          <Button
+                            theme='light'
+                            loading={awsRegionTesting}
+                            onClick={handleTestAwsRegions}
+                          >
+                            {t('测试可用区域')}
+                          </Button>
+                          <Button
+                            theme='light'
+                            type='secondary'
+                            onClick={handleGenerateAwsKeys}
+                          >
+                            {t('批量生成可用区域密钥')}
+                          </Button>
+                          <Text type='tertiary' size='small'>
+                            {t(
+                              '填一对凭证 → 测试 → 勾选可用区域 → 批量生成，自动开启「批量创建」+「密钥聚合模式」后提交',
+                            )}
+                          </Text>
+                        </div>
+                        <Form.Switch
+                          field='aws_force_global'
+                          label={t('强制使用 Global 跨区域推理')}
+                          checkedText={t('开')}
+                          uncheckedText={t('关')}
+                          value={inputs.aws_force_global || false}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'aws_force_global',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            '启用后模型 ID 使用 global. 前缀，请求可路由到全球任意支持区域。需该模型已开通 Global 跨区域推理。',
+                          )}
+                        />
+                      </>
+                    )}
+
                     {isEdit && isMultiKeyChannel && (
                       <Form.Select
                         field='key_mode'
@@ -3773,6 +3798,13 @@ const EditChannelModal = (props) => {
                               {t('获取模型列表')}
                             </Button>
                           )}
+                          <Button
+                            size='small'
+                            type='danger'
+                            onClick={() => handleInputChange('models', [])}
+                          >
+                            {t('清除所有模型')}
+                          </Button>
                           <Dropdown
                             trigger='click'
                             position='bottomRight'
@@ -3784,7 +3816,6 @@ const EditChannelModal = (props) => {
                                 if (inputs.models.length === 0) { showInfo(t('没有模型可以复制')); return; }
                                 try { copy(inputs.models.join(',')); showSuccess(t('模型列表已复制到剪贴板')); } catch (error) { showError(t('复制失败')); }
                               }},
-                              { node: 'item', name: t('清除所有模型'), type: 'danger', onClick: () => handleInputChange('models', []) },
                               ...((modelGroups && modelGroups.length > 0) ? [
                                 { node: 'divider' },
                                 ...modelGroups.map((group) => ({

@@ -175,6 +175,8 @@ func SetApiRouter(router *gin.Engine) {
 			supplierSelfRoute.DELETE("/:id", controller.SupplierDeleteChannel)
 			// 行操作:与管理员对等,均限定本人渠道(handler 内归属校验)。
 			supplierSelfRoute.GET("/test/:id", controller.SupplierTestChannel)
+			// AWS 多区域可用性测试:仅凭请求体中的凭证探测,不涉及具体渠道,与管理员共用 handler。
+			supplierSelfRoute.POST("/aws/test_regions", controller.TestAwsRegions)
 			supplierSelfRoute.GET("/update_balance/:id", controller.SupplierUpdateChannelBalance)
 			supplierSelfRoute.POST("/copy/:id", controller.SupplierCopyChannel)
 			supplierSelfRoute.POST("/multi_key/manage", controller.SupplierManageMultiKeys)

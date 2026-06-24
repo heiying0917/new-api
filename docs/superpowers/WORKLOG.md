@@ -563,3 +563,35 @@
 - **本地端到端验证(隔离 dev 栈 + Playwright，不污染用户现网)**：用 `docker-compose.dev.yml` 起隔离后端(我的 Go 码，自带 tokenki-dev-pg/redis)+ classic `rsbuild preview` 真实产物，root 登录 → 新建 AWS Claude 渠道。**① UI 渲染**(截图确认)：密钥格式 / 强制使用 Global 跨区域推理开关 / 区域多选(19 区) / 测试可用区域 + 生成密钥(写回密钥框) 两按钮 + 提示文案全部正确。**② 后端接口**：路由注册且 AdminAuth(未授权 401 vs 不存在 404)；POST `/api/channel/aws/test_regions` 真实打 AWS Bedrock 3/19 区，假凭证 → `403 UnrecognizedClientException` 被 `ClassifyRegionProbe` 正确判为 ok=false，返回带真实 latency_ms、**响应不含 AK/SK**。**③ 全链路**：密钥框填假 AK\|SK → 点「测试可用区域」→ 前端 POST 全 19 区 → 19 个 option 标签全部回填 `区域(名) ✗ <403 错误>`(与 `${label} ✗ ${message}` 实现一致)、全部不可用故 0 自动勾选(符合预期)。验证后已 `down -v` 拆栈、删 dev 镜像、还原临时 rsbuild 代理改动、清理截图产物。**未驱动**(headless 下 Semi 多选/开关合成事件不稳，非产品 bug)：写回按钮产物、Global 开关切换、global. 实际抓包——均为简单/标准模式，逻辑由单测+代码评审覆盖。
 - **验收后两处打磨(用户要求)**：① ✗ 后缀贴合设计原意——后端新增 `AwsErrorCode`(smithy `APIError.ErrorCode()` 提取短码，非 AWS 错误回退完整串)，`summarizeAwsProbeError` 优先用之，下拉显示 `✗ AccessDeniedException` 而非冗长全文(加 `TestAwsErrorCode` 单测)。② 默认测试模型 `claude-3-5-haiku-20241022`(仅 us 跨区，eu/ap 易误判) → `claude-haiku-4-5-20251001`(us/eu/apac 三区跨区，前后端一致),默认情形探测更准。`go build`/aws 包 `go test`/`go vet`/modal eslint 全过。
 - **提交状态**：分支 `feat/aws-bedrock-multi-region`，本条所述改动经用户指令 `git commit`(未 push/未部署)。
+
+### [2026-06-23] AWS 渠道易用性 V15：类型置顶 / 区域测试顺序 / 批量生成 / 模型一键填 / 供应商权限（**未提交**）
+- **需求(用户 V15 五条)**：① 创建渠道类型列表把 AWS Claude 调首、Anthropic Claude 次、OpenAI 第三；② 密钥输入应在「测试可用区域」之前——两块上下互换(先填密钥再测试/写回)；③「生成密钥(写回密钥框)」改名「批量生成可用区域密钥」，点击后自动选中「批量创建」+「密钥聚合模式」；④ 模型框下方 AWS 也要「获取模型列表」按钮、「清除所有模型」移出「更多」、最简方式填入支持模型；⑤ 供应商角色上传 AWS Claude 点测试报「无权进行此操作，权限不足」。
+- **排查 ⑤ 根因**：`router/api-router.go` `/channel/*` 是 `AdminAuth`，供应商走 `/supplier/channel/*`(`SupplierAuth`)；`EditChannelModal` 其余请求都按 `isSupplierMode` 切路径，唯独 `handleTestAwsRegions` 硬编码 `/api/channel/aws/test_regions`(admin) → 供应商 403。
+- **改动**：
+  - **后端**(`router/api-router.go`)：`supplierSelfRoute`(SupplierAuth)注册 `POST /supplier/channel/aws/test_regions` → 复用 `controller.TestAwsRegions`(该 handler 纯凭请求体凭证探测、不碰具体渠道/DB，admin/供应商共用安全)。
+  - **前端(仅 web/classic，未碰 web/default)**：① `constants/channel.constants.js` CHANNEL_OPTIONS 重排(AWS 33/Anthropic 14/OpenAI 1 置顶，默认 type 仍 1 不变)、`MODEL_FETCHABLE_CHANNEL_TYPES` 加 33(获取模型列表 → 后端 `fetchModelIDsForDisplay` 在线探测失败回退 adaptor 静态 `GetModelList()`，AWS 直接拿全量支持模型)；② `EditChannelModal.jsx`：区域多选 Select + 两按钮整块从密钥框上方移到下方(密钥格式/Global 开关仍在密钥上方)、`handleTestAwsRegions` 按 isSupplierMode 切供应商/admin 路径、`handleGenerateAwsKeys` 写回后(仅新建)自动 `setBatch(true)+setMultiToSingle(true)+multi_key_mode`、按钮改名、「清除所有模型」改为独立 danger 按钮(从「更多」菜单移除)；③ i18n en/zh-CN 各更新 3 条 key(按钮名/提示/成功文案)。
+- **验证**：`go build ./...`✅、aws 包 `go test` 9/9✅、classic `bun run build` exit 0✅、en/zh-CN JSON 合法✅；供应商链路核对 `channels/index.jsx:58` 确传 `apiMode='supplier'` → isSupplierMode → 走供应商路由，端到端闭合。
+- **副作用(已知)**：33 入 `MODEL_FETCHABLE_CHANNEL_TYPES` 后，AWS 渠道「高级设置」也会出现「上游模型管理」区(默认关、仅用户手动启用、无自动行为)——属合理附带能力。
+- **提交状态**：**未 commit / 未 push / 未部署**(等用户指令)。生效需重新发版(后端新增路由)。
+
+### [2026-06-24] AWS 渠道 V16：默认类型 / 弹窗状态清理 / Global 开关位置（前端，**未提交**）
+- **需求(用户 V16 三条)**：① 新建渠道默认类型改为 AWS Claude(原 OpenAI)；② 创建 AWS 渠道时，上次测试/勾选的可用区域在关闭弹窗后重开仍残留(刷新才清)，应关闭即清；③「强制使用 Global 跨区域推理」移到「测试可用区域」下方、「API地址」上方。
+- **改动(仅 `EditChannelModal.jsx`，未碰 web/default)**：
+  - ① `originInputs.type` 1 → 33(配合 V15 的 CHANNEL_OPTIONS 置顶，弹窗默认选中 AWS Claude，AWS 专属 UI 直接渲染)；
+  - ② 根因:`awsRegions/awsRegionTestResult/awsRegionTesting` 是独立 useState，不在 `inputs` 里，关闭弹窗的统一重置 `resetModalState()` 没清它们(刷新才靠 useState 初值清)→ 在 `resetModalState()` 末尾补 `setAwsRegions([])/setAwsRegionTestResult({})/setAwsRegionTesting(false)`；
+  - ③ 把「强制 Global」`Form.Switch` 从「密钥格式之后」移到「区域测试块」末尾(测试/批量生成按钮+提示之下)，渲染顺序变为 密钥格式 → 密钥 → 区域测试 → Global → API地址。
+- **本地部署**：纯前端改动 → `bun run build`(exit 0)→ 交叉编译 `linux/arm64` 二进制(嵌入新 dist)→ `docker cp` 进 `new-api` 容器 `/tokenki` + 重启 → :5001 健康。
+- **浏览器自测(Playwright 驱动 :5001，tkadmin 管理员)**：① 弹窗默认类型 = AWS Claude✅；② 多选 us-east-1+us-west-2 → 取消关闭 → 重开，区域选择回到占位符空状态(`regionCleared:true`)✅；③ DOM 纵坐标 测试可用区域(669) < Global(731) < API地址(852)，位置正确✅。
+- **自测登录处理**：本地 admin 会话过期且无密码 → **可逆**重置 tkadmin 密码(先备份原始 bcrypt hash 到 /tmp → 临时改 → 登录拿 session → **立即还原并校验一致**)，未改动用户任何数据。
+- **提交状态**：**未 commit / 未 push / 未部署到生产**。V15+V16 均已在本地 :5001 运行;生产仍是旧版,需 `/tke-release` 才生效。
+
+### [2026-06-24] AWS 渠道 V17：编辑渠道支持批量生成可用区域密钥（前端+后端，**未提交**）
+- **需求(用户 V17 一条)**：编辑 AWS Claude 渠道时点「批量生成可用区域密钥」会出错——编辑态也要支持批量创建(多 key)。
+- **根因**：V15 把自动开「批量创建/聚合」限定为仅新建(`if (!isEdit)`)；且后端 `UpdateChannel` 始终保留原 `IsMultiKey`(`channel.ChannelInfo = originChannel.ChannelInfo`)、`key_mode` 只在已是多 key 时生效——**没有「单 key 渠道编辑时转多 key」的路径**。于是编辑单 key AWS 渠道写入多行 `AK|SK|region` → 被当成一个整 key 存 → relay 按 `|` 切分错乱报错。
+- **改动**：
+  - **后端**(`controller/channel.go`)：`PatchChannel` 加 `Mode string json:"mode"`；`UpdateChannel` 在 MultiKeyMode 处理后、key_mode 处理前，新增 `if channel.Mode == "multi_to_single"` 分支——置 `IsMultiKey=true`、按 `\n` 清洗多行 key、设 `MultiKeySize`(`channel.Update()` 还会再校准一次)。**严格门控**：仅当显式传 `mode=multi_to_single` 才走，常规编辑/已是多 key 的编辑(走 key_mode)完全不受影响。
+  - **前端**(`EditChannelModal.jsx`)：① `handleGenerateAwsKeys` 去掉 `if (!isEdit)`，编辑态也自动开 `setBatch(true)+setMultiToSingle(true)`；② `batchAllowed` 加 `|| inputs.type === 33`(AWS 编辑态也渲染聚合 UI)；③ submit 编辑分支:`convertToMultiKey = !isMultiKeyChannel && batch && multiToSingle` 为真时,PUT 带 `mode:'multi_to_single' + multi_key_mode`(与已是多 key 的 `key_mode` 互斥)。
+- **本地部署**：`go build`✅ + classic `bun run build` exit 0 → 交叉编译 linux/arm64 二进制嵌入 dist → `docker cp` 进 `new-api` 重启 → :5001 健康。
+- **自测(两层，均通过)**：① **后端 API 直测**:建单 key AWS 渠道(`is_multi_key:false`)→ PUT `mode=multi_to_single`+3 行 key → 变 `is_multi_key:true / multi_key_size:3`,测试渠道随后删除✅；② **浏览器全链路 E2E**(Playwright,tkadmin):编辑单 key AWS 渠道 → 填 `AK|SK` → 多选 us-east-1+us-west-2 → 点「批量生成可用区域密钥」→ 密钥框由单行 input 变多行 textarea(2 行,证明 batch 已开)→ 提交 → DB 校验渠道转为 `is_multi_key:true / size:2 / 两条 region key`✅。测试渠道已删,用户原有 21/22/23/24 渠道未受影响。
+- **回归**：`go test ./controller/... ./model/...` 仅 known-stale `TestListModelsTokenLimitIncludesTieredBillingModel` 失败(白名单,无 Redis mock,非本次引入);后端改动严格门控,常规/多 key 编辑不受影响。
+- **提交状态**：**未 commit / 未 push / 未部署到生产**。V15+V16+V17 均已在本地 :5001 运行;生效需 `/tke-release`(V15 供应商路由 + V17 后端 UpdateChannel 均为后端改动)。
