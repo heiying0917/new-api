@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,6 +34,32 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// maxTimeoutSeconds is the largest number of seconds that still converts to a
+// time.Duration without overflowing (~292 years).
+const maxTimeoutSeconds = int(math.MaxInt64 / int64(time.Second))
+
+// applyResponseHeaderTimeout bounds the wait for upstream response headers.
+// Without it, an upstream that accepts the connection but never responds (and
+// never sends FIN/RST) parks the goroutine forever, and every buffer that
+// request owns stays reachable for the lifetime of the process (OOM, upstream #6949).
+//
+// This only covers the wait for the headers; streaming after the headers arrive
+// is not affected. Set RELAY_RESPONSE_HEADER_TIMEOUT=0 to restore the old
+// unbounded behaviour.
+func applyResponseHeaderTimeout(transport *http.Transport) {
+	seconds := common.RelayResponseHeaderTimeout
+	if seconds <= 0 {
+		return
+	}
+	// Clamp before converting: seconds beyond maxTimeoutSeconds overflow
+	// time.Duration and can wrap into a tiny positive timeout, which would cut
+	// every relay request instead of only the stuck ones.
+	if seconds > maxTimeoutSeconds {
+		seconds = maxTimeoutSeconds
+	}
+	transport.ResponseHeaderTimeout = time.Duration(seconds) * time.Second
+}
+
 func InitHttpClient() {
 	transport := &http.Transport{
 		MaxIdleConns:        common.RelayMaxIdleConns,
@@ -44,6 +71,7 @@ func InitHttpClient() {
 	if common.TLSInsecureSkipVerify {
 		transport.TLSClientConfig = common.InsecureTLSConfig
 	}
+	applyResponseHeaderTimeout(transport)
 
 	if common.RelayTimeout == 0 {
 		httpClient = &http.Client{
@@ -116,6 +144,7 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 		if common.TLSInsecureSkipVerify {
 			transport.TLSClientConfig = common.InsecureTLSConfig
 		}
+		applyResponseHeaderTimeout(transport)
 		client := &http.Client{
 			Transport:     transport,
 			CheckRedirect: checkRedirect,
@@ -158,6 +187,7 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 		if common.TLSInsecureSkipVerify {
 			transport.TLSClientConfig = common.InsecureTLSConfig
 		}
+		applyResponseHeaderTimeout(transport)
 
 		client := &http.Client{Transport: transport, CheckRedirect: checkRedirect}
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
