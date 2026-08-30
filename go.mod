@@ -57,7 +57,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.4.3
 	gorm.io/driver/postgres v1.5.2
-	gorm.io/gorm v1.25.2
+	gorm.io/gorm v1.25.12
 )
 
 require github.com/waffo-com/waffo-pancake-sdk-go v0.3.1

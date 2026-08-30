@@ -129,11 +129,14 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 			} else {
 				common.LogSqlType = common.DatabaseTypePostgreSQL
 			}
+			// 同时关闭 pgx 隐式与 GORM 显式预处理语句:命名 prepared statement 与
+			// 事务池代理(PgBouncer/Neon/Supabase)不兼容,会触发 FATAL 08P01/42P05。
+			// (upstream 66031a09d)
 			return gorm.Open(postgres.New(postgres.Config{
 				DSN:                  dsn,
 				PreferSimpleProtocol: true, // disables implicit prepared statement usage
 			}), &gorm.Config{
-				PrepareStmt: true, // precompile SQL
+				PrepareStmt: false,
 				Logger:      NewJSONGormLogger(),
 			})
 		}
