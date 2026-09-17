@@ -630,3 +630,9 @@
 - **修复**：cherry-pick `6eb6f35ed`（main `8d0fb08f0`）；回归测试反向验证（修复前 2 个 FAIL，修复后 PASS）；真 PG 端到端：一次性 postgres:15 + 待发版二进制 → setup/login → 建渠道/改渠道/读回，修复前二进制复现 22P02、修复后全过。
 - **SOP 加固**：新增 `.agents/skills/tke-release/scripts/pg-write-smoke.sh` 并写入 `tke-release` Phase 1 Step 1.1b（必做）；allowed-tools 加 docker/bash；事故复盘 `docs/report/2026-09-17-pg-json-column-22p02.md`；.1 发版报告补回滚记录。挑提交纪律：cherry-pick 前查该提交触及文件的后续 fix。
 - **提交状态**：修复代码 + 脚本 + SOP + 文档随重发 v2026.09.17.2 一并 commit/push（用户指令"修复并重发"）。
+
+### [2026-09-17] 生产重发 v2026.09.17.2（22P02 修复，/tke-release 全流程 + 新增 PG 写路径冒烟）
+- **提交**：`8d0fb08f0` fix(model) json 列 Valuer 返回 string（上游 6eb6f35ed）+ `0a58ec146` chore(release) 冒烟脚本/SOP/复盘 → push main → tag v2026.09.17.2。
+- **6 Phase 全过**：P1 build/test 白名单内 + **Step 1.1b PG 写路径冒烟 PASS**（建/改/读渠道，22P02=0）→ P2 run 35187681188 completed/success → P3 master→slave 滚动，健康 200，日志 0 panic/0 error/0 22P02 → P4 基线冒烟 5 条结构化响应 0 panic → P6 六轮：真实用户 5xx=0，22P02=0，channels 写入错误=0。
+- **结果**：✅ prod = v2026.09.17.2。发版报告 `docs/deploy/report/2026-09-17-tokenki-prod-v2026.09.17.2.md`。**生产端到端建渠道需用户在界面重试确认**（无管理员会话）。
+- **提交状态**：代码/脚本/SOP/复盘已 commit+push，tag 已推，prod 已部署。**.2 发版报告 + 本条 WORKLOG 尚未 commit**（等用户指令）。
