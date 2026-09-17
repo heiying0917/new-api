@@ -436,3 +436,21 @@ func TestRequestOpenAI2ClaudeMessage_ConvertsTextFileContentToText(t *testing.T)
 	require.NotNil(t, content[0].Text)
 	require.Equal(t, "alpha\nbeta", *content[0].Text)
 }
+
+func TestRequestOpenAI2ClaudeMessage_NoToolsOmitsToolsField(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-sonnet-4-6",
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	// Ported from upstream 4442bb302: an empty `tools: []` must not be sent —
+	// Anthropic rejects it for some models and it changes tool_choice semantics.
+	require.Nil(t, claudeRequest.Tools)
+}
