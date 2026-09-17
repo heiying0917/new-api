@@ -18,6 +18,8 @@ allowed-tools:
   - Bash(tccli *)
   - Bash(go build *)
   - Bash(go test *)
+  - Bash(docker *)
+  - Bash(bash *)
   - Bash(cd *)
   - Bash(export *)
   - Bash(date *)
@@ -188,6 +190,18 @@ go test ./model/... ./service/... ./controller/... ./logger/... 2>&1 | grep -E "
 - **不确定如何解决的冲突**：任何**无法确信正确解法**的冲突，**立即停止，绝不自作主张**——把冲突的文件和冲突段落清楚列给用户，等用户确认解法后再继续。
 - 冲突全部解决、commit 完成后，才进入打 tag。**带未解决冲突或脏工作树绝不打 tag。**
 
+### Step 1.1b — PG 写路径冒烟（必做，2026-09-17 新增）
+
+> 2026-09-17 v2026.09.17.1 踩坑：单测跑 SQLite 全绿、本地 PG 只验了启动和 /api/status、生产冒烟 token 组无渠道——三层都碰不到"写 json 列"路径，上线后建渠道 `SQLSTATE 22P02`，22 分钟后回滚。**真 PostgreSQL + 真写入**是唯一能暴露此类问题的手段。
+
+```bash
+CGO_ENABLED=0 go build -o /tmp/tokenki-smoke .   && bash .agents/skills/tke-release/scripts/pg-write-smoke.sh /tmp/tokenki-smoke 5099
+```
+
+脚本自带一次性 `postgres:15` 容器（:55441），跑待发版二进制 → setup/login → 建渠道(INSERT json 列) → 改渠道(UPDATE json 列) → 读回(Scan) → 断言应用日志无 `22P02`/`panic`，结束自动清理。输出 `== ✅ PG write smoke PASS ==` 才能继续；`FAIL` → ❌ 停止发版，先修。
+
+**挑上游提交（cherry-pick）时的配套检查**：对每个要拿的提交 `<c>`，先看它触及文件之后是否还有 fix 跟进——`git log <c>..upstream/main --oneline -- $(git show --name-only --format= <c>)`，尤其同一天的 fix 大概率是它的补丁（本次漏的 `6eb6f35ed` 就是 `66031a09d` 同日的配套）。
+
 ### Step 1.2 — 确定 tag
 
 ```bash
@@ -262,6 +276,10 @@ amd64-only 后平均约 5 分钟（multi-arch 是 25 分钟）。
 **关键 SOP**：watch + 二次校验**必须都成功**才进 Phase 3。watch exit 0 单独不能证明 build 完成——
 2026-06-16 v2026.06.16.3 发版踩过坑：watch 因 502 假退出，我提前进了 P3，幸运的是镜像那时已 push
 完成，pod 拉得到；如果 build 早期失败，pod 会 ImagePullBackOff 服务挂掉。
+
+**2026-09-17 v2026.09.17.1 踩坑**：所有 Phase 全绿上线，22 分钟后用户建渠道 `22P02` 回滚——
+Phase 1-4 全部没有触达 "PG 写 json 列" 路径。已加 Step 1.1b 真 PG 写路径冒烟为必做项，
+以及 cherry-pick 配套 fix 检查。详见 `docs/report/2026-09-17-pg-json-column-22p02.md`。
 
 **完成后**输出进度面板（P1 ✅，P2 ✅，P3 🔄，其余 ⬜）。
 

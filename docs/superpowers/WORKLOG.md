@@ -615,3 +615,18 @@
 - **明确不拿 / 回退的**：① `9a8674425`(重启不重复 DDL)——cherry-pick 后用 DEBUG=true 真库实测两次启动仍各 48 条 `ALTER COLUMN`，与 main 二进制对照**完全相同**(预先存在，非本次引入)，该 dialector 在 gorm 1.25.2 上无效，已从分支摘除，待 gorm/pg 驱动升级时再做；② gorm 1.25.2→1.25.12 升级(66031a09d 顺带)——新版 `Scan` 会先清零目标结构体，导致 `TestSumSupplierStat` 失败(`model/log.go SumSupplierStat` 先赋 Quota 再 Scan rpm/tpm)，model/ 下 27 处 Scan 同模式，故**保持 1.25.2**(单独提交说明)；③ glebarez/sqlite 1.9→1.11 不升(生产 PG，代理不可用)；④ `057f71c23` 日志特权元数据隔离(25 文件重构，本地 formatUserLogs 已剥离 admin_info)延后；⑤ web/default 冲突一律保留本地(不碰)；AGENTS.md 合入了上游"Billing safety invariants"规则段(与本次引入的 quota_math 配套)，其余上游规则段丢弃。
 - **验证**：`go build ./...`/`go vet` 无新告警；全量 `go test ./...` 失败集合与基线**逐条相同**(controller `TestListModelsTokenLimitIncludesTieredBillingModel` + claude 3×`TestRequestOpenAI2ClaudeMessage_*File*`，均为预先存在白名单/已知)；新增用例(quota_math、saturation、user_update、getbody×2、outbound_body、aws relay×6、claude tools/Claude5×4、reasoning×2、latest_models、price_data、http_client)全过。**PG 真库**：交叉编译 linux/arm64 二进制，用 `new-api:juhe-local` 镜像起并行容器(:5002，同 compose 网络、同 DSN/Redis) → 两次启动 `/api/status` 200、0 panic/error、`/v1/chat/completions` 无 token 401 JSON 正常；DDL 48 条=main 基线。Go 代理 proxy.golang.org 期间不可达，gorm 1.25.12 曾经 `GOPROXY=direct` 拉取并与上游 go.sum 哈希逐字比对一致(最终未采用)。
 - **提交状态**：分支 `chore/upstream-sync-2026-09` 共 25 个本地提交(含 `-x` 上游哈希)，**未合入 main、未 push、未发版**。下一步需用户指令：合入 main / push / `/tke-release`。
+
+### [2026-09-17] 生产发版 v2026.09.17.1（上游必要修复同步 + 最新模型，/tke-release 全流程）
+- **提交**：用户指令"合入main，push 发布" → `chore/upstream-sync-2026-09` fast-forward 合入 main(26 提交)，另补 `429d231e1 docs(deploy)` 收旧 v2026.06.24.1 发版报告 → push main → tag v2026.09.17.1 → push tag。
+- **6 Phase 全过**：P1 预检(main / go build / 测试仅白名单内失败 / 弹窗确认 prod+tag+旧报告一并提交) → P2 Actions run 35184741435 watch exit 0 + JSON 二次校验 completed/success，GHCR manifest amd64 就位 → P3 master 1/1 → slave 2/2 滚动收敛，健康 success:true，日志 0 panic，迁移无 error → P4 冒烟 9 条(健康 200；relay 基线 + Claude 5 后缀 + 溢出参数 + 新模型均为 distributor `model_not_found` 503，冒烟 token default 组无渠道，与历次一致；0 panic) → P6 六轮累计窗口 5xx = 503×8 全为 user_id=2 冒烟，发版前同窗口 5xx=0，真实用户 5xx=0。
+- **中途排查**：P4 后本机一次 SSL_ERROR_SYSCALL + 一次超时 + tccli 一次 ClientNetworkError；立即多路复核(公网健康 3 连 200、`kubectl exec` 集群内直连 200、Pod 0 重启、第三方站点均 200)判定为本机出口抖动，未触发回滚。slave 8 条 error 级日志逐条核对 = 我的 8 次冒烟。Service 只选 role=slave，EndpointSlice 两 IP = 新 slave Pod。
+- **结果**：✅ prod = v2026.09.17.1(master+slave v2026.06.24.1→v2026.09.17.1)。发版报告 `docs/deploy/report/2026-09-17-tokenki-prod-v2026.09.17.1.md`。
+- **上线后注意**：新增 env `RELAY_RESPONSE_HEADER_TIMEOUT`(默认 1800s)；relay 不再跟随上游 3xx；PG PrepareStmt 关闭；冒烟未能触达 relay 校验/计费路径(组无渠道)，如需生产端到端验证需给冒烟 token 组配渠道。
+- **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**(等用户指令)。
+
+### [2026-09-17] 事故：v2026.09.17.1 渠道创建 SQLSTATE 22P02 → 回滚 → 修复
+- **现象**：用户（供应商）新建 Anthropic Claude 渠道报 `invalid input syntax for type json (22P02)`，CLS 8 条 `INSERT INTO "channels"` error。**按红线先回滚**（slave→master 到 v2026.06.24.1，13:40:26 健康 200，受影响 22.5 分钟，仅渠道新建/编辑，无脏数据）。
+- **根因**：拉入上游 `66031a09d`（PG PrepareStmt=false → pgx simple protocol，[]byte 参数按 bytea 编码）时漏拿同日配套 `6eb6f35ed`（ChannelInfo/Properties/TaskPrivateData/JSONValue 的 Valuer 改返回 string）。单测跑 SQLite、本地 PG 验证只做启动/状态、生产冒烟组无渠道——三层都碰不到 json 列写入。
+- **修复**：cherry-pick `6eb6f35ed`（main `8d0fb08f0`）；回归测试反向验证（修复前 2 个 FAIL，修复后 PASS）；真 PG 端到端：一次性 postgres:15 + 待发版二进制 → setup/login → 建渠道/改渠道/读回，修复前二进制复现 22P02、修复后全过。
+- **SOP 加固**：新增 `.agents/skills/tke-release/scripts/pg-write-smoke.sh` 并写入 `tke-release` Phase 1 Step 1.1b（必做）；allowed-tools 加 docker/bash；事故复盘 `docs/report/2026-09-17-pg-json-column-22p02.md`；.1 发版报告补回滚记录。挑提交纪律：cherry-pick 前查该提交触及文件的后续 fix。
+- **提交状态**：修复代码 + 脚本 + SOP + 文档随重发 v2026.09.17.2 一并 commit/push（用户指令"修复并重发"）。
