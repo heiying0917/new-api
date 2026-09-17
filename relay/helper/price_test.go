@@ -243,7 +243,7 @@ func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T)
 			require.Equal(t, tt.wantQuota, priceData.QuotaToPreConsume)
 			require.Equal(t, tt.wantUsePrice, priceData.UsePrice)
 			require.Equal(t, tt.wantImageCount, priceData.HasOtherRatio("n"))
-			require.Equal(t, priceData.OtherRatios(), info.PriceData.OtherRatios())
+			require.Equal(t, priceData.OtherRatios, info.PriceData.OtherRatios())
 		})
 	}
 
