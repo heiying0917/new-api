@@ -146,3 +146,14 @@ func QuotaFromDecimalChecked(d decimal.Decimal) (int, *QuotaClamp) {
 	f, _ := d.Round(0).Float64()
 	return saturateQuota(f, "QuotaFromDecimal")
 }
+
+// OfficialUsdFromQuota 从「已含分组倍率的最终额度」反推供应商官方价美元（不含分组倍率）。
+// 各计费路径的 quota 均满足 quota = officialUsd × groupRatio × QuotaPerUnit（每一项都线性含 groupRatio），
+// 故 officialUsd = quota ÷ (groupRatio × QuotaPerUnit)。守卫非正额度与非正分组倍率，避免除零或负数。
+// 供 service 计费路径与 model 层历史日志回填共用，保证结算口径唯一。
+func OfficialUsdFromQuota(quota int, groupRatio float64) float64 {
+	if quota <= 0 || groupRatio <= 0 || math.IsInf(groupRatio, 0) || math.IsNaN(groupRatio) {
+		return 0
+	}
+	return float64(quota) / (groupRatio * QuotaPerUnit)
+}

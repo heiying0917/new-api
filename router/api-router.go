@@ -229,6 +229,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			settlementAdminRoute.GET("/", controller.AdminListSettlements)
 			settlementAdminRoute.POST("/initiate", controller.AdminInitiateSettlement)
+			settlementAdminRoute.POST("/backfill-official-usd", controller.AdminBackfillOfficialUsd)
 			settlementAdminRoute.GET("/:id", controller.AdminGetSettlement)
 			settlementAdminRoute.GET("/:id/logs", controller.AdminGetSettlementLogs)
 			settlementAdminRoute.GET("/:id/breakdown", controller.AdminGetSettlementBreakdown)

@@ -44,6 +44,7 @@ type textQuotaSummary struct {
 	CacheCreationRatio5m     float64
 	CacheCreationRatio1h     float64
 	Quota                    int
+	OfficialUsd              float64 // 供应商官方价美元（不含分组倍率），与 Quota 同源，结算口径
 	IsClaudeUsageSemantic    bool
 	UsageSemantic            string
 	WebSearchPrice           float64
@@ -298,6 +299,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			}
 		}
 
+		// 供应商官方价：在「最低 1 额度」兜底之前取值，保持与真实计费金额同源
+		summary.OfficialUsd = officialUsdFromQuotaDecimal(quotaCalculateDecimal, dGroupRatio,
+			promptQuota.Add(completionQuota).Mul(dModelRatio), relayInfo.PriceData.OtherRatios)
+
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
@@ -313,6 +318,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
+		summary.OfficialUsd = officialUsdFromQuotaDecimal(quotaCalculateDecimal, dGroupRatio,
+			dModelPrice.Mul(dQuotaPerUnit), relayInfo.PriceData.OtherRatios)
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 		summary.Quota = quota
 		noteQuotaClamp(relayInfo, clamp)
@@ -320,11 +327,34 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	if summary.TotalTokens == 0 {
 		summary.Quota = 0
+		summary.OfficialUsd = 0
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
 	}
 
 	return summary
+}
+
+// officialUsdFromQuotaDecimal 从「已含分组倍率的额度」反推供应商官方价美元（不含分组倍率）。
+// quota 的每一项（token×倍率、缓存读写、图像/音频、tool 附加费、附加倍率）都线性含 groupRatio，
+// 故 groupRatio>0 时 official = quota ÷ groupRatio，天然与用户实际计费同源、不会再漏项。
+// 免费分组（倍率 0）无法反推，退回 fallbackPreGroup（不含分组倍率的基础额度）× OtherRatios；
+// 此时 tool 附加费/音频额度本身为 0，无法恢复，属可接受的边角。
+func officialUsdFromQuotaDecimal(quotaWithGroup, groupRatio, fallbackPreGroup decimal.Decimal, otherRatios map[string]float64) float64 {
+	var official decimal.Decimal
+	if groupRatio.IsPositive() {
+		official = quotaWithGroup.Div(groupRatio)
+	} else {
+		official = fallbackPreGroup
+		for _, otherRatio := range otherRatios {
+			official = official.Mul(decimal.NewFromFloat(otherRatio))
+		}
+	}
+	if official.IsNegative() {
+		return 0
+	}
+	usd, _ := official.Div(decimal.NewFromFloat(common.QuotaPerUnit)).Float64()
+	return usd
 }
 
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
@@ -477,13 +507,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 
-	// 供应商渠道：按官方价记账（不含分组折扣），并冻结当时的成本价，供后续结算按条累加
+	// 供应商渠道：按官方价记账（不含分组倍率），并冻结当时的成本价，供后续结算按条累加。
+	// 官方价与 quota 同源（含缓存读写 token 等全部计费项），见 calculateTextQuotaSummary。
 	var officialUsd float64
 	var costPriceSnapshot float64
 	if relayInfo.ChannelId > 0 {
 		if ch, chErr := model.CacheGetChannel(relayInfo.ChannelId); chErr == nil && ch != nil && ch.SupplierId > 0 {
-			officialUsd = ComputeOfficialUsd(summary.PromptTokens, summary.CompletionTokens,
-				summary.ModelRatio, summary.CompletionRatio, summary.ModelPrice, relayInfo.PriceData.UsePrice)
+			officialUsd = summary.OfficialUsd
+			if tieredBillingApplied {
+				// 分层表达式计费已把 quota 替换为表达式结果，按同一口径从最终额度反推
+				officialUsd = OfficialUsdFromQuota(summary.Quota, summary.GroupRatio)
+			}
 			// 冻结成交那一刻的成本价：之后改价不影响这条日志的结算金额
 			if ch.CostPrice != nil {
 				costPriceSnapshot = *ch.CostPrice

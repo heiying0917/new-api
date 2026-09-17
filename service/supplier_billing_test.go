@@ -7,20 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestComputeOfficialUsd_Ratio(t *testing.T) {
-	// (1000 + 1000*3)*2 = 8000 quota; usd = 8000/QuotaPerUnit
-	usd := ComputeOfficialUsd(1000, 1000, 2, 3, 0, false)
-	require.InDelta(t, 8000.0/common.QuotaPerUnit, usd, 1e-9)
-}
-
-func TestComputeOfficialUsd_Price(t *testing.T) {
-	require.InDelta(t, 0.04, ComputeOfficialUsd(0, 0, 0, 0, 0.04, true), 1e-9)
-}
-
-func TestComputeOfficialUsd_Positive(t *testing.T) {
-	require.Greater(t, ComputeOfficialUsd(100, 100, 1, 1, 0, false), 0.0)
-}
-
 // TestOfficialUsdFromQuota 验证从「已含分组倍率的最终额度」反推官方价美元（不含分组折扣）。
 // 关系：quota = officialUsd × groupRatio × QuotaPerUnit，用于音频/实时流/任务/MJ 等无 token 拆分的路径。
 func TestOfficialUsdFromQuota(t *testing.T) {
