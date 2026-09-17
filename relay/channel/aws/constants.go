@@ -20,6 +20,10 @@ var awsModelIDMap = map[string]string{
 	"claude-opus-4-6":            "anthropic.claude-opus-4-6-v1",
 	"claude-opus-4-7":            "anthropic.claude-opus-4-7",
 	"claude-opus-4-8":            "anthropic.claude-opus-4-8",
+	"claude-haiku-4-5":           "anthropic.claude-haiku-4-5",
+	"claude-sonnet-5":            "anthropic.claude-sonnet-5",
+	"claude-opus-5":              "anthropic.claude-opus-5",
+	"claude-fable-5-1":           "anthropic.claude-fable-5-1",
 	// Nova models
 	"nova-micro-v1:0":   "amazon.nova-micro-v1:0",
 	"nova-lite-v1:0":    "amazon.nova-lite-v1:0",

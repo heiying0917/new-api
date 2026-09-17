@@ -155,19 +155,17 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
+	claudeCaps := reasoning.ClaudeCapabilitiesFor(textRequest.Model)
+	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" && claudeCaps.Adaptive {
 		claudeRequest.Model = baseModel
 		claudeRequest.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
+		effortLevel = reasoning.NormalizeClaudeEffort(baseModel, effortLevel)
 		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
-			strings.HasPrefix(baseModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
+		if claudeCaps.StrictSampling {
+			// Opus 4.7+ and Claude 5 reject non-default temperature/top_p/top_k with 400
+			// and default display to "omitted"; restore the 4.6 visible summary.
 			claudeRequest.Thinking.Display = "summarized"
 			claudeRequest.Temperature = nil
 			claudeRequest.TopP = nil
@@ -180,9 +178,8 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		strings.HasSuffix(textRequest.Model, "-thinking") {
 
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
-		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
-			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject thinking.type="enabled"; use adaptive at high effort.
+		if !reasoning.ClaudeCapabilitiesFor(trimmedModel).ManualThinking {
+			// Opus 4.7+ and Claude 5 reject thinking.type="enabled"; use adaptive at high effort.
 			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
 			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
 			claudeRequest.Temperature = nil

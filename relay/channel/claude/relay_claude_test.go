@@ -454,3 +454,55 @@ func TestRequestOpenAI2ClaudeMessage_NoToolsOmitsToolsField(t *testing.T) {
 	// Anthropic rejects it for some models and it changes tool_choice semantics.
 	require.Nil(t, claudeRequest.Tools)
 }
+
+func TestRequestOpenAI2ClaudeMessage_ClaudeOpus5EffortSuffixUsesAdaptiveThinking(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model:       "claude-opus-5-high",
+		Temperature: commonPointer(0.3),
+		TopP:        commonPointer(0.9),
+		TopK:        commonPointer(40),
+		Messages:    []dto.Message{{Role: "user", Content: "hello"}},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Equal(t, "claude-opus-5", claudeRequest.Model)
+	require.NotNil(t, claudeRequest.Thinking)
+	require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
+	require.Equal(t, "summarized", claudeRequest.Thinking.Display)
+	require.JSONEq(t, `{"effort":"high"}`, string(claudeRequest.OutputConfig))
+	// Claude 5 is strict-sampling: non-default temperature/top_p/top_k are rejected upstream.
+	require.Nil(t, claudeRequest.Temperature)
+	require.Nil(t, claudeRequest.TopP)
+	require.Nil(t, claudeRequest.TopK)
+}
+
+func TestRequestOpenAI2ClaudeMessage_ClaudeSonnet5ThinkingSuffixUsesAdaptiveHighEffort(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model:    "claude-sonnet-5-thinking",
+		Messages: []dto.Message{{Role: "user", Content: "hello"}},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Equal(t, "claude-sonnet-5", claudeRequest.Model)
+	require.NotNil(t, claudeRequest.Thinking)
+	// Sonnet 5 rejects thinking.type="enabled"; the -thinking alias must map to adaptive.
+	require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
+	require.JSONEq(t, `{"effort":"high"}`, string(claudeRequest.OutputConfig))
+}
+
+func TestRequestOpenAI2ClaudeMessage_FableMaxEffortBecomesXHigh(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model:    "claude-fable-5-1-max",
+		Messages: []dto.Message{{Role: "user", Content: "hello"}},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Equal(t, "claude-fable-5-1", claudeRequest.Model)
+	require.NotNil(t, claudeRequest.Thinking)
+	require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
+	// Fable only exposes xhigh (no max); the equivalent level is substituted.
+	require.JSONEq(t, `{"effort":"xhigh"}`, string(claudeRequest.OutputConfig))
+}
