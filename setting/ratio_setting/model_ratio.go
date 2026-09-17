@@ -98,6 +98,11 @@ var defaultModelRatio = map[string]float64{
 	"gpt-5-mini-2025-08-07":            0.125,
 	"gpt-5-nano":                       0.025,
 	"gpt-5-nano-2025-08-07":            0.025,
+	"gpt-5.5":                          2.5, // $5 / 1M tokens
+	"gpt-5.6-sol":                      2.5, // $5 / 1M tokens
+	"gpt-5.6-terra":                    1.25,
+	"gpt-5.6-luna":                     0.5,
+	"gpt-6-astra":                      5, // $10 / 1M tokens (standard tier; >272K long-context tier needs an admin billing expression)
 	//"gpt-3.5-turbo-0301":           0.75, //deprecated
 	"gpt-3.5-turbo":          0.25,
 	"gpt-3.5-turbo-0613":     0.75,
@@ -158,6 +163,38 @@ var defaultModelRatio = map[string]float64{
 	"claude-opus-4-8-high":                      2.5,
 	"claude-opus-4-8-medium":                    2.5,
 	"claude-opus-4-8-low":                       2.5,
+	"claude-haiku-4-5":                          0.5, // $1 / 1M tokens (dateless alias)
+	"claude-sonnet-4-6":                         1.5, // $3 / 1M tokens
+	"claude-sonnet-4-6-max":                     1.5,
+	"claude-sonnet-4-6-high":                    1.5,
+	"claude-sonnet-4-6-medium":                  1.5,
+	"claude-sonnet-4-6-low":                     1.5,
+	"claude-sonnet-5":                           1, // $2 / 1M tokens
+	"claude-sonnet-5-max":                       1,
+	"claude-sonnet-5-xhigh":                     1,
+	"claude-sonnet-5-high":                      1,
+	"claude-sonnet-5-medium":                    1,
+	"claude-sonnet-5-low":                       1,
+	"claude-sonnet-5-thinking":                  1,
+	"claude-opus-5":                             2.5, // $5 / 1M tokens
+	"claude-opus-5-max":                         2.5,
+	"claude-opus-5-xhigh":                       2.5,
+	"claude-opus-5-high":                        2.5,
+	"claude-opus-5-medium":                      2.5,
+	"claude-opus-5-low":                         2.5,
+	"claude-opus-5-thinking":                    2.5,
+	"claude-fable-5":                            5, // $10 / 1M tokens
+	"claude-fable-5-xhigh":                      5,
+	"claude-fable-5-high":                       5,
+	"claude-fable-5-medium":                     5,
+	"claude-fable-5-low":                        5,
+	"claude-fable-5-1":                          5, // $10 / 1M tokens
+	"claude-fable-5-1-xhigh":                    5,
+	"claude-fable-5-1-high":                     5,
+	"claude-fable-5-1-medium":                   5,
+	"claude-fable-5-1-low":                      5,
+	"claude-mythos-5":                           5, // $10 / 1M tokens (limited availability)
+	"claude-mythos-5-1":                         5,
 	"claude-3-opus-20240229":                    7.5, // $15 / 1M tokens
 	"claude-opus-4-20250514":                    7.5,
 	"claude-opus-4-1-20250805":                  7.5,
@@ -519,6 +556,10 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 			}
 			return 4, false
 		}
+		// gpt-6-astra: $10 in / $50 out
+		if strings.HasPrefix(name, "gpt-6") {
+			return 5, true
+		}
 		// gpt-5 匹配
 		if strings.HasPrefix(name, "gpt-5") {
 			if !strings.Contains(name, ".") {
@@ -552,7 +593,10 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 
 	if strings.Contains(name, "claude-3") {
 		return 5, true
-	} else if strings.Contains(name, "claude-sonnet-4") || strings.Contains(name, "claude-opus-4") || strings.Contains(name, "claude-haiku-4") {
+	} else if strings.Contains(name, "claude-sonnet-") || strings.Contains(name, "claude-opus-") ||
+		strings.Contains(name, "claude-haiku-4") || strings.Contains(name, "claude-fable-") ||
+		strings.Contains(name, "claude-mythos-") {
+		// Claude 4.x / 5.x, Fable and Mythos all bill output at 5x input.
 		return 5, true
 	}
 
