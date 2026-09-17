@@ -644,6 +644,28 @@ func SumSupplierStat(channelIds []int, startTimestamp int64, endTimestamp int64)
 	return stat, nil
 }
 
+// SumSupplierOfficialUsd 供应商日志页顶部统计：时间窗内本人渠道消费日志的官方价合计（USD）。
+// 供应商结算按 official_usd 口径，因此只暴露该值；含分组倍率的 quota（平台售价）不再返回给供应商。
+func SumSupplierOfficialUsd(channelIds []int, startTimestamp int64, endTimestamp int64) (float64, error) {
+	if len(channelIds) == 0 {
+		return 0, nil
+	}
+	q := LOG_DB.Table("logs").
+		Select("COALESCE(SUM(official_usd), 0)").
+		Where("type = ? AND channel_id IN ?", LogTypeConsume, channelIds)
+	if startTimestamp != 0 {
+		q = q.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		q = q.Where("created_at <= ?", endTimestamp)
+	}
+	var total float64
+	if err := q.Row().Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
 	tx := LOG_DB.Table("logs").Select("ifnull(sum(prompt_tokens),0) + ifnull(sum(completion_tokens),0)")
 	if username != "" {

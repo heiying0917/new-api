@@ -127,12 +127,20 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int, suppl
 }
 
 func GetAllChannels(c *gin.Context) {
-	listChannelsCore(c, 0)
+	listChannelsCore(c, channelListOptions{})
 }
 
-// listChannelsCore 渠道列表核心。forceSupplierId>0 时强制只列该供应商自己的渠道(供应商端复用),
+// channelListOptions 渠道列表/搜索核心的作用域选项。
+//   - forceSupplierId>0：供应商端，强制只看本人渠道，回填成本/应收款。
+//   - viewer：观察员端，忽略 supplier_name 过滤，不回填供应商名/应收款，输出白名单 DTO（见 viewer_channel.go）。
+type channelListOptions struct {
+	forceSupplierId int
+	viewer          bool
+}
+
+// listChannelsCore 渠道列表核心。opts.forceSupplierId>0 时强制只列该供应商自己的渠道(供应商端复用),
 // 供应商无法通过任何 query 越权查看他人渠道;并回填未结算 official_usd/receivable 供「成本/应收款」列展示。
-func listChannelsCore(c *gin.Context, forceSupplierId int) {
+func listChannelsCore(c *gin.Context, opts channelListOptions) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
@@ -153,10 +161,10 @@ func listChannelsCore(c *gin.Context, forceSupplierId int) {
 
 	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
 	var supplierIds []int
-	if forceSupplierId > 0 {
+	if opts.forceSupplierId > 0 {
 		// 供应商端:强制只看本人渠道,忽略 supplier_name 等越权参数。
-		supplierIds = []int{forceSupplierId}
-	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		supplierIds = []int{opts.forceSupplierId}
+	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); !opts.viewer && supplierName != "" {
 		ids, err := model.ResolveSupplierIdsByName(supplierName)
 		if err != nil {
 			common.ApiError(c, err)
@@ -227,9 +235,15 @@ func listChannelsCore(c *gin.Context, forceSupplierId int) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
-	backfillChannelSupplierNames(channelData)
-	if forceSupplierId > 0 {
-		backfillSupplierUnsettled(channelData)
+	// 观察员：白名单 DTO，不回填供应商名/应收款；其他模式保持原样。
+	var items any = channelData
+	if opts.viewer {
+		items = viewerChannelViews(channelData)
+	} else {
+		backfillChannelSupplierNames(channelData)
+		if opts.forceSupplierId > 0 {
+			backfillSupplierUnsettled(channelData)
+		}
 	}
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, supplierIds)
@@ -247,7 +261,7 @@ func listChannelsCore(c *gin.Context, forceSupplierId int) {
 		typeCounts[r.Type] = r.Count
 	}
 	common.ApiSuccess(c, gin.H{
-		"items":       channelData,
+		"items":       items,
 		"total":       total,
 		"page":        pageInfo.GetPage(),
 		"page_size":   pageInfo.GetPageSize(),
@@ -329,11 +343,11 @@ func FixChannelsAbilities(c *gin.Context) {
 }
 
 func SearchChannels(c *gin.Context) {
-	searchChannelsCore(c, 0)
+	searchChannelsCore(c, channelListOptions{})
 }
 
-// searchChannelsCore 渠道搜索核心。forceSupplierId>0 时强制只搜该供应商自己的渠道(供应商端复用)。
-func searchChannelsCore(c *gin.Context, forceSupplierId int) {
+// searchChannelsCore 渠道搜索核心。opts.forceSupplierId>0 时强制只搜该供应商自己的渠道(供应商端复用)。
+func searchChannelsCore(c *gin.Context, opts channelListOptions) {
 	keyword := c.Query("keyword")
 	group := c.Query("group")
 	modelKeyword := c.Query("model")
@@ -345,10 +359,10 @@ func searchChannelsCore(c *gin.Context, forceSupplierId int) {
 
 	// supplier_name 模糊过滤:解析供应商 user_id 列表;无匹配则直接返回空分页结果。
 	var supplierIds []int
-	if forceSupplierId > 0 {
+	if opts.forceSupplierId > 0 {
 		// 供应商端:强制只搜本人渠道,忽略 supplier_name 等越权参数。
-		supplierIds = []int{forceSupplierId}
-	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); supplierName != "" {
+		supplierIds = []int{opts.forceSupplierId}
+	} else if supplierName := strings.TrimSpace(c.Query("supplier_name")); !opts.viewer && supplierName != "" {
 		ids, err := model.ResolveSupplierIdsByName(supplierName)
 		if err != nil {
 			common.ApiError(c, err)
@@ -469,16 +483,22 @@ func searchChannelsCore(c *gin.Context, forceSupplierId int) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
-	backfillChannelSupplierNames(pagedData)
-	if forceSupplierId > 0 {
-		backfillSupplierUnsettled(pagedData)
+	// 观察员：白名单 DTO，不回填供应商名/应收款；其他模式保持原样。
+	var items any = pagedData
+	if opts.viewer {
+		items = viewerChannelViews(pagedData)
+	} else {
+		backfillChannelSupplierNames(pagedData)
+		if opts.forceSupplierId > 0 {
+			backfillSupplierUnsettled(pagedData)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"items":       pagedData,
+			"items":       items,
 			"total":       total,
 			"type_counts": typeCounts,
 		},

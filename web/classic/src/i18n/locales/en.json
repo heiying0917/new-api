@@ -4621,6 +4621,12 @@
     "需要等级 {{required}}，你当前等级 {{current}}（字段：{{field}}）": "Requires level {{required}}, your current level is {{current}} (field: {{field}})",
     "额度窗口": "Quota window",
     "验证失败": "Verification failed",
-    "👋{{greeting}}，{{username}}": "👋{{greeting}}, {{username}}"
+    "👋{{greeting}}，{{username}}": "👋{{greeting}}, {{username}}",
+    "观察员": "Viewer",
+    "资源总览": "Resource Overview",
+    "全平台日志": "Platform Logs",
+    "请选择角色": "Select role",
+    "超级管理员的角色不可修改": "The super administrator's role cannot be changed",
+    "不能修改自己的角色": "You cannot change your own role"
   }
 }

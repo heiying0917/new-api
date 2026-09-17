@@ -120,7 +120,7 @@ export const useUsersData = () => {
     setSearching(false);
   };
 
-  // Manage user operations (promote, demote, enable, disable, delete)
+  // Manage user operations (enable, disable, delete, unlock, add_quota)；角色变更改走编辑弹窗 PUT /api/user/
   const manageUser = async (userId, action, record) => {
     // Trigger loading state to force table re-render
     setLoading(true);

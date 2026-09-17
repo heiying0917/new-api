@@ -44,37 +44,41 @@ const ChannelsPage = ({ mode = 'admin' } = {}) => {
     <>
       {/* Modals */}
       <ColumnSelectorModal {...channelsData} />
-      <EditTagModal
-        visible={channelsData.showEditTag}
-        tag={channelsData.editingTag}
-        handleClose={() => channelsData.setShowEditTag(false)}
-        refresh={channelsData.refresh}
-      />
-      <EditChannelModal
-        refresh={channelsData.refresh}
-        visible={channelsData.showEdit}
-        handleClose={channelsData.closeEdit}
-        editingChannel={channelsData.editingChannel}
-        apiMode={channelsData.isSupplierMode ? 'supplier' : 'admin'}
-      />
-      <BatchTagModal {...channelsData} />
-      <ModelTestModal {...channelsData} />
-      <MultiKeyManageModal
-        visible={channelsData.showMultiKeyManageModal}
-        onCancel={() => channelsData.setShowMultiKeyManageModal(false)}
-        channel={channelsData.currentMultiKeyChannel}
-        onRefresh={channelsData.refresh}
-        apiBase={channelsData.apiBase}
-      />
-      <ChannelUpstreamUpdateModal
-        visible={channelsData.showUpstreamUpdateModal}
-        addModels={channelsData.upstreamUpdateAddModels}
-        removeModels={channelsData.upstreamUpdateRemoveModels}
-        preferredTab={channelsData.upstreamUpdatePreferredTab}
-        confirmLoading={channelsData.upstreamApplyLoading}
-        onConfirm={channelsData.applyUpstreamUpdates}
-        onCancel={channelsData.closeUpstreamUpdateModal}
-      />
+      {!channelsData.isViewerMode && (
+        <>
+          <EditTagModal
+            visible={channelsData.showEditTag}
+            tag={channelsData.editingTag}
+            handleClose={() => channelsData.setShowEditTag(false)}
+            refresh={channelsData.refresh}
+          />
+          <EditChannelModal
+            refresh={channelsData.refresh}
+            visible={channelsData.showEdit}
+            handleClose={channelsData.closeEdit}
+            editingChannel={channelsData.editingChannel}
+            apiMode={channelsData.isSupplierMode ? 'supplier' : 'admin'}
+          />
+          <BatchTagModal {...channelsData} />
+          <ModelTestModal {...channelsData} />
+          <MultiKeyManageModal
+            visible={channelsData.showMultiKeyManageModal}
+            onCancel={() => channelsData.setShowMultiKeyManageModal(false)}
+            channel={channelsData.currentMultiKeyChannel}
+            onRefresh={channelsData.refresh}
+            apiBase={channelsData.apiBase}
+          />
+          <ChannelUpstreamUpdateModal
+            visible={channelsData.showUpstreamUpdateModal}
+            addModels={channelsData.upstreamUpdateAddModels}
+            removeModels={channelsData.upstreamUpdateRemoveModels}
+            preferredTab={channelsData.upstreamUpdatePreferredTab}
+            confirmLoading={channelsData.upstreamApplyLoading}
+            onConfirm={channelsData.applyUpstreamUpdates}
+            onCancel={channelsData.closeUpstreamUpdateModal}
+          />
+        </>
+      )}
 
       {/* Main Content */}
       {channelsData.globalPassThroughEnabled ? (

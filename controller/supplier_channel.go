@@ -32,12 +32,12 @@ func validateSupplierChannelBaseURL(baseURL *string) error {
 // SupplierListChannels 列出当前供应商自己的渠道。复用管理员列表核心(强制 supplier_id=本人),
 // 因此分组/模型/类型/状态筛选、排序、标签模式、类型计数与管理员完全一致;并回填成本/应收款。
 func SupplierListChannels(c *gin.Context) {
-	listChannelsCore(c, c.GetInt("id"))
+	listChannelsCore(c, channelListOptions{forceSupplierId: c.GetInt("id")})
 }
 
 // SupplierSearchChannels 搜索当前供应商自己的渠道(复用管理员搜索核心,强制 supplier_id=本人)。
 func SupplierSearchChannels(c *gin.Context) {
-	searchChannelsCore(c, c.GetInt("id"))
+	searchChannelsCore(c, channelListOptions{forceSupplierId: c.GetInt("id")})
 }
 
 // backfillSupplierUnsettled 为渠道列表回填未结算 official_usd(USD)与 receivable(应收款¥),

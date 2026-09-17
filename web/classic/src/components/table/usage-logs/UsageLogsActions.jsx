@@ -27,6 +27,7 @@ const LogsActions = ({
   stat,
   loadingStat,
   showStat,
+  isSupplierUser = false,
   compactMode,
   setCompactMode,
   t,
@@ -55,7 +56,9 @@ const LogsActions = ({
             }}
             className='!rounded-lg'
           >
-            {t('消耗额度')}: {renderQuota(stat.quota)}
+            {isSupplierUser
+              ? `${t('官方计费')}: $${Number(stat.official_usd || 0).toFixed(4)}`
+              : `${t('消耗额度')}: ${renderQuota(stat.quota)}`}
           </Tag>
           <Tag
             color='pink'

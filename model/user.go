@@ -121,6 +121,22 @@ func (user *User) SetSetting(setting dto.UserSetting) {
 	user.Setting = string(settingBytes)
 }
 
+// UpdateUserRole 管理员编辑接口专用：单列更新角色并失效用户缓存（会话下一请求回源 DB，即时生效）。
+// 取值在 controller.validateRoleChange 校验；Edit 刻意不更新 role（见 TestEdit_DoesNotEscalateRoleStatusQuota），
+// 因此角色变更走这条独立路径，避免"编辑用户"接口被注入提权。
+func UpdateUserRole(userId int, role int) error {
+	if userId == 0 {
+		return errors.New("id 为空！")
+	}
+	if !common.IsValidateRole(role) || role == common.RoleGuestUser || role == common.RoleRootUser {
+		return errors.New("invalid role")
+	}
+	if err := DB.Model(&User{}).Where("id = ?", userId).Update("role", role).Error; err != nil {
+		return err
+	}
+	return invalidateUserCache(userId)
+}
+
 func UpdateUserSetting(userId int, setting dto.UserSetting) error {
 	if userId == 0 {
 		return errors.New("id 为空！")

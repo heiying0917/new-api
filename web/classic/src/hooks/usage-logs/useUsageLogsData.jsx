@@ -44,7 +44,7 @@ import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import ParamOverrideEntry from '../../components/table/usage-logs/components/ParamOverrideEntry';
 
-export const useLogsData = () => {
+export const useLogsData = ({ mode = 'self' } = {}) => {
   const { t } = useTranslation();
 
   // Define column keys for selection
@@ -82,12 +82,16 @@ export const useLogsData = () => {
   const isAdminUser = isAdmin();
   // Supplier role: scoped to its own channels' logs, consumer identity hidden
   const isSupplierUser = isSupplier();
+  // 观察员全站日志页：显式 mode='viewer'（观察员在 /log 仍看本人日志，走普通用户分支）。
+  const isViewerUser = mode === 'viewer';
   // Role-specific storage key to prevent different roles from overwriting each other
-  const STORAGE_KEY = isAdminUser
-    ? 'logs-table-columns-admin'
-    : isSupplierUser
-      ? 'logs-table-columns-supplier'
-      : 'logs-table-columns-user';
+  const STORAGE_KEY = isViewerUser
+    ? 'logs-table-columns-viewer'
+    : isAdminUser
+      ? 'logs-table-columns-admin'
+      : isSupplierUser
+        ? 'logs-table-columns-supplier'
+        : 'logs-table-columns-user';
   const BILLING_DISPLAY_MODE_STORAGE_KEY = isAdminUser
     ? 'logs-billing-display-mode-admin'
     : isSupplierUser
@@ -122,22 +126,23 @@ export const useLogsData = () => {
     return {
       [COLUMN_KEYS.TIME]: true,
       // Suppliers see channel column (scoped to their own channels), like admins.
-      [COLUMN_KEYS.CHANNEL]: isAdminUser || isSupplierUser,
-      // Hide consumer identity columns from suppliers.
-      [COLUMN_KEYS.USERNAME]: isAdminUser,
-      [COLUMN_KEYS.TOKEN]: !isSupplierUser,
+      [COLUMN_KEYS.CHANNEL]: isAdminUser || isSupplierUser || isViewerUser,
+      // Hide consumer identity columns from suppliers and viewers.
+      [COLUMN_KEYS.USERNAME]: isAdminUser && !isViewerUser,
+      [COLUMN_KEYS.TOKEN]: !isSupplierUser && !isViewerUser,
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.MODEL]: true,
       [COLUMN_KEYS.USE_TIME]: true,
       [COLUMN_KEYS.PROMPT]: true,
       [COLUMN_KEYS.COMPLETION]: true,
-      [COLUMN_KEYS.COST]: true,
-      // 应付/应收（供应商成本）仅管理员与供应商默认可见，普通终端用户不可见
-      [COLUMN_KEYS.PAYABLE]: isAdminUser || isSupplierUser,
-      [COLUMN_KEYS.RETRY]: isAdminUser,
-      // IP is the consumer's IP — hide it from suppliers.
-      [COLUMN_KEYS.IP]: !isSupplierUser,
+      // 花费（平台售价）对供应商隐藏（后端已归零），观察员/管理员/终端用户可见
+      [COLUMN_KEYS.COST]: !isSupplierUser,
+      // 应付/应收（供应商成本）仅管理员与供应商默认可见，普通终端用户与观察员不可见
+      [COLUMN_KEYS.PAYABLE]: (isAdminUser || isSupplierUser) && !isViewerUser,
+      [COLUMN_KEYS.RETRY]: isAdminUser && !isViewerUser,
+      // IP is the consumer's IP — hide it from suppliers and viewers.
+      [COLUMN_KEYS.IP]: !isSupplierUser && !isViewerUser,
       [COLUMN_KEYS.DETAILS]: true,
     };
   };
@@ -187,7 +192,9 @@ export const useLogsData = () => {
   };
 
   // Column visibility state
-  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialVisibleColumns,
+  );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [billingDisplayMode, setBillingDisplayMode] = useState(
     getInitialBillingDisplayMode,
@@ -346,6 +353,29 @@ export const useLogsData = () => {
     }
   };
 
+  const getLogViewerStat = async () => {
+    const {
+      model_name,
+      start_timestamp,
+      end_timestamp,
+      channel,
+      group,
+      logType: formLogType,
+    } = getFormValues();
+    const currentLogType = formLogType !== undefined ? formLogType : logType;
+    let localStartTimestamp = Date.parse(start_timestamp) / 1000;
+    let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+    let url = `/api/viewer/log/stat?type=${currentLogType}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    url = encodeURI(url);
+    let res = await API.get(url);
+    const { success, message, data } = res.data;
+    if (success) {
+      setStat(data);
+    } else {
+      showError(message);
+    }
+  };
+
   const getLogSupplierStat = async () => {
     const { start_timestamp, end_timestamp } = getFormValues();
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
@@ -366,7 +396,9 @@ export const useLogsData = () => {
       return;
     }
     setLoadingStat(true);
-    if (isSupplierUser) {
+    if (isViewerUser) {
+      await getLogViewerStat();
+    } else if (isSupplierUser) {
       await getLogSupplierStat();
     } else if (isAdminUser) {
       await getLogStat();
@@ -379,7 +411,7 @@ export const useLogsData = () => {
 
   // User info function
   const showUserInfoFunc = async (userId) => {
-    if (!isAdminUser) {
+    if (!isAdminUser || isViewerUser) {
       return;
     }
     const res = await API.get(`/api/user/${userId}`);
@@ -436,7 +468,10 @@ export const useLogsData = () => {
       let other = getLogOther(logs[i].other);
       let expandDataLocal = [];
 
-      if ((isAdminUser || isSupplierUser) && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if (
+        (isAdminUser || isSupplierUser) &&
+        (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)
+      ) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || t('[未知]')}`,
@@ -483,7 +518,10 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('日志详情'),
             value: other?.claude
-              ? renderClaudeLogContent({ ...other, displayMode: billingDisplayMode })
+              ? renderClaudeLogContent({
+                  ...other,
+                  displayMode: billingDisplayMode,
+                })
               : renderLogContent({ ...other, displayMode: billingDisplayMode }),
           });
         }
@@ -573,7 +611,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('失败原因'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {other.reason}
               </div>
             ),
@@ -590,7 +635,8 @@ export const useLogsData = () => {
         const ss = other.stream_status;
         const isOk = ss.status === 'ok';
         const statusLabel = isOk ? '✓ ' + t('正常') : '✗ ' + t('异常');
-        let streamValue = statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
+        let streamValue =
+          statusLabel + ' (' + (ss.end_reason || 'unknown') + ')';
         if (ss.error_count > 0) {
           streamValue += ` [${t('软错误')}: ${ss.error_count}]`;
         }
@@ -605,7 +651,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('流错误详情'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'pre-line', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'pre-line',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {ss.errors.join('\n')}
               </div>
             ),
@@ -804,7 +857,9 @@ export const useLogsData = () => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    if (isSupplierUser) {
+    if (isViewerUser) {
+      url = `/api/viewer/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
+    } else if (isSupplierUser) {
       url = `/api/supplier/self/logs?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&model=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
     } else if (isAdminUser) {
       url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
@@ -901,6 +956,7 @@ export const useLogsData = () => {
     stat,
     isAdminUser,
     isSupplierUser,
+    isViewerUser,
 
     // Form state
     formApi,

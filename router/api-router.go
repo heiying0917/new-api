@@ -184,6 +184,19 @@ func SetApiRouter(router *gin.Engine) {
 			supplierSelfRoute.POST("/upstream_updates/apply", controller.SupplierApplyChannelUpstreamModelUpdates)
 		}
 
+		// 观察员（role=3）只读作用域：全站渠道白名单视图 + 全站脱敏日志。ViewerAuth 精确匹配角色，
+		// 供应商(5)不可进入；管理员以上放行便于排查。不开放任何写/测试/刷余额接口。
+		viewerRoute := apiRouter.Group("/viewer")
+		viewerRoute.Use(middleware.ViewerAuth())
+		{
+			viewerRoute.GET("/channel/", controller.ViewerListChannels)
+			viewerRoute.GET("/channel/search", controller.ViewerSearchChannels)
+			viewerRoute.GET("/channel/models", controller.EnabledListModels)
+			viewerRoute.GET("/groups", controller.GetGroups)
+			viewerRoute.GET("/log/", controller.ViewerListLogs)
+			viewerRoute.GET("/log/stat", controller.ViewerLogsStat)
+		}
+
 		supplierMeRoute := apiRouter.Group("/supplier/self")
 		supplierMeRoute.Use(middleware.SupplierAuth())
 		{

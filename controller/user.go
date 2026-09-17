@@ -350,6 +350,43 @@ func canManageTargetRole(myRole int, targetRole int) bool {
 	return myRole == common.RoleRootUser || myRole > targetRole
 }
 
+// roleChangeError 角色变更校验错误，key 为 i18n 消息键。
+type roleChangeError struct{ key string }
+
+// assignableRoles 编辑弹窗可分配的角色集合：不含游客(0)与超管(100)。
+var assignableRoles = map[int]bool{
+	common.RoleCommonUser:   true,
+	common.RoleViewerUser:   true,
+	common.RoleSupplierUser: true,
+	common.RoleAdminUser:    true,
+}
+
+// validateRoleChange 校验管理员/超管通过编辑接口修改目标用户角色（替代原 promote/demote）：
+//
+//   - newRole==0 视为"未传/不改"，返回 originRole；角色不变直接放行；
+//   - newRole 必须在可分配集合内（禁止设为超管）；
+//   - 不能改自己的角色；不能改超管的角色；
+//   - 操作者必须能管理新角色（admin 不能设 admin，root 可以）。
+// 返回最终应落库的角色。
+func validateRoleChange(myRole, myId, targetId, originRole, newRole int) (int, *roleChangeError) {
+	if newRole == 0 || newRole == originRole {
+		return originRole, nil
+	}
+	if !assignableRoles[newRole] {
+		return 0, &roleChangeError{key: i18n.MsgUserRoleInvalid}
+	}
+	if targetId == myId {
+		return 0, &roleChangeError{key: i18n.MsgUserCannotChangeOwnRole}
+	}
+	if originRole == common.RoleRootUser {
+		return 0, &roleChangeError{key: i18n.MsgUserCannotChangeRootRole}
+	}
+	if !canManageTargetRole(myRole, newRole) {
+		return 0, &roleChangeError{key: i18n.MsgUserCannotCreateHigherLevel}
+	}
+	return newRole, nil
+}
+
 func GetUser(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -650,8 +687,9 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
 		return
 	}
-	if !canManageTargetRole(myRole, updatedUser.Role) {
-		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
+	finalRole, roleErr := validateRoleChange(myRole, c.GetInt("id"), originUser.Id, originUser.Role, updatedUser.Role)
+	if roleErr != nil {
+		common.ApiErrorI18n(c, roleErr.key)
 		return
 	}
 	if updatedUser.Password == "$I_LOVE_U" {
@@ -661,6 +699,13 @@ func UpdateUser(c *gin.Context) {
 	if err := updatedUser.Edit(updatePassword); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// 角色单独落库：Edit 的字段白名单刻意不含 role（防注入提权），变更走专用路径并失效缓存。
+	if finalRole != originUser.Role {
+		if err := model.UpdateUserRole(originUser.Id, finalRole); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -977,26 +1022,6 @@ func ManageUser(c *gin.Context) {
 		if err := model.InvalidateUserTokensCache(user.Id); err != nil {
 			common.SysLog(fmt.Sprintf("failed to invalidate tokens cache for user %d: %s", user.Id, err.Error()))
 		}
-	case "promote":
-		if myRole != common.RoleRootUser {
-			common.ApiErrorI18n(c, i18n.MsgUserAdminCannotPromote)
-			return
-		}
-		if user.Role >= common.RoleAdminUser {
-			common.ApiErrorI18n(c, i18n.MsgUserAlreadyAdmin)
-			return
-		}
-		user.Role = common.RoleAdminUser
-	case "demote":
-		if user.Role == common.RoleRootUser {
-			common.ApiErrorI18n(c, i18n.MsgUserCannotDemoteRootUser)
-			return
-		}
-		if user.Role == common.RoleCommonUser {
-			common.ApiErrorI18n(c, i18n.MsgUserAlreadyCommon)
-			return
-		}
-		user.Role = common.RoleCommonUser
 	case "unlock":
 		// 解除登录暴破锁定：清零 DB 权威列 + 缓存计数（按用户名与邮箱两个标识）。
 		if err := model.ResetUserLoginLock(user.Id); err != nil {
@@ -1058,6 +1083,10 @@ func ManageUser(c *gin.Context) {
 			"success": true,
 			"message": "",
 		})
+		return
+	default:
+		// 未知动作（含已下线的 promote/demote）直接拒绝，避免落到下方 Update 并返回成功。
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
 

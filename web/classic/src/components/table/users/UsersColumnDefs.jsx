@@ -49,6 +49,12 @@ const renderRole = (role, t) => {
           {t('普通用户')}
         </Tag>
       );
+    case 3:
+      return (
+        <Tag color='purple' shape='circle'>
+          {t('观察员')}
+        </Tag>
+      );
     case 5:
       return (
         <Tag color='cyan' shape='circle'>
@@ -215,8 +221,6 @@ const renderOperations = (
   {
     setEditingUser,
     setShowEditUser,
-    showPromoteModal,
-    showDemoteModal,
     showEnableDisableModal,
     showDeleteModal,
     showResetPasskeyModal,
@@ -298,20 +302,6 @@ const renderOperations = (
       >
         {t('编辑')}
       </Button>
-      <Button
-        type='warning'
-        size='small'
-        onClick={() => showPromoteModal(record)}
-      >
-        {t('提升')}
-      </Button>
-      <Button
-        type='secondary'
-        size='small'
-        onClick={() => showDemoteModal(record)}
-      >
-        {t('降级')}
-      </Button>
       <Dropdown menu={moreMenu} trigger='click' position='bottomRight'>
         <Button type='tertiary' size='small' icon={<IconMore />} />
       </Dropdown>
@@ -326,8 +316,6 @@ export const getUsersColumns = ({
   t,
   setEditingUser,
   setShowEditUser,
-  showPromoteModal,
-  showDemoteModal,
   showEnableDisableModal,
   showDeleteModal,
   showResetPasskeyModal,
@@ -394,8 +382,6 @@ export const getUsersColumns = ({
         renderOperations(text, record, {
           setEditingUser,
           setShowEditUser,
-          showPromoteModal,
-          showDemoteModal,
           showEnableDisableModal,
           showDeleteModal,
           showResetPasskeyModal,

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -45,8 +46,9 @@ func SupplierListLogs(c *gin.Context) {
 		return
 	}
 
-	// 隐私：清空消费者身份字段后再返回。
+	// 隐私：清空消费者身份字段后再返回；售价：抹掉含分组倍率的 quota 与加价字段。
 	blankConsumerIdentity(logs)
+	blankSellingPrice(logs)
 
 	common.ApiSuccess(c, gin.H{
 		"items":     logs,
@@ -58,7 +60,7 @@ func SupplierListLogs(c *gin.Context) {
 
 // SupplierLogsStat 返回当前供应商所属渠道的用量统计。
 // query 参数：start_timestamp、end_timestamp（unix 秒，默认无界）。
-// quota = 时间窗内 SUM(quota)；rpm/tpm = 最近 60 秒。
+// official_usd = 时间窗内 SUM(official_usd)（供应商结算口径）；rpm/tpm = 最近 60 秒。
 func SupplierLogsStat(c *gin.Context) {
 	supplierId := c.GetInt("id")
 
@@ -76,11 +78,17 @@ func SupplierLogsStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	officialUsd, err := model.SumSupplierOfficialUsd(channelIds, startTs, endTs)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
+	// 只返回官方价口径；quota（含分组倍率的平台售价）不再暴露给供应商。
 	common.ApiSuccess(c, gin.H{
-		"quota": stat.Quota,
-		"rpm":   stat.Rpm,
-		"tpm":   stat.Tpm,
+		"official_usd": officialUsd,
+		"rpm":          stat.Rpm,
+		"tpm":          stat.Tpm,
 	})
 }
 
@@ -93,5 +101,40 @@ func blankConsumerIdentity(logs []*model.Log) {
 		}
 		l.Username = ""
 		l.TokenName = ""
+	}
+}
+
+// sellingPriceOtherKeys 日志 other 里会暴露平台加价/计费策略的键，供应商端一律剔除。
+// 保留 model_ratio / completion_ratio / model_price / cache_* 等官方价参数与请求元数据。
+var sellingPriceOtherKeys = []string{
+	"group_ratio", "user_group_ratio",
+	"billing_mode", "matched_tier", "billing_preference", "billing_source", "wallet_quota_deducted",
+	"admin_info", "stream_status",
+}
+
+// blankSellingPrice 抹掉供应商日志中的平台售价：quota 归零，other 剔除加价/订阅/管理字段。
+// official_usd 与 cost_price_snapshot 是供应商结算依据，保留。
+func blankSellingPrice(logs []*model.Log) {
+	for _, l := range logs {
+		if l == nil {
+			continue
+		}
+		l.Quota = 0
+		if l.Other == "" {
+			continue
+		}
+		otherMap, _ := common.StrToMap(l.Other)
+		if otherMap == nil {
+			continue
+		}
+		for _, k := range sellingPriceOtherKeys {
+			delete(otherMap, k)
+		}
+		for k := range otherMap {
+			if strings.HasPrefix(k, "subscription_") {
+				delete(otherMap, k)
+			}
+		}
+		l.Other = common.MapToJsonStr(otherMap)
 	}
 }

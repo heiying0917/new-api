@@ -25,6 +25,7 @@ import {
   showSuccess,
   renderQuota,
   getCurrencyConfig,
+  isRoot,
 } from '../../../../helpers';
 import {
   quotaToDisplayAmount,
@@ -79,6 +80,27 @@ const EditUserModal = (props) => {
 
   const isEdit = Boolean(userId);
 
+  // 角色下拉（替代原"提升/降级"）：超管可设 1/3/5/10，管理员可设 1/3/5；
+  // 目标是超管或自己时禁用（后端 validateRoleChange 同样拦截，此处避免无效提交）。
+  const currentUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch {
+      return null;
+    }
+  })();
+  const roleOptions = [
+    { label: t('普通用户'), value: 1 },
+    { label: t('观察员'), value: 3 },
+    { label: t('供应商'), value: 5 },
+    ...(isRoot() ? [{ label: t('管理员'), value: 10 }] : []),
+  ];
+  const targetIsRoot = inputs?.role === 100;
+  const targetIsSelf = Boolean(
+    currentUser && userId && Number(userId) === Number(currentUser.id),
+  );
+  const roleDisabled = targetIsRoot || targetIsSelf;
+
   const getInitValues = () => ({
     username: '',
     display_name: '',
@@ -94,6 +116,7 @@ const EditUserModal = (props) => {
     quota_amount: 0,
     group: 'default',
     remark: '',
+    role: 1,
   });
 
   const fetchGroups = async () => {
@@ -150,6 +173,10 @@ const EditUserModal = (props) => {
     let payload = { ...values };
     delete payload.quota;
     delete payload.quota_amount;
+    // 自更新与禁用态不传 role（后端缺省=不改）
+    if (!isEdit || roleDisabled) {
+      delete payload.role;
+    }
     if (userId) {
       payload.id = parseInt(userId);
     }
@@ -170,7 +197,11 @@ const EditUserModal = (props) => {
   const adjustQuota = async () => {
     const quotaVal = parseInt(adjustQuotaLocal) || 0;
     if (quotaVal <= 0 && adjustMode !== 'override') return;
-    if (adjustMode === 'override' && (adjustQuotaLocal === '' || adjustQuotaLocal == null)) return;
+    if (
+      adjustMode === 'override' &&
+      (adjustQuotaLocal === '' || adjustQuotaLocal == null)
+    )
+      return;
     setAdjustLoading(true);
     try {
       const res = await API.post('/api/user/manage', {
@@ -368,6 +399,29 @@ const EditUserModal = (props) => {
                         />
                       </Col>
 
+                      {isEdit && (
+                        <Col span={24}>
+                          <Form.Select
+                            field='role'
+                            label={t('角色')}
+                            placeholder={t('请选择角色')}
+                            optionList={
+                              targetIsRoot
+                                ? [{ label: t('超级管理员'), value: 100 }]
+                                : roleOptions
+                            }
+                            disabled={roleDisabled}
+                            extraText={
+                              targetIsRoot
+                                ? t('超级管理员的角色不可修改')
+                                : targetIsSelf
+                                  ? t('不能修改自己的角色')
+                                  : undefined
+                            }
+                          />
+                        </Col>
+                      )}
+
                       <Col span={10}>
                         <Form.InputNumber
                           field='quota_amount'
@@ -401,7 +455,10 @@ const EditUserModal = (props) => {
                             ? `▾ ${t('收起原生额度输入')}`
                             : `▸ ${t('使用原生额度输入')}`}
                         </div>
-                        <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                        <div
+                          style={{ display: showQuotaInput ? 'block' : 'none' }}
+                          className='mt-2'
+                        >
                           <Form.InputNumber
                             field='quota'
                             label={t('额度')}
@@ -539,7 +596,10 @@ const EditUserModal = (props) => {
             ? `▾ ${t('收起原生额度输入')}`
             : `▸ ${t('使用原生额度输入')}`}
         </div>
-        <div style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }} className='mt-2'>
+        <div
+          style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }}
+          className='mt-2'
+        >
           <div className='mb-1'>
             <Text size='small'>{t('额度')}</Text>
           </div>

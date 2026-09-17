@@ -18,20 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Modal } from '@douyinfe/semi-ui';
+import UsageLogsTable from '../../components/table/usage-logs';
 
-const DemoteUserModal = ({ visible, onCancel, onConfirm, user, t }) => {
-  return (
-    <Modal
-      title={t('确定要降级此用户吗？')}
-      visible={visible}
-      onCancel={onCancel}
-      onOk={onConfirm}
-      type='warning'
-    >
-      {t('此操作将降低用户的权限级别')}
-    </Modal>
-  );
-};
+// 观察员（role=3）全平台日志：mode='viewer' 走 /api/viewer/log 脱敏接口。
+const ViewerLogs = () => (
+  <div className='mt-[60px] px-2'>
+    <UsageLogsTable mode='viewer' />
+  </div>
+);
 
-export default DemoteUserModal;
+export default ViewerLogs;

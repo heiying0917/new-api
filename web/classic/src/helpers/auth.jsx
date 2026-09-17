@@ -81,4 +81,21 @@ export function SupplierRoute({ children }) {
   return <Navigate to='/console' replace />;
 }
 
+// 观察员（role===3）专用路由守卫：只读渠道/全站日志页面。
+export function ViewerRoute({ children }) {
+  const raw = localStorage.getItem('user');
+  if (!raw) {
+    return <Navigate to='/login' state={{ from: history.location }} />;
+  }
+  try {
+    const user = JSON.parse(raw);
+    if (user && typeof user.role === 'number' && user.role === 3) {
+      return children;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return <Navigate to='/console' replace />;
+}
+
 export { PrivateRoute };

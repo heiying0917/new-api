@@ -21,7 +21,13 @@ import React, { lazy, Suspense, useContext, useMemo } from 'react';
 import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
-import { AuthRedirect, PrivateRoute, AdminRoute, SupplierRoute } from './helpers';
+import {
+  AuthRedirect,
+  PrivateRoute,
+  AdminRoute,
+  SupplierRoute,
+  ViewerRoute,
+} from './helpers';
 import RegisterForm from './components/auth/RegisterForm';
 import LoginForm from './components/auth/LoginForm';
 import NotFound from './pages/NotFound';
@@ -57,9 +63,13 @@ const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const SupplierDashboard = lazy(() => import('./pages/SupplierDashboard'));
 const SupplierChannels = lazy(() => import('./pages/SupplierChannels'));
+const ViewerChannels = lazy(() => import('./pages/ViewerChannels'));
+const ViewerLogs = lazy(() => import('./pages/ViewerLogs'));
 const SupplierSettlements = lazy(() => import('./pages/SupplierSettlements'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
-const SupplierOverviewAdmin = lazy(() => import('./pages/SupplierOverviewAdmin'));
+const SupplierOverviewAdmin = lazy(
+  () => import('./pages/SupplierOverviewAdmin'),
+);
 const SettlementReview = lazy(() => import('./pages/SettlementReview'));
 
 function DynamicOAuth2Callback() {
@@ -401,6 +411,26 @@ function App() {
                 <SupplierChannels />
               </Suspense>
             </SupplierRoute>
+          }
+        />
+        <Route
+          path='/console/viewer/channels'
+          element={
+            <ViewerRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <ViewerChannels />
+              </Suspense>
+            </ViewerRoute>
+          }
+        />
+        <Route
+          path='/console/viewer/logs'
+          element={
+            <ViewerRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <ViewerLogs />
+              </Suspense>
+            </ViewerRoute>
           }
         />
         <Route

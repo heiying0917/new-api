@@ -144,10 +144,7 @@ function renderType(type, t) {
 
 function buildStreamStatusTooltip(ss, t) {
   if (!ss) return null;
-  const lines = [
-    t('流状态') + '：' + t('异常'),
-    (ss.end_reason || 'unknown'),
-  ];
+  const lines = [t('流状态') + '：' + t('异常'), ss.end_reason || 'unknown'];
   if (ss.error_count > 0) {
     lines.push(`${t('软错误')}: ${ss.error_count}`);
   }
@@ -185,11 +182,7 @@ function renderIsStream(bool, t, streamStatus) {
                 userSelect: 'none',
               }}
             >
-              <CircleAlert
-                size={14}
-                strokeWidth={2.5}
-                color='currentColor'
-              />
+              <CircleAlert size={14} strokeWidth={2.5} color='currentColor' />
             </span>
           </Tooltip>
         )}
@@ -461,7 +454,11 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     };
   }
 
-  const summaryOpts = { ...other, displayMode: billingDisplayMode, outputMode: 'segments' };
+  const summaryOpts = {
+    ...other,
+    displayMode: billingDisplayMode,
+    outputMode: 'segments',
+  };
 
   if (other?.billing_mode === 'tiered_expr') {
     return { segments: renderTieredModelPriceSimple(summaryOpts) };
@@ -482,6 +479,7 @@ export const getLogsColumns = ({
   openChannelAffinityUsageCacheModal,
   isAdminUser,
   isSupplierUser = false,
+  isViewerUser = false,
   billingDisplayMode = 'price',
 }) => {
   return [
@@ -519,7 +517,7 @@ export const getLogsColumns = ({
           }
         }
 
-        return (isAdminUser || isSupplierUser) &&
+        return (isAdminUser || isSupplierUser || isViewerUser) &&
           (record.type === 0 ||
             record.type === 2 ||
             record.type === 5 ||
@@ -589,7 +587,7 @@ export const getLogsColumns = ({
       title: t('用户'),
       dataIndex: 'username',
       render: (text, record, index) => {
-        return isAdminUser ? (
+        return isAdminUser && !isViewerUser ? (
           <div>
             <Avatar
               size='extra-small'
@@ -807,6 +805,10 @@ export const getLogsColumns = ({
       title: t('花费'),
       dataIndex: 'quota',
       render: (text, record, index) => {
+        // 供应商不可见平台售价（后端已归零，此处双保险）。
+        if (isSupplierUser) {
+          return <></>;
+        }
         if (
           !(
             record.type === 0 ||
@@ -919,7 +921,7 @@ export const getLogsColumns = ({
             }
           }
         }
-        return isAdminUser ? <div>{content}</div> : <></>;
+        return isAdminUser && !isViewerUser ? <div>{content}</div> : <></>;
       },
     },
     {

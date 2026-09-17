@@ -47,12 +47,19 @@ export const useChannelsData = (mode = 'admin') => {
 
   // 供应商模式:复用管理员渠道页全套组件,接口切到 /api/supplier/channel(后端强制 supplier_id=本人)。
   const isSupplierMode = mode === 'supplier';
-  const apiBase = isSupplierMode ? '/api/supplier/channel' : '/api/channel';
+  // 观察员模式:只读白名单接口(/api/viewer/channel),无任何写操作;分组接口走 /api/viewer/groups。
+  const isViewerMode = mode === 'viewer';
+  const apiBase = isViewerMode
+    ? '/api/viewer/channel'
+    : isSupplierMode
+      ? '/api/supplier/channel'
+      : '/api/channel';
 
   // V12/V13 深链：供应商概览点击跳转携带 ?supplier=<名字> / ?group=<分组>。
   // supplier 仅管理员模式生效（供应商模式后端强制本人渠道）；group 两种模式都可按分组过滤。
   const [searchParams] = useSearchParams();
-  const urlSupplier = isSupplierMode ? '' : searchParams.get('supplier') || '';
+  const urlSupplier =
+    isSupplierMode || isViewerMode ? '' : searchParams.get('supplier') || '';
   const urlGroup = searchParams.get('group') || '';
   // 记录上次按 URL 应用过的(供应商,分组)组合，用于站内导航(带/不带深链参数互切)时正确同步、不留陈旧过滤。
   const lastDeepLinkRef = useRef(null);
@@ -202,7 +209,14 @@ export const useChannelsData = (mode = 'admin') => {
     formApi.setValue('searchGroup', urlGroup);
     const run =
       urlSupplier !== '' || urlGroup !== ''
-        ? searchChannels(enableTagMode, 'all', statusFilter, 1, pageSize, idSort)
+        ? searchChannels(
+            enableTagMode,
+            'all',
+            statusFilter,
+            1,
+            pageSize,
+            idSort,
+          )
         : loadChannels(1, pageSize, idSort, enableTagMode);
     run.then().catch((reason) => showError(reason));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -690,7 +704,11 @@ export const useChannelsData = (mode = 'admin') => {
   const fetchGroups = async () => {
     try {
       let res = await API.get(
-        isSupplierMode ? `/api/supplier/self/groups` : `/api/group/`,
+        isViewerMode
+          ? `/api/viewer/groups`
+          : isSupplierMode
+            ? `/api/supplier/self/groups`
+            : `/api/group/`,
       );
       if (res === undefined) return;
       setGroupOptions(
@@ -1312,6 +1330,7 @@ export const useChannelsData = (mode = 'admin') => {
     // Mode
     mode,
     isSupplierMode,
+    isViewerMode,
     apiBase,
 
     // Basic states

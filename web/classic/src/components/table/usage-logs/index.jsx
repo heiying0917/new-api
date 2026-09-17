@@ -30,16 +30,20 @@ import { useLogsData } from '../../../hooks/usage-logs/useUsageLogsData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
 
-const LogsPage = () => {
-  const logsData = useLogsData();
+const LogsPage = ({ mode } = {}) => {
+  const logsData = useLogsData({ mode });
   const isMobile = useIsMobile();
 
   return (
     <>
       {/* Modals */}
       <ColumnSelectorModal {...logsData} />
-      <UserInfoModal {...logsData} />
-      <ChannelAffinityUsageCacheModal {...logsData} />
+      {!logsData.isViewerUser && (
+        <>
+          <UserInfoModal {...logsData} />
+          <ChannelAffinityUsageCacheModal {...logsData} />
+        </>
+      )}
       <ParamOverrideModal {...logsData} />
 
       {/* Main Content */}

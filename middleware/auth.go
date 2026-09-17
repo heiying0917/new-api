@@ -33,7 +33,14 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+// authHelper 线性角色门槛：role >= minRole 放行（UserAuth/SupplierAuth/AdminAuth/RootAuth 沿用）。
 func authHelper(c *gin.Context, minRole int) {
+	authHelperWithRoleCheck(c, func(role int) bool { return role >= minRole })
+}
+
+// authHelperWithRoleCheck 通用鉴权：会话/access_token 解析、New-Api-User 校验、缓存回查、
+// 封禁检查之后，用 allow 谓词决定角色是否放行。ViewerAuth 等"精确匹配"角色的中间件直接使用它。
+func authHelperWithRoleCheck(c *gin.Context, allow func(role int) bool) {
 	session := sessions.Default(c)
 	username := session.Get("username")
 	role := session.Get("role")
@@ -150,7 +157,7 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if role.(int) < minRole {
+	if !allow(role.(int)) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
@@ -204,6 +211,16 @@ func AdminAuth() func(c *gin.Context) {
 func SupplierAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleSupplierUser)
+	}
+}
+
+// ViewerAuth 观察员专用：只放行 role==RoleViewerUser 或管理员以上（便于排查）。
+// 不能用线性 minRole=3，否则供应商(5)也会通过并看到全站渠道。
+func ViewerAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		authHelperWithRoleCheck(c, func(role int) bool {
+			return role == common.RoleViewerUser || role >= common.RoleAdminUser
+		})
 	}
 }
 

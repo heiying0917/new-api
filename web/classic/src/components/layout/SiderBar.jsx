@@ -25,7 +25,13 @@ import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime';
-import { isAdmin, isRoot, isSupplier, showError } from '../../helpers';
+import {
+  isAdmin,
+  isRoot,
+  isSupplier,
+  isViewer,
+  showError,
+} from '../../helpers';
 import SkeletonWrapper from './components/SkeletonWrapper';
 
 import { Nav, Divider, Button } from '@douyinfe/semi-ui';
@@ -55,6 +61,8 @@ const routerMap = {
   supplier_settlements: '/console/supplier/settlements',
   suppliers: '/console/suppliers',
   supplier_overview_admin: '/console/supplier-overview',
+  viewer_channels: '/console/viewer/channels',
+  viewer_logs: '/console/viewer/logs',
   settlement_review: '/console/settlement-review',
 };
 
@@ -95,8 +103,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'detail',
         to: '/detail',
         className:
-          isSupplier() ||
-          localStorage.getItem('enable_data_export') !== 'true'
+          isSupplier() || localStorage.getItem('enable_data_export') !== 'true'
             ? 'tableHiddle'
             : '',
       },
@@ -203,6 +210,22 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
+      },
+    ];
+  }, [t]);
+
+  // 观察员（role===3）专区：只读资源总览 + 全平台脱敏日志；控制台/个人中心照常显示。
+  const viewerItems = useMemo(() => {
+    return [
+      {
+        text: t('资源总览'),
+        itemKey: 'viewer_channels',
+        to: '/console/viewer/channels',
+      },
+      {
+        text: t('全平台日志'),
+        itemKey: 'viewer_logs',
+        to: '/console/viewer/logs',
       },
     ];
   }, [t]);
@@ -576,6 +599,19 @@ const SiderBar = ({ onNavigate = () => {} }) => {
                   <div className='sidebar-group-label'>{t('供应商')}</div>
                 )}
                 {supplierItems.map((item) => renderNavItem(item))}
+              </div>
+            </>
+          )}
+
+          {/* 观察员区域 - 仅观察员（role === 3）可见 */}
+          {isViewer() && (
+            <>
+              <Divider className='sidebar-divider' />
+              <div>
+                {!collapsed && (
+                  <div className='sidebar-group-label'>{t('观察员')}</div>
+                )}
+                {viewerItems.map((item) => renderNavItem(item))}
               </div>
             </>
           )}

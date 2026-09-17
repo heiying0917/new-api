@@ -18,20 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Modal } from '@douyinfe/semi-ui';
+import ChannelsPage from '../../components/table/channels';
 
-const PromoteUserModal = ({ visible, onCancel, onConfirm, user, t }) => {
+// 观察员（role=3）资源总览：复用管理员渠道页，mode='viewer' 走 /api/viewer/channel 只读白名单接口。
+const ViewerChannels = () => {
   return (
-    <Modal
-      title={t('确定要提升此用户吗？')}
-      visible={visible}
-      onCancel={onCancel}
-      onOk={onConfirm}
-      type='warning'
-    >
-      {t('此操作将提升用户的权限级别')}
-    </Modal>
+    <div className='classic-page-fill'>
+      <ChannelsPage mode='viewer' />
+    </div>
   );
 };
 
-export default PromoteUserModal;
+export default ViewerChannels;

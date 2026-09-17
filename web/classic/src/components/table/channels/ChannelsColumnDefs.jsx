@@ -322,6 +322,7 @@ export const getChannelsColumns = ({
   t,
   COLUMN_KEYS,
   isSupplierMode = false,
+  isViewerMode = false,
   updateChannelBalance,
   manageChannel,
   manageTag,
@@ -343,7 +344,16 @@ export const getChannelsColumns = ({
   openUpstreamUpdateModal,
   detectChannelUpstreamUpdates,
 }) => {
-  return [
+  // 观察员（只读）隐藏的列：成本价/应收款/创建者/优先级/权重/操作列。
+  const VIEWER_HIDDEN_COLUMN_KEYS = new Set([
+    'cost_price',
+    'receivable',
+    COLUMN_KEYS.SUPPLIER,
+    COLUMN_KEYS.PRIORITY,
+    COLUMN_KEYS.WEIGHT,
+    COLUMN_KEYS.OPERATE,
+  ]);
+  const columns = [
     {
       key: COLUMN_KEYS.ID,
       title: t('ID'),
@@ -594,8 +604,15 @@ export const getChannelsColumns = ({
                     color={record.type === 57 ? 'light-blue' : 'white'}
                     type={record.type === 57 ? 'light' : 'ghost'}
                     shape='circle'
-                    className={record.type === 57 ? 'cursor-pointer' : ''}
-                    onClick={() => updateChannelBalance(record)}
+                    className={
+                      record.type === 57 && !isViewerMode
+                        ? 'cursor-pointer'
+                        : ''
+                    }
+                    onClick={() => {
+                      // 观察员只读：不触发刷余额（后端也未开放该接口）
+                      if (!isViewerMode) updateChannelBalance(record);
+                    }}
                   >
                     {record.type === 57
                       ? t('帐号信息')
@@ -963,4 +980,7 @@ export const getChannelsColumns = ({
       },
     },
   ];
+  return isViewerMode
+    ? columns.filter((col) => !VIEWER_HIDDEN_COLUMN_KEYS.has(col.key))
+    : columns;
 };

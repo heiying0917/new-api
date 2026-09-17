@@ -197,13 +197,14 @@ const (
 const (
 	RoleGuestUser    = 0
 	RoleCommonUser   = 1
+	RoleViewerUser   = 3 // 观察员：只读看全站渠道/日志，其余能力同普通用户
 	RoleSupplierUser = 5
 	RoleAdminUser    = 10
 	RoleRootUser     = 100
 )
 
 func IsValidateRole(role int) bool {
-	return role == RoleGuestUser || role == RoleCommonUser ||
+	return role == RoleGuestUser || role == RoleCommonUser || role == RoleViewerUser ||
 		role == RoleSupplierUser || role == RoleAdminUser || role == RoleRootUser
 }
 

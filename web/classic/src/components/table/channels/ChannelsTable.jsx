@@ -45,6 +45,7 @@ const ChannelsTable = (channelsData) => {
     t,
     COLUMN_KEYS,
     isSupplierMode,
+    isViewerMode,
     // Column functions and data
     updateChannelBalance,
     manageChannel,
@@ -73,6 +74,7 @@ const ChannelsTable = (channelsData) => {
       t,
       COLUMN_KEYS,
       isSupplierMode,
+      isViewerMode,
       updateChannelBalance,
       manageChannel,
       manageTag,
@@ -98,6 +100,7 @@ const ChannelsTable = (channelsData) => {
     t,
     COLUMN_KEYS,
     isSupplierMode,
+    isViewerMode,
     updateChannelBalance,
     manageChannel,
     manageTag,
@@ -168,7 +171,7 @@ const ChannelsTable = (channelsData) => {
       expandAllRows={false}
       onRow={handleRow}
       rowSelection={
-        enableBatchDelete
+        enableBatchDelete && !isViewerMode
           ? {
               onChange: (selectedRowKeys, selectedRows) => {
                 setSelectedChannels(selectedRows);
