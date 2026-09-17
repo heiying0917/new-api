@@ -645,3 +645,10 @@
 - **顺带发现（未修，待用户定）**：`model/channel_cache.go:82` `InitChannelCache` 只为「分组倍率」里已配置的分组建 map，若某渠道的 group 不在分组倍率中（本部署无 `default`），60s 同步协程会 `panic: assignment to entry in nil map` 让整个进程崩溃重启——用 SQL 造 `group='default'` 测试渠道时实际触发一次（造数据删除后恢复）。UI 建渠道只能选已配置分组所以平时碰不到，但管理员删分组倍率而渠道仍引用时会进崩溃循环，建议单独修（缺失分组时惰性建 map 或跳过并告警）。
 - **配置提醒**：模型广场对登录用户展示"用户可用分组"倍率，Azure Claude 等高倍率分组勿加进全局可用分组，只经"特殊可用分组"授权客户组。
 - **提交状态**：代码 + 设计 + 计划 + 本 WORKLOG 已 commit 到 `feat/viewer-role-supplier-price-hiding`；**未 push、未合 main、未发版**（等用户指令）。
+
+### [2026-09-17] 生产发版 v2026.09.17.3（观察员角色 + 供应商隐藏售价 + 角色下拉框，tke-release 全流程）
+- **提交**：用户指令"合并main，发版" → `feat/viewer-role-supplier-price-hiding` fast-forward 合入 main（0a58ec146 → 5c5eab7d5，含 d1707d874 遗留 v2026.09.17.2 发版文档）→ push main → tag v2026.09.17.3 → push tag（GitHub 一次 SSL 抖动，重试成功）。发版前弹窗二次确认 prod + 版本号。
+- **6 Phase 全过**：P1 build / 四包测试仅白名单内 / **Step 1.1b PG 写路径冒烟 PASS** → P2 run 35219262492 watch exit 0 + JSON 二次校验 completed/success（5.5 分钟），GHCR amd64 manifest 就位 → P3 master 20:14:12 → slave 20:14:53 收敛，健康 200 `success:true`，3 Pod Running restarts=0，panic/SQLSTATE=0 → P4 冒烟 9 条（relay 基线 distributor `model_not_found` 503 与历次一致；新路由/供应商统计/已下线 manage 动作未登录均 401 JSON；SPA 200）→ P6 六轮：503×3 全为冒烟 user_id=2，401×5 全为探测，429 为 user_id=1 既有限流（前 1h 2087），真实用户 5xx=0；非 access error 级日志前后同长度窗口 4336 vs 4578 量级一致，既有。
+- **结果**：✅ prod = v2026.09.17.3（master+slave v2026.09.17.2→v2026.09.17.3）。发版报告 `docs/deploy/report/2026-09-17-tokenki-prod-v2026.09.17.3.md`。
+- **覆盖说明**：观察员/供应商/管理员会话类场景 prod 无账号无法触发，已在本地容器真 PG 端到端覆盖（同一提交）。**建议用户用管理员账号把一个客户账号设为观察员实际点一遍**。
+- **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**（等用户指令）。
