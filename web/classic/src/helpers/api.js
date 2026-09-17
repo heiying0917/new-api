@@ -24,6 +24,10 @@ import {
   isValidMessage,
 } from './utils';
 import axios from 'axios';
+import {
+  handleInsufficientPrivilegeResponse,
+  ROLE_CHANGE_REDIRECT_MESSAGE,
+} from './roleSync';
 import { MESSAGE_ROLES } from '../constants/playground.constants';
 import i18n from '../i18n/i18n';
 
@@ -37,7 +41,6 @@ export let API = axios.create({
   },
 });
 
-
 function redirectToOAuthUrl(url, options = {}) {
   const { openInNewTab = false } = options;
   const targetUrl = typeof url === 'string' ? url : url.toString();
@@ -49,7 +52,6 @@ function redirectToOAuthUrl(url, options = {}) {
 
   window.location.assign(targetUrl);
 }
-
 
 function patchAPIInstance(instance) {
   const originalGet = instance.get.bind(instance);
@@ -96,7 +98,14 @@ export function updateAPI() {
 }
 
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // 管理员改了当前用户的角色：本地缓存角色已过期。接管跳转并中断本次请求，
+    // 避免页面拿 success:false 的空数据继续渲染（如 data.map 报错）。
+    if (handleInsufficientPrivilegeResponse(response)) {
+      return Promise.reject(new Error(ROLE_CHANGE_REDIRECT_MESSAGE));
+    }
+    return response;
+  },
   (error) => {
     // 如果请求配置中显式要求跳过全局错误处理，则不弹出默认错误提示
     if (error.config && error.config.skipErrorHandler) {
@@ -366,7 +375,9 @@ export async function onCustomOAuthClicked(provider, options = {}) {
     redirectToOAuthUrl(authUrl);
   } catch (error) {
     console.error('Failed to initiate custom OAuth:', error);
-    showError(i18n.t('OAuth 登录失败：') + (error.message || i18n.t('未知错误')));
+    showError(
+      i18n.t('OAuth 登录失败：') + (error.message || i18n.t('未知错误')),
+    );
   }
 }
 

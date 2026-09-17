@@ -32,6 +32,7 @@ import {
 import { TABLE_COMPACT_MODES_KEY } from '../constants';
 import { MOBILE_BREAKPOINT } from '../hooks/common/useIsMobile';
 import i18n from '../i18n/i18n';
+import { isRoleChangeRedirect } from './roleSync';
 
 const HTMLToastContent = ({ htmlContent }) => {
   return <div dangerouslySetInnerHTML={{ __html: htmlContent }} />;
@@ -147,6 +148,10 @@ if (isMobileScreen) {
 }
 
 export function showError(error) {
+  // 角色变更引起的请求中断：页面即将整页跳转，不弹技术性错误。
+  if (isRoleChangeRedirect(error)) {
+    return;
+  }
   console.error(error);
   if (error.message) {
     if (error.name === 'AxiosError') {

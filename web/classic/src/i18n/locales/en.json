@@ -4627,6 +4627,10 @@
     "全平台日志": "Platform Logs",
     "请选择角色": "Select role",
     "超级管理员的角色不可修改": "The super administrator's role cannot be changed",
-    "不能修改自己的角色": "You cannot change your own role"
+    "不能修改自己的角色": "You cannot change your own role",
+    "你的账号角色已变更为 {{role}}，正在切换页面": "Your account role has been changed to {{role}}, switching page…",
+    "账号状态已变更，请重新登录": "Your account status has changed, please sign in again",
+    "账号已被禁用，请联系管理员": "Your account has been disabled, please contact the administrator",
+    "获取分组失败": "Failed to load groups"
   }
 }

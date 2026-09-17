@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -17,6 +18,10 @@ import (
 // performRoleAuth 以会话方式登录 role 用户并请求受 mw 保护的路由，返回业务处理器是否被执行。
 // model.DB 置 nil 走 authHelper 的"数据层未就绪→信任会话值"降级分支，避免建库。
 func performRoleAuth(t *testing.T, role int, mw gin.HandlerFunc) (*httptest.ResponseRecorder, bool) {
+	return performRoleAuthWithStatus(t, role, common.UserStatusEnabled, mw)
+}
+
+func performRoleAuthWithStatus(t *testing.T, role int, status int, mw gin.HandlerFunc) (*httptest.ResponseRecorder, bool) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	prevDB := model.DB
@@ -31,7 +36,7 @@ func performRoleAuth(t *testing.T, role int, mw gin.HandlerFunc) (*httptest.Resp
 		s.Set("id", 7)
 		s.Set("username", "u7")
 		s.Set("role", role)
-		s.Set("status", common.UserStatusEnabled)
+		s.Set("status", status)
 		s.Set("group", "default")
 		require.NoError(t, s.Save())
 		c.Status(http.StatusOK)
@@ -69,6 +74,9 @@ func TestViewerAuth_RejectsCommonAndSupplier(t *testing.T) {
 		w, reached := performRoleAuth(t, role, ViewerAuth())
 		require.False(t, reached, "role %d must be rejected", role)
 		require.Contains(t, w.Body.String(), `"success":false`)
+		// 前端靠 code + role 识别"角色已变更"并同步本地状态，缺一不可。
+		require.Contains(t, w.Body.String(), `"code":"`+InsufficientPrivilegeCode+`"`)
+		require.Contains(t, w.Body.String(), `"role":`+strconv.Itoa(role))
 	}
 }
 
@@ -82,4 +90,11 @@ func TestUserAuth_StillLinear(t *testing.T) {
 	require.False(t, reached)
 	_, reached = performRoleAuth(t, common.RoleViewerUser, AdminAuth())
 	require.False(t, reached)
+}
+
+// TestUserAuth_BannedCarriesCode 禁用账号被拒时带稳定 code，前端据此清本地登录态。
+func TestUserAuth_BannedCarriesCode(t *testing.T) {
+	w, reached := performRoleAuthWithStatus(t, common.RoleCommonUser, common.UserStatusDisabled, UserAuth())
+	require.False(t, reached)
+	require.Contains(t, w.Body.String(), `"code":"`+UserBannedCode+`"`)
 }

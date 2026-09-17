@@ -33,6 +33,12 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+// InsufficientPrivilegeCode 权限不足响应的稳定错误码（message 是翻译文案，不可用于程序判断）。
+const InsufficientPrivilegeCode = "INSUFFICIENT_PRIVILEGE"
+
+// UserBannedCode 账号被禁用响应的稳定错误码。
+const UserBannedCode = "USER_BANNED"
+
 // authHelper 线性角色门槛：role >= minRole 放行（UserAuth/SupplierAuth/AdminAuth/RootAuth 沿用）。
 func authHelper(c *gin.Context, minRole int) {
 	authHelperWithRoleCheck(c, func(role int) bool { return role >= minRole })
@@ -150,16 +156,22 @@ func authHelperWithRoleCheck(c *gin.Context, allow func(role int) bool) {
 		}
 	}
 	if status.(int) == common.UserStatusDisabled {
+		// code 供前端识别"账号已被禁用"并主动清理本地登录态回登录页。
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
+			"code":    UserBannedCode,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
 		})
 		c.Abort()
 		return
 	}
 	if !allow(role.(int)) {
+		// code/role 供前端识别"角色已被管理员变更"的场景：本地缓存的角色与服务端不一致时
+		// 前端据此刷新本地用户并切换页面，而不是拿空数据渲染报错。
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
+			"code":    InsufficientPrivilegeCode,
+			"role":    role.(int),
 			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
 		})
 		c.Abort()

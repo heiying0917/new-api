@@ -193,3 +193,23 @@
 
 - 每完成一部分记 `docs/superpowers/WORKLOG.md`。
 - 用户已授权：自测通过后 **commit**（不 push、不发版），随后停下等发版指令。
+
+---
+
+## 补丁 V1.1（2026-09-17）— 角色被管理员变更后前端不重登即切换
+
+**现象**：供应商登录中被超管改为观察员，刷新页面报 `Cannot read properties of undefined (reading 'map')`。
+
+**根因**：后端每请求从缓存重读角色，已按新角色鉴权；前端 `user.role` 缓存在 localStorage，侧栏/守卫/`isSupplier()` 全靠它，无任何核对；后端"权限不足"返回 HTTP 200 + `success:false` + 翻译文案，无稳定错误码，`fetchGroups` 等直接对空 `data` `.map`。
+
+**决策**：不踢出，做无感切换（后端已具备条件）。
+
+**后端**（`middleware/auth.go`）：权限不足响应新增 `code: "INSUFFICIENT_PRIVILEGE"` 与 `role: <当前角色>`，纯新增字段，状态码不变。
+
+**前端**（`web/classic`）：
+- `helpers/roleSync.js`：`applyRoleChange(serverRole)`（本地角色≠服务端 → 更新 localStorage、Toast 提示、800ms 后整页 `/console`，非法角色则 `forceLogout`）、`handleInsufficientPrivilegeResponse`、`syncStoredUserWithSelf`（`status≠1` → 强制登出）、`forceLogout`。
+- `helpers/api.js` 成功拦截器：命中 `INSUFFICIENT_PRIVILEGE` 且角色确变 → 接管跳转并 `reject(Error('ROLE_CHANGE_REDIRECT'))` 中断本次请求；`showError` 对该错误静默。角色未变（真越权）原样放过。
+- `PageLayout.loadUser` 后 `GET /api/user/self`（skipErrorHandler）核对角色/状态；401 → `forceLogout`。
+- `useChannelsData.fetchGroups`、`EditUserModal.fetchGroups` 先判 `success` 再 `.map`。
+
+**测试**：`middleware/viewer_auth_test.go` 断言拒绝体含 `code` 与 `role`；前端 build/eslint；本地容器：供应商会话 → SQL 改 role=3 → 供应商接口返回 `code=INSUFFICIENT_PRIVILEGE, role=3`，`/api/user/self` 返回 role=3。

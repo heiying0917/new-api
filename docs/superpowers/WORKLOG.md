@@ -652,3 +652,11 @@
 - **结果**：✅ prod = v2026.09.17.3（master+slave v2026.09.17.2→v2026.09.17.3）。发版报告 `docs/deploy/report/2026-09-17-tokenki-prod-v2026.09.17.3.md`。
 - **覆盖说明**：观察员/供应商/管理员会话类场景 prod 无账号无法触发，已在本地容器真 PG 端到端覆盖（同一提交）。**建议用户用管理员账号把一个客户账号设为观察员实际点一遍**。
 - **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**（等用户指令）。
+
+### [2026-09-17] 补丁：管理员改角色后前端无感切换（不重登 / 禁用则踢出）
+- **现象(用户)**：供应商登录中被超管改为观察员，刷新页面报 `... reading 'map'`。**根因**：后端每请求从缓存重读角色、已按新角色鉴权，但前端 `user.role` 缓存在 localStorage 无核对，仍按供应商渲染并调供应商接口；"权限不足"响应为 200+`success:false`+翻译文案、无错误码，`fetchGroups` 直接对空 `data.map`。
+- **决策(用户确认)**：做无感切换而非踢出（后端已具备条件）；禁用/会话失效才踢出。
+- **后端**：`middleware/auth.go` 权限不足响应加 `code:"INSUFFICIENT_PRIVILEGE"` + `role:<当前角色>`；禁用响应加 `code:"USER_BANNED"`。纯新增字段，状态码不变。测试 `viewer_auth_test.go` 断言两个 code。
+- **前端(classic)**：新增 `helpers/roleSync.js`（`applyRoleChange`：本地角色≠服务端 → 更新 localStorage + Toast"角色已变更为 X，正在切换页面" + 800ms 整页 `/console`；非法角色/禁用 → `forceLogout` 清本地态回 `/login?expired=true`）；`api.js` 成功拦截器命中 `INSUFFICIENT_PRIVILEGE`/`USER_BANNED` 时接管并 `reject(Error('ROLE_CHANGE_REDIRECT'))` 中断本次请求，`showError` 对该错误静默；`PageLayout.loadUser` 后 `GET /api/user/self`(skipErrorHandler) 核对角色/状态，401 → `forceLogout`；`useChannelsData.fetchGroups`、`EditUserModal.fetchGroups` 先判 `success` 再 `.map`。设计文档追加 §补丁 V1.1。
+- **验证**：middleware 测试全过；prettier/eslint/build 过；本地容器（真 PG）：供应商会话 → 管理员 `PUT /api/user/ role=3` → 同一会话供应商接口立即返回 `code=INSUFFICIENT_PRIVILEGE, role=3`，`/api/user/self` role=3，`/api/viewer/channel/` 放行；管理员 `disable` 后同会话 `self` 返回 `code=USER_BANNED`；新前端包含 `INSUFFICIENT_PRIVILEGE` 字串；测试账号已清理，0 panic。**注意**：直接用 SQL 改 role 不会失效用户缓存（走 UI/API 才会），本地造数据时先误判过一次。
+- **提交状态**：用户指令"改完提交并发版" → 本条随补丁一并 commit；随后走 tke-release 发 v2026.09.17.4。

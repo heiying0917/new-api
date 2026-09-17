@@ -711,6 +711,10 @@ export const useChannelsData = (mode = 'admin') => {
             : `/api/group/`,
       );
       if (res === undefined) return;
+      if (!res.data?.success || !Array.isArray(res.data?.data)) {
+        showError(res?.data?.message || t('获取分组失败'));
+        return;
+      }
       setGroupOptions(
         res.data.data.map((group) => ({
           label: group,

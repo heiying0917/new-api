@@ -34,6 +34,8 @@ import {
   getSystemName,
   showError,
   setStatusData,
+  syncStoredUserWithSelf,
+  forceLogout,
 } from '../../helpers';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -84,6 +86,25 @@ const PageLayout = () => {
     if (user) {
       let data = JSON.parse(user);
       userDispatch({ type: 'login', payload: data });
+      // 本地缓存的角色可能已被管理员改掉：用服务端 self 核对，不一致则同步并切页；
+      // 会话失效 / 账号禁用则清本地状态回登录页，而不是让页面拿空数据报错。
+      syncRoleWithServer();
+    }
+  };
+
+  const syncRoleWithServer = async () => {
+    try {
+      const res = await API.get('/api/user/self', { skipErrorHandler: true });
+      const { success, data } = res.data || {};
+      if (success && data) {
+        syncStoredUserWithSelf(data);
+      }
+      // success:false 的禁用 / 角色变更已由 API 拦截器统一接管
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        forceLogout();
+      }
+      // 其他错误（网络抖动等）静默，页面照常渲染
     }
   };
 

@@ -122,6 +122,10 @@ const EditUserModal = (props) => {
   const fetchGroups = async () => {
     try {
       let res = await API.get(`/api/group/`);
+      if (!res?.data?.success || !Array.isArray(res.data?.data)) {
+        showError(res?.data?.message || t('获取分组失败'));
+        return;
+      }
       setGroupOptions(res.data.data.map((g) => ({ label: g, value: g })));
     } catch (e) {
       showError(e.message);
