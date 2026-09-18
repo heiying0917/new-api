@@ -8,7 +8,7 @@ type SupplierPendingStat struct {
 }
 
 // GetSupplierPendingStat 汇总某供应商所有渠道未结算(settlement_id=0)消费日志的官方价与应付金额。
-// 应付按「每条日志冻结的成交价 cost_price_snapshot」累加，与结算口径一致、免疫事后改价。
+// 应付按「每条日志的成交价 cost_price_snapshot」累加，与结算口径一致；未结算日志的成交价随渠道当前成本价重定价（RepriceUnsettledLogs），打包进账单后冻结。
 // 两步（cross-DB safe, no JOIN）：取供应商渠道 id → 在 LOG_DB 一次聚合。
 func GetSupplierPendingStat(supplierId int) (SupplierPendingStat, error) {
 	var channelIds []int
@@ -27,8 +27,8 @@ func GetSupplierPendingStat(supplierId int) (SupplierPendingStat, error) {
 		LogCount    int64
 	}
 	if err := LOG_DB.Model(&Log{}).
-		Select("COALESCE(SUM(official_usd),0) AS official_usd, " +
-			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, " +
+		Select("COALESCE(SUM(official_usd),0) AS official_usd, "+
+			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, "+
 			"COUNT(*) AS log_count").
 		Where("type = ? AND settlement_id = 0 AND channel_id IN ?", LogTypeConsume, channelIds).
 		Scan(&agg).Error; err != nil {
@@ -52,7 +52,7 @@ type SettlementChannelRow struct {
 }
 
 // GetSettlementChannelBreakdown 按渠道聚合某结算单捕获的消费日志。
-// Receivable = Σ(每条 official_usd × 冻结成交价 cost_price_snapshot)，与结算总额口径一致、免疫改价。
+// Receivable = Σ(每条 official_usd × 成交价 cost_price_snapshot)，与结算总额口径一致；未结算部分随渠道当前成本价重定价。
 // CostPrice 显示为该渠道本单的实际加权单价（receivable/official_usd），与逐条快照自洽。
 // 按 official_usd 降序排列；无日志 → 空切片。仅回填 channel_name（不再活取现价）。
 func GetSettlementChannelBreakdown(settlementId int) ([]SettlementChannelRow, error) {

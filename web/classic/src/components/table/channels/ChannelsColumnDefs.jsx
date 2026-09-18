@@ -344,10 +344,10 @@ export const getChannelsColumns = ({
   openUpstreamUpdateModal,
   detectChannelUpstreamUpdates,
 }) => {
-  // 观察员（只读）隐藏的列：成本价/应收款/创建者/优先级/权重/操作列。
+  // 观察员（只读）隐藏的列：成本价/已消耗·应收款/创建者/优先级/权重/操作列（观察员只看含倍率的「已用/剩余」）。
   const VIEWER_HIDDEN_COLUMN_KEYS = new Set([
     'cost_price',
-    'receivable',
+    COLUMN_KEYS.CONSUMPTION,
     COLUMN_KEYS.SUPPLIER,
     COLUMN_KEYS.PRIORITY,
     COLUMN_KEYS.WEIGHT,
@@ -501,23 +501,9 @@ export const getChannelsColumns = ({
         </div>
       ),
     },
-    // 供应商模式:去掉「创建者」,展示「应收款」;成本价列对供应商与管理员统一放在「已用/剩余」之后（V13）。
+    // 供应商模式:去掉「创建者」；已消耗/应收款列对供应商与管理员统一放在「已用/剩余」之后。
     ...(isSupplierMode
-      ? [
-          {
-            key: 'receivable',
-            title: t('应收款'),
-            dataIndex: 'receivable',
-            render: (text, record) =>
-              record.children === undefined ? (
-                <span>
-                  {text != null && text !== ''
-                    ? `¥${Number(text).toFixed(2)}`
-                    : '-'}
-                </span>
-              ) : null,
-          },
-        ]
+      ? []
       : [
           {
             key: COLUMN_KEYS.SUPPLIER,
@@ -634,7 +620,39 @@ export const getChannelsColumns = ({
       },
     },
     {
-      // 成本价：放在「已用/剩余」之后，供应商与管理员均可见（V13）。
+      // 已消耗/应收款：供应商渠道的累计官方计费(USD，不含分组倍率) 与 应收款(¥ = 官方计费 × 成本价)。
+      // 管理员与供应商可见，观察员隐藏；非供应商渠道显示「-」。
+      key: COLUMN_KEYS.CONSUMPTION,
+      title: t('已消耗/应收款'),
+      dataIndex: 'official_usd',
+      render: (text, record) => {
+        const hasSupplier =
+          record.children === undefined
+            ? Number(record.supplier_id) > 0
+            : (record.children || []).some((ch) => Number(ch.supplier_id) > 0);
+        if (!hasSupplier) {
+          return <span>-</span>;
+        }
+        const usd = Number(record.official_usd) || 0;
+        const cny = Number(record.receivable) || 0;
+        return (
+          <Space spacing={1}>
+            <Tooltip content={t('已消耗：按官方计价（不含倍率）的累计消耗')}>
+              <Tag color='white' type='ghost' shape='circle'>
+                {`$${usd.toFixed(2)}`}
+              </Tag>
+            </Tooltip>
+            <Tooltip content={t('应收款：已消耗 × 成本价')}>
+              <Tag color='white' type='ghost' shape='circle'>
+                {`¥${cny.toFixed(2)}`}
+              </Tag>
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
+    {
+      // 成本价：放在「已消耗/应收款」之后，供应商与管理员均可见（V13）。
       key: 'cost_price',
       title: t('成本价'),
       dataIndex: 'cost_price',
@@ -980,7 +998,13 @@ export const getChannelsColumns = ({
       },
     },
   ];
-  return isViewerMode
-    ? columns.filter((col) => !VIEWER_HIDDEN_COLUMN_KEYS.has(col.key))
-    : columns;
+  // 供应商不得看到平台售价口径：隐藏含分组倍率的「已用/剩余」列，只看官方计价的已消耗/应收款。
+  const SUPPLIER_HIDDEN_COLUMN_KEYS = new Set([COLUMN_KEYS.BALANCE]);
+  if (isViewerMode) {
+    return columns.filter((col) => !VIEWER_HIDDEN_COLUMN_KEYS.has(col.key));
+  }
+  if (isSupplierMode) {
+    return columns.filter((col) => !SUPPLIER_HIDDEN_COLUMN_KEYS.has(col.key));
+  }
+  return columns;
 };

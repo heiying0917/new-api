@@ -44,6 +44,20 @@ func GetPricing(c *gin.Context) {
 	var group string
 	if exists {
 		user, err := model.GetUserCache(userId.(int))
+		if err == nil && user.Role == common.RoleSupplierUser {
+			// 供应商不得看到平台售价：模型定价、分组倍率、可用分组一律不下发（供应商只关心自己渠道的官方消耗与应收款）
+			c.JSON(200, gin.H{
+				"success":            true,
+				"data":               []model.Pricing{},
+				"vendors":            []any{},
+				"group_ratio":        map[string]float64{},
+				"usable_group":       map[string]string{},
+				"supported_endpoint": map[string]any{},
+				"auto_groups":        []string{},
+				"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
+			})
+			return
+		}
 		if err == nil {
 			group = user.Group
 			for g := range groupRatio {

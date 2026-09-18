@@ -22,30 +22,30 @@ import (
 )
 
 type Channel struct {
-	Id                 int     `json:"id"`
-	Type               int     `json:"type" gorm:"default:0"`
-	Key                string  `json:"key" gorm:"not null"`
-	OpenAIOrganization *string `json:"openai_organization"`
-	TestModel          *string `json:"test_model"`
-	Status             int     `json:"status" gorm:"default:1"`
-	Name               string  `json:"name" gorm:"index"`
-	Weight             *uint   `json:"weight" gorm:"default:0"`
-	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
-	TestTime           int64   `json:"test_time" gorm:"bigint"`
-	ResponseTime       int     `json:"response_time"` // in milliseconds
-	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
-	Other              string  `json:"other"`
+	Id                 int      `json:"id"`
+	Type               int      `json:"type" gorm:"default:0"`
+	Key                string   `json:"key" gorm:"not null"`
+	OpenAIOrganization *string  `json:"openai_organization"`
+	TestModel          *string  `json:"test_model"`
+	Status             int      `json:"status" gorm:"default:1"`
+	Name               string   `json:"name" gorm:"index"`
+	Weight             *uint    `json:"weight" gorm:"default:0"`
+	CreatedTime        int64    `json:"created_time" gorm:"bigint"`
+	TestTime           int64    `json:"test_time" gorm:"bigint"`
+	ResponseTime       int      `json:"response_time"` // in milliseconds
+	BaseURL            *string  `json:"base_url" gorm:"column:base_url;default:''"`
+	Other              string   `json:"other"`
 	Balance            float64  `json:"balance"` // in USD
 	BalanceUpdatedTime int64    `json:"balance_updated_time" gorm:"bigint"`
 	SupplierId         int      `json:"supplier_id" gorm:"index;default:0"`
-	SupplierName       string   `json:"supplier_name" gorm:"-"` // transient: 供应商用户名（admin 列表回填，不入库）
+	SupplierName       string   `json:"supplier_name" gorm:"-"`            // transient: 供应商用户名（admin 列表回填，不入库）
 	CreatedBy          int      `json:"created_by" gorm:"index;default:0"` // 创建者 user_id（管理员或供应商）
 	CreatedByName      string   `json:"created_by_name" gorm:"-"`          // transient: 创建者用户名（admin 列表回填，不入库）
-	CostPrice          *float64 `json:"cost_price" gorm:"default:0"` // 成本价 ¥/$（X元=1刀）
-	Models             string  `json:"models"`
-	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
-	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
-	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
+	CostPrice          *float64 `json:"cost_price" gorm:"default:0"`       // 成本价 ¥/$（X元=1刀）
+	Models             string   `json:"models"`
+	Group              string   `json:"group" gorm:"type:varchar(64);default:'default'"`
+	UsedQuota          int64    `json:"used_quota" gorm:"bigint;default:0"`
+	ModelMapping       *string  `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
@@ -69,8 +69,8 @@ type Channel struct {
 	SupplierEnabled  bool `json:"-" gorm:"-"`
 
 	// transient billing fields (populated by SupplierListChannels, never persisted)
-	OfficialUsd float64 `json:"official_usd" gorm:"-"` // 该渠道未结算的官方计费(USD)
-	Receivable  float64 `json:"receivable" gorm:"-"`   // 应收款 = official_usd × cost_price
+	OfficialUsd float64 `json:"official_usd" gorm:"-"` // 已消耗：该渠道累计官方计费(USD，不含分组倍率)，列表回填
+	Receivable  float64 `json:"receivable" gorm:"-"`   // 应收款：累计 Σ(official_usd × cost_price_snapshot)(¥)，列表回填
 }
 
 type ChannelInfo struct {

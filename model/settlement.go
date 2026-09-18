@@ -51,7 +51,7 @@ func CreateSettlement(supplierId int, source string, now int64) (*Settlement, er
 	}
 	// 串行化同一供应商的并发发起，防重复打包
 	defer lockSupplierSettlement(supplierId)()
-	// 1. 取供应商渠道 id（成交价已逐条冻结在日志的 cost_price_snapshot，结算不再活取现价）
+	// 1. 取供应商渠道 id（成交价已逐条写在日志的 cost_price_snapshot：未结算时随渠道当前成本价重定价，打包后即冻结）
 	var channels []*Channel
 	if err := DB.Where("supplier_id = ?", supplierId).Find(&channels).Error; err != nil {
 		return nil, err

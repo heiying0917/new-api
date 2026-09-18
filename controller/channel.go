@@ -235,14 +235,16 @@ func listChannelsCore(c *gin.Context, opts channelListOptions) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
-	// 观察员：白名单 DTO，不回填供应商名/应收款；其他模式保持原样。
+	// 观察员：白名单 DTO，不回填供应商名/已消耗/应收款；管理员与供应商回填供应商渠道的累计已消耗/应收款；
+	// 供应商端另抹掉含分组倍率的 used_quota（平台售价口径）。
 	var items any = channelData
 	if opts.viewer {
 		items = viewerChannelViews(channelData)
 	} else {
 		backfillChannelSupplierNames(channelData)
+		backfillSupplierConsumption(channelData)
 		if opts.forceSupplierId > 0 {
-			backfillSupplierUnsettled(channelData)
+			hideSellingPriceFromSupplier(channelData)
 		}
 	}
 
@@ -483,14 +485,16 @@ func searchChannelsCore(c *gin.Context, opts channelListOptions) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
-	// 观察员：白名单 DTO，不回填供应商名/应收款；其他模式保持原样。
+	// 观察员：白名单 DTO，不回填供应商名/已消耗/应收款；管理员与供应商回填供应商渠道的累计已消耗/应收款；
+	// 供应商端另抹掉含分组倍率的 used_quota（平台售价口径）。
 	var items any = pagedData
 	if opts.viewer {
 		items = viewerChannelViews(pagedData)
 	} else {
 		backfillChannelSupplierNames(pagedData)
+		backfillSupplierConsumption(pagedData)
 		if opts.forceSupplierId > 0 {
-			backfillSupplierUnsettled(pagedData)
+			hideSellingPriceFromSupplier(pagedData)
 		}
 	}
 
@@ -984,7 +988,7 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
-	Mode         string  `json:"mode"`           // 编辑时为 "multi_to_single" 则把单 key 渠道转为多 key（如 AWS 批量生成可用区域密钥）
+	Mode         string  `json:"mode"` // 编辑时为 "multi_to_single" 则把单 key 渠道转为多 key（如 AWS 批量生成可用区域密钥）
 	MultiKeyMode *string `json:"multi_key_mode"`
 	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
 }
@@ -1121,6 +1125,10 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// 供应商渠道成本价变更：未结算日志的成交价跟随新价（打包进账单的已冻结），并记 reprice 账本
+	if updated, fetchErr := model.GetChannelById(channel.Id, true); fetchErr == nil {
+		repriceChannelIfCostChanged(c, originChannel, updated, true)
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()

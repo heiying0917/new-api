@@ -124,7 +124,7 @@ func GetUnsettledOfficialUsdByChannels(channelIds []int) (map[int]float64, error
 }
 
 // GetUnsettledReceivableByChannels 返回每个渠道未结算消费日志的应收款（¥），
-// 按「每条 official_usd × 冻结成交价 cost_price_snapshot」累加，与结算口径一致、免疫事后改价。
+// 按「每条 official_usd × 成交价 cost_price_snapshot」累加，与结算口径一致；未结算日志的成交价随渠道当前成本价重定价，打包后冻结。
 func GetUnsettledReceivableByChannels(channelIds []int) (map[int]float64, error) {
 	result := make(map[int]float64)
 	if len(channelIds) == 0 {
@@ -137,6 +137,31 @@ func GetUnsettledReceivableByChannels(channelIds []int) (map[int]float64, error)
 	if err := LOG_DB.Model(&Log{}).
 		Select("channel_id, COALESCE(SUM(official_usd * cost_price_snapshot), 0) as receivable").
 		Where("type = ? AND settlement_id = ? AND channel_id IN ?", LogTypeConsume, 0, channelIds).
+		Group("channel_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		result[r.ChannelId] = r.Receivable
+	}
+	return result, nil
+}
+
+// GetTotalReceivableByChannels 汇总给定渠道集合「累计」(不分是否已结算)的应收款（¥）：
+// Σ(official_usd × cost_price_snapshot)，与结算口径一致（未结算部分随渠道当前成本价重定价，已打包部分按账单价冻结）。
+// 供渠道列表「已消耗/应收款」列展示。channelIds 为空时返回空 map（非 nil），不执行 IN ()。
+func GetTotalReceivableByChannels(channelIds []int) (map[int]float64, error) {
+	result := make(map[int]float64)
+	if len(channelIds) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		ChannelId  int
+		Receivable float64
+	}
+	if err := LOG_DB.Model(&Log{}).
+		Select("channel_id, COALESCE(SUM(official_usd * cost_price_snapshot), 0) as receivable").
+		Where("type = ? AND channel_id IN ?", LogTypeConsume, channelIds).
 		Group("channel_id").
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -600,9 +625,9 @@ func GetAllSuppliersPendingStat() (map[int]SupplierPendingStat, SupplierPendingS
 	}
 	var aggs []agg
 	if err := LOG_DB.Model(&Log{}).
-		Select("channel_id AS channel_id, " +
-			"COALESCE(SUM(official_usd),0) AS official_usd, " +
-			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, " +
+		Select("channel_id AS channel_id, "+
+			"COALESCE(SUM(official_usd),0) AS official_usd, "+
+			"COALESCE(SUM(official_usd * cost_price_snapshot),0) AS payable_cny, "+
 			"COUNT(*) AS log_count").
 		Where("type = ? AND settlement_id = 0 AND channel_id IN ?", LogTypeConsume, channelIds).
 		Group("channel_id").Scan(&aggs).Error; err != nil {
@@ -640,8 +665,8 @@ func GetSettlementTotalsByStatus(status int) (SettlementTotals, error) {
 		Count       int64
 	}
 	if err := DB.Model(&Settlement{}).
-		Select("COALESCE(SUM(official_usd),0) AS official_usd, " +
-			"COALESCE(SUM(computed_cny),0) AS computed_cny, " +
+		Select("COALESCE(SUM(official_usd),0) AS official_usd, "+
+			"COALESCE(SUM(computed_cny),0) AS computed_cny, "+
 			"COUNT(*) AS count").
 		Where("status = ?", status).Scan(&base).Error; err != nil {
 		return t, err

@@ -168,6 +168,7 @@ export const useChannelsData = (mode = 'admin') => {
     STATUS: 'status',
     RESPONSE_TIME: 'response_time',
     BALANCE: 'balance',
+    CONSUMPTION: 'consumption',
     PRIORITY: 'priority',
     WEIGHT: 'weight',
     OPERATE: 'operate',
@@ -233,6 +234,7 @@ export const useChannelsData = (mode = 'admin') => {
       [COLUMN_KEYS.STATUS]: true,
       [COLUMN_KEYS.RESPONSE_TIME]: true,
       [COLUMN_KEYS.BALANCE]: true,
+      [COLUMN_KEYS.CONSUMPTION]: true,
       [COLUMN_KEYS.PRIORITY]: true,
       [COLUMN_KEYS.WEIGHT]: true,
       [COLUMN_KEYS.OPERATE]: true,
@@ -312,6 +314,8 @@ export const useChannelsData = (mode = 'admin') => {
             name: t('标签：') + tag,
             group: '',
             used_quota: 0,
+            official_usd: 0,
+            receivable: 0,
             response_time: 0,
             priority: -1,
             weight: -1,
@@ -354,6 +358,8 @@ export const useChannelsData = (mode = 'admin') => {
           tagChannelDates.status = 1;
         }
         tagChannelDates.used_quota += channels[i].used_quota;
+        tagChannelDates.official_usd += Number(channels[i].official_usd) || 0;
+        tagChannelDates.receivable += Number(channels[i].receivable) || 0;
         tagChannelDates.response_time += channels[i].response_time;
         tagChannelDates.response_time = tagChannelDates.response_time / 2;
       }

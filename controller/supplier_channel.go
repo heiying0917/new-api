@@ -40,21 +40,39 @@ func SupplierSearchChannels(c *gin.Context) {
 	searchChannelsCore(c, channelListOptions{forceSupplierId: c.GetInt("id")})
 }
 
-// backfillSupplierUnsettled 为渠道列表回填未结算 official_usd(USD)与 receivable(应收款¥),
-// 应收款按「每条日志冻结的成交价」累加,与结算口径一致、免疫事后改价。
-func backfillSupplierUnsettled(channels []*model.Channel) {
-	if len(channels) == 0 {
-		return
-	}
+// backfillSupplierConsumption 为渠道列表（管理员 + 供应商）回填供应商渠道的累计「已消耗/应收款」：
+//   - official_usd：Σ 官方计费(USD)，不含分组倍率，即供应商真实被消耗的官方价；
+//   - receivable：Σ official_usd × cost_price_snapshot(¥)，未结算部分随渠道当前成本价、已打包部分按账单价冻结。
+//
+// 只查供应商渠道(supplier_id>0)，非供应商渠道保持 0；观察员走白名单 DTO 不经此处。
+func backfillSupplierConsumption(channels []*model.Channel) {
 	ids := make([]int, 0, len(channels))
 	for _, ch := range channels {
-		ids = append(ids, ch.Id)
+		if ch != nil && ch.SupplierId > 0 {
+			ids = append(ids, ch.Id)
+		}
 	}
-	usdByChannel, _ := model.GetUnsettledOfficialUsdByChannels(ids)
-	receivableByChannel, _ := model.GetUnsettledReceivableByChannels(ids)
+	if len(ids) == 0 {
+		return
+	}
+	usdByChannel, _ := model.GetTotalOfficialUsdByChannels(ids)
+	receivableByChannel, _ := model.GetTotalReceivableByChannels(ids)
 	for _, ch := range channels {
+		if ch == nil || ch.SupplierId <= 0 {
+			continue
+		}
 		ch.OfficialUsd = usdByChannel[ch.Id]
 		ch.Receivable = receivableByChannel[ch.Id]
+	}
+}
+
+// hideSellingPriceFromSupplier 供应商端响应抹掉平台售价口径字段：used_quota 是用户被扣额度(含分组倍率)，
+// 供应商只能看官方计价的已消耗与应收款。
+func hideSellingPriceFromSupplier(channels []*model.Channel) {
+	for _, ch := range channels {
+		if ch != nil {
+			ch.UsedQuota = 0
+		}
 	}
 }
 
@@ -72,6 +90,7 @@ func SupplierGetChannel(c *gin.Context) {
 		common.ApiErrorMsg(c, "forbidden: not your channel")
 		return
 	}
+	hideSellingPriceFromSupplier([]*model.Channel{ch})
 	common.ApiSuccess(c, ch)
 }
 
@@ -161,6 +180,10 @@ func SupplierUpdateChannel(c *gin.Context) {
 	if err := patch.Update(); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// 成本价变更：未结算日志的成交价跟随新价（打包进账单的已冻结），并记 reprice 账本供审计
+	if updated, fetchErr := model.GetChannelById(patch.Id, true); fetchErr == nil {
+		repriceChannelIfCostChanged(c, existing, updated, false)
 	}
 	model.InitChannelCache()
 	// 返回更新后的渠道(Update 内已回填全字段),供前端 manageChannel 就地刷新行状态;不回传 key。

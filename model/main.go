@@ -38,6 +38,13 @@ func jsonScanBytes(value interface{}) []byte {
 	}
 }
 
+// InitColNames 初始化跨库列名/布尔字面量（commonKeyCol 等）。InitDB 内部会调用；
+// 供不经 InitDB 直接注入 DB 的测试（如 controller 层用内存 SQLite）在建库后调用，
+// 否则拼接原生 SQL 的查询（如 SearchChannels）会因空列名报语法错误。
+func InitColNames() {
+	initCol()
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingPostgreSQL {
