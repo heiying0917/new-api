@@ -723,3 +723,10 @@
 - **结果**：✅ prod = v2026.09.18.2。发版报告 `docs/deploy/report/2026-09-18-tokenki-prod-v2026.09.18.2.md`。
 - **覆盖说明**：供应商/观察员会话 prod 无账号，前端三种模式列可见性与供应商端 used_quota 抹零、模型广场锁闭由 5 个新单测 + 既有观察员白名单测试锁定；建议用户用一个供应商账号实际打开「我的渠道」确认只见 已消耗/应收款、不见 已用/剩余。
 - **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**（等用户指令）。
+
+### [2026-10-30] 渠道并发上限（max_concurrency）开发 + 生产发版 v2026.10.30.1
+- **需求**：创建/编辑渠道可设每渠道并发数（同时在途请求数），默认 0 不限；列表展示「当前 / 上限」，0 显示「不限」。管理员与供应商均可设；只改 classic。原代码无此功能。
+- **实现**：`channels.max_concurrency`(*int)；`service/channel_concurrency.go` Redis ZSET 租约计数（Lua 占位、ZREM 释放、15s ZADD XX 续期、60s 租约、停机归还、超时撤销、fail-open），无 Redis 退回进程内计数；选路排除满载渠道（同档→降档，auto 跨组，首次撞满一次 pipeline 预排除）；Distribute defer 释放；Relay/RelayTask 重试换占位；全满 429 `channel_concurrency_limited`（不触发自动禁用）。设计：`docs/superpowers/specs/2026-10-30-channel-max-concurrency-design.md`。
+- **验证**：单测（model/service/middleware/controller，含真 Redis 争抢原子性、race 干净）；本地 PG+Redis 双实例 E2E（跨实例计数、溢出、429、重试、断连、kill -9 租约 59s 回收、优雅停机立即归还、Playwright classic UI 中英文）；独立评审无 critical，4 条 important/minor 已修。全量 go test 失败集合 = HEAD 基线（4 条 pre-existing）。
+- **发版**：`23af9d284 feat(channel)` + `e803f5bd8 docs(deploy)` → tag v2026.10.30.1 → run 41026836593（5m23s）→ master 16:36:04 / slave 16:37:00 → P4 9 项通过（生产 44 个渠道实时显示在途数，上限均 0 行为不变）→ P6 6 轮：429×108 为 Bedrock 上游限流（发版前同量），503×2 为冒烟，relay 200×2238，panic 0。报告 `docs/deploy/report/2026-10-30-tokenki-prod-v2026.10.30.1.md`。
+- **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**（等用户指令）。
