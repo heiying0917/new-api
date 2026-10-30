@@ -46,6 +46,12 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if !common.AutomaticDisableChannelEnabled {
 		return false
 	}
+	return IsChannelFatalError(err)
+}
+
+// IsChannelFatalError 报错是否说明渠道本身不可用（key 失效、账号被封等）：命中自动禁用状态码或关键词。
+// 与「失败时自动禁用通道」开关无关——开关只决定要不要禁用，这类报错换渠道重试总是对的。
+func IsChannelFatalError(err *types.NewAPIError) bool {
 	if err == nil {
 		return false
 	}
@@ -62,6 +68,19 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	lowerMessage := strings.ToLower(err.Error())
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
 	return search
+}
+
+// modelUnavailableMessage AWS Bedrock 对「该模型 ID 在当前账号/区域不可用」返回的 400 ValidationException。
+// 多数是渠道账号受限，但也可能是我方模型映射或区域配置有误（此时所有渠道都会报），
+// 因此不走关键词直接禁用，而是由 AllowUnavailableModelDisable 熔断限量禁用。
+const modelUnavailableMessage = "the provided model identifier is invalid"
+
+// IsModelUnavailableError 报错是否为「模型 ID 无效」：该渠道服务不了这个模型，应换渠道重试。
+func IsModelUnavailableError(err *types.NewAPIError) bool {
+	if err == nil || types.IsSkipRetryError(err) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), modelUnavailableMessage)
 }
 
 func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {

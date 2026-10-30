@@ -233,6 +233,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+		retryParam.MarkChannelFailed(channel.Id)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -349,6 +350,11 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
+	// 渠道本身不可用（key 失效、账号被封、该渠道服务不了这个模型）：不论状态码都换渠道重试，
+	// 例如 Bedrock 账号被封返回的是 400 ValidationException: Operation not allowed
+	if service.IsChannelFatalError(openaiErr) || service.IsModelUnavailableError(openaiErr) {
+		return true
+	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
 		return false
@@ -369,6 +375,14 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
 		gopool.Go(func() {
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
+		})
+	} else if common.AutomaticDisableChannelEnabled && channelError.AutoBan && service.IsModelUnavailableError(err) {
+		// 「模型 ID 无效」可能是我方模型映射问题，经熔断限量禁用，防止误禁全部渠道
+		modelName := c.GetString("original_model")
+		gopool.Go(func() {
+			if service.AllowUnavailableModelDisable(modelName, channelError.ChannelId) {
+				service.DisableChannel(channelError, err.ErrorWithStatusCode())
+			}
 		})
 	}
 
@@ -581,6 +595,7 @@ func RelayTask(c *gin.Context) {
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
+			retryParam.MarkChannelFailed(channel.Id)
 		}
 
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {

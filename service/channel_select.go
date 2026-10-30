@@ -17,6 +17,16 @@ type RetryParam struct {
 	ModelName    string
 	Retry        *int
 	resetNextTry bool
+	// failedChannels 本次请求已失败过的渠道：重试选路时优先避开，免得随机又选回刚失败的渠道
+	failedChannels map[int]bool
+}
+
+// MarkChannelFailed 记录本次请求在该渠道上失败，后续重试优先选其它渠道。
+func (p *RetryParam) MarkChannelFailed(channelId int) {
+	if p.failedChannels == nil {
+		p.failedChannels = make(map[int]bool)
+	}
+	p.failedChannels[channelId] = true
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -121,7 +131,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, busy, _ = acquireSatisfiedChannel(param.Ctx, autoGroup, param.ModelName, priorityRetry)
+			channel, busy, _ = acquireSatisfiedChannel(param.Ctx, autoGroup, param.ModelName, priorityRetry, param.failedChannels)
 			sawBusy = sawBusy || busy
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -160,7 +170,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, sawBusy, err = acquireSatisfiedChannel(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry())
+		channel, sawBusy, err = acquireSatisfiedChannel(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry(), param.failedChannels)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
@@ -171,25 +181,47 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	return channel, selectGroup, nil
 }
 
-// acquireSatisfiedChannel 按 retry 档位随机选渠道并占并发位；渠道并发已满则排除后重选：同档还有空位就留在同档，
+// acquireSatisfiedChannel 先避开本次请求已失败过的渠道选路；除此之外已无可选渠道（或都满载）时，
+// 退回在全部渠道里按原规则选，单渠道、渠道都失败过等情况的行为与不避开时一致。
+func acquireSatisfiedChannel(c *gin.Context, group string, modelName string, retry int, failed map[int]bool) (channel *model.Channel, busy bool, err error) {
+	if len(failed) > 0 {
+		channel, busy, err = acquireSatisfiedChannelExcluding(c, group, modelName, retry, failed)
+		if err != nil || channel != nil {
+			return channel, busy, err
+		}
+	}
+	return acquireSatisfiedChannelExcluding(c, group, modelName, retry, nil)
+}
+
+// acquireSatisfiedChannelExcluding 在 skip 之外按 retry 档位随机选渠道并占并发位；渠道并发已满则排除后重选：同档还有空位就留在同档，
 // 整档满了按剩余档位重新套用 retry 档位规则（retry 超出档位数时钳到最末档，因此也可能回到更高档的渠道）。
-// busy 表示有候选渠道因并发已满被跳过。排除集只在本次选路内有效，下一次重试会重新尝试这些渠道。
-func acquireSatisfiedChannel(c *gin.Context, group string, modelName string, retry int) (channel *model.Channel, busy bool, err error) {
+// busy 表示有候选渠道因并发已满被跳过。满载排除集只在本次选路内有效，下一次重试会重新尝试这些渠道。
+func acquireSatisfiedChannelExcluding(c *gin.Context, group string, modelName string, retry int, skip map[int]bool) (channel *model.Channel, busy bool, err error) {
 	var excluded map[int]bool
+	if len(skip) > 0 {
+		excluded = make(map[int]bool, len(skip))
+		for id := range skip {
+			excluded[id] = true
+		}
+	}
+	sawSaturated := false
 	for {
 		channel, err = model.GetRandomSatisfiedChannelExcluding(group, modelName, retry, excluded)
 		if err != nil || channel == nil {
-			return nil, len(excluded) > 0, err
+			return nil, sawSaturated, err
 		}
 		if excluded[channel.Id] {
-			// 防御：选路实现若未遵守排除集，直接视为满载结束，避免死循环
-			return nil, true, nil
+			// 防御：选路实现若未遵守排除集，直接结束，避免死循环
+			return nil, sawSaturated, nil
 		}
 		if TryAcquireChannelSlot(c, channel) {
 			return channel, false, nil
 		}
-		if excluded == nil {
-			excluded = make(map[int]bool)
+		if !sawSaturated {
+			sawSaturated = true
+			if excluded == nil {
+				excluded = make(map[int]bool)
+			}
 			// 首次撞上满载：一次性排除所有已满渠道，避免组内大量渠道满载时逐个试占、每个请求打出 N 次 Redis 往返
 			excludeSaturatedChannels(group, modelName, excluded)
 		}

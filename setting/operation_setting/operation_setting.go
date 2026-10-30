@@ -13,6 +13,8 @@ var AutomaticDisableKeywords = []string{
 	"The security token included in the request is invalid",
 	"Operation not allowed",
 	"Your account is not authorized",
+	"Please make sure your API Key is valid",
+	"The security token included in the request is expired",
 }
 
 func AutomaticDisableKeywordsToString() string {
