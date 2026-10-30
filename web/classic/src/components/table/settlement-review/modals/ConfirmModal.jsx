@@ -25,7 +25,14 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const ConfirmModal = ({ visible, record, onCancel, confirmSettlement, t }) => {
+const ConfirmModal = ({
+  visible,
+  record,
+  onCancel,
+  confirmSettlement,
+  description,
+  t,
+}) => {
   const formApiRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -78,6 +85,7 @@ const ConfirmModal = ({ visible, record, onCancel, confirmSettlement, t }) => {
       confirmLoading={submitting}
       maskClosable={false}
     >
+      {description ? <div className='mb-3'>{description}</div> : null}
       <Form
         initValues={initValues}
         getFormApi={(api) => {

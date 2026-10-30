@@ -161,18 +161,29 @@ export const useSuppliersData = () => {
     }
   };
 
-  // Immediate settlement: initiate a settlement bill for the supplier, then open confirm modal
+  // Immediate settlement: package the supplier's unsettled usage into an applied bill,
+  // open the confirm modal, and refresh list/summary (pending is cleared right away).
+  // Always resolves (never rejects) so the caller's Modal.confirm can show loading then close.
   const initiateSettlement = async (record) => {
-    const res = await API.post('/api/admin/settlement/initiate', {
-      supplier_id: record.user_id,
-    });
-    const { success, message, data } = res.data;
-    if (!success) {
-      showError(message);
-      return;
+    try {
+      const res = await API.post('/api/admin/settlement/initiate', {
+        supplier_id: record.user_id,
+      });
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return false;
+      }
+      setConfirmRecord(data);
+      setShowConfirm(true);
+      Promise.all([refresh(), loadSummary()]).catch((reason) => {
+        showError(reason);
+      });
+      return true;
+    } catch (e) {
+      showError(e.message);
+      return false;
     }
-    setConfirmRecord(data);
-    setShowConfirm(true);
   };
 
   // Confirm (settle) the bill
