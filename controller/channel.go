@@ -243,6 +243,7 @@ func listChannelsCore(c *gin.Context, opts channelListOptions) {
 	} else {
 		backfillChannelSupplierNames(channelData)
 		backfillSupplierConsumption(channelData)
+		backfillChannelConcurrency(channelData)
 		if opts.forceSupplierId > 0 {
 			hideSellingPriceFromSupplier(channelData)
 		}
@@ -493,6 +494,7 @@ func searchChannelsCore(c *gin.Context, opts channelListOptions) {
 	} else {
 		backfillChannelSupplierNames(pagedData)
 		backfillSupplierConsumption(pagedData)
+		backfillChannelConcurrency(pagedData)
 		if opts.forceSupplierId > 0 {
 			hideSellingPriceFromSupplier(pagedData)
 		}
@@ -584,11 +586,30 @@ func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 	return false
 }
 
+// backfillChannelConcurrency 回填渠道当前在途请求数，供列表「并发」列展示「当前 / 上限」（管理员与供应商）。
+func backfillChannelConcurrency(channels []*model.Channel) {
+	ids := make([]int, 0, len(channels))
+	for _, ch := range channels {
+		if ch != nil {
+			ids = append(ids, ch.Id)
+		}
+	}
+	counts := service.GetChannelConcurrencyCounts(ids)
+	for _, ch := range channels {
+		if ch != nil {
+			ch.CurrentConcurrency = counts[ch.Id]
+		}
+	}
+}
+
 // validateChannel 通用的渠道校验函数
 func validateChannel(channel *model.Channel, isAdd bool) error {
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
+	}
+	if err := channel.ValidateMaxConcurrency(); err != nil {
+		return err
 	}
 
 	// 如果是添加操作，检查 channel 和 key 是否为空

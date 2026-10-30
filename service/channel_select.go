@@ -80,9 +80,15 @@ func (p *RetryParam) ResetRetryNextTry() {
 //
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
+//
+// The returned channel already holds a concurrency slot for this request (see TryAcquireChannelSlot).
+// Channels at their concurrency limit are skipped; ErrChannelConcurrencyLimited is returned when no
+// channel could be selected and at least one candidate was skipped for that reason.
+// 返回的渠道已为本请求占好并发位；并发已满的渠道被跳过，若因此选不到任何渠道则返回 ErrChannelConcurrencyLimited。
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
+	var busy, sawBusy bool
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
@@ -115,7 +121,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry)
+			channel, busy, _ = acquireSatisfiedChannel(param.Ctx, autoGroup, param.ModelName, priorityRetry)
+			sawBusy = sawBusy || busy
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -153,10 +160,65 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+		channel, sawBusy, err = acquireSatisfiedChannel(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry())
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
 	}
+	if channel == nil && sawBusy {
+		return nil, selectGroup, ErrChannelConcurrencyLimited
+	}
 	return channel, selectGroup, nil
+}
+
+// acquireSatisfiedChannel 按 retry 档位随机选渠道并占并发位；渠道并发已满则排除后重选：同档还有空位就留在同档，
+// 整档满了按剩余档位重新套用 retry 档位规则（retry 超出档位数时钳到最末档，因此也可能回到更高档的渠道）。
+// busy 表示有候选渠道因并发已满被跳过。排除集只在本次选路内有效，下一次重试会重新尝试这些渠道。
+func acquireSatisfiedChannel(c *gin.Context, group string, modelName string, retry int) (channel *model.Channel, busy bool, err error) {
+	var excluded map[int]bool
+	for {
+		channel, err = model.GetRandomSatisfiedChannelExcluding(group, modelName, retry, excluded)
+		if err != nil || channel == nil {
+			return nil, len(excluded) > 0, err
+		}
+		if excluded[channel.Id] {
+			// 防御：选路实现若未遵守排除集，直接视为满载结束，避免死循环
+			return nil, true, nil
+		}
+		if TryAcquireChannelSlot(c, channel) {
+			return channel, false, nil
+		}
+		if excluded == nil {
+			excluded = make(map[int]bool)
+			// 首次撞上满载：一次性排除所有已满渠道，避免组内大量渠道满载时逐个试占、每个请求打出 N 次 Redis 往返
+			excludeSaturatedChannels(group, modelName, excluded)
+		}
+		excluded[channel.Id] = true
+	}
+}
+
+// excludeSaturatedChannels 读一次候选渠道的在途数（Redis 下为一次 pipeline），把已达上限的渠道加入排除集。
+// 读数只是快照，最终能否占位仍以 TryAcquireChannelSlot 的原子结果为准。
+func excludeSaturatedChannels(group string, modelName string, excluded map[int]bool) {
+	candidates, err := model.GetSatisfiedChannelCandidates(group, modelName)
+	if err != nil {
+		return
+	}
+	limits := make(map[int]int)
+	ids := make([]int, 0, len(candidates))
+	for _, ch := range candidates {
+		if limit := ch.GetMaxConcurrency(); limit > 0 && !excluded[ch.Id] {
+			limits[ch.Id] = limit
+			ids = append(ids, ch.Id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	counts := GetChannelConcurrencyCounts(ids)
+	for id, limit := range limits {
+		if counts[id] >= limit {
+			excluded[id] = true
+		}
+	}
 }

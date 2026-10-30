@@ -49,6 +49,7 @@ type Channel struct {
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
+	MaxConcurrency    *int    `json:"max_concurrency" gorm:"default:0"` // 并发上限：同一时刻最多在途请求数，0=不限
 	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
 	OtherInfo         string  `json:"other_info"`
 	Tag               *string `json:"tag" gorm:"index"`
@@ -71,6 +72,9 @@ type Channel struct {
 	// transient billing fields (populated by SupplierListChannels, never persisted)
 	OfficialUsd float64 `json:"official_usd" gorm:"-"` // 已消耗：该渠道累计官方计费(USD，不含分组倍率)，列表回填
 	Receivable  float64 `json:"receivable" gorm:"-"`   // 应收款：累计 Σ(official_usd × cost_price_snapshot)(¥)，列表回填
+
+	// transient concurrency field (populated by channel list/search, never persisted)
+	CurrentConcurrency int `json:"current_concurrency" gorm:"-"` // 当前在途请求数，列表回填
 }
 
 type ChannelInfo struct {
@@ -573,6 +577,28 @@ func (channel *Channel) GetWeight() int {
 		return 0
 	}
 	return int(*channel.Weight)
+}
+
+// MaxChannelConcurrencyLimit 渠道并发上限的取值上界（0 表示不限）。
+const MaxChannelConcurrencyLimit = 10000
+
+// GetMaxConcurrency 渠道并发上限，0 或未设置表示不限。
+func (channel *Channel) GetMaxConcurrency() int {
+	if channel.MaxConcurrency == nil || *channel.MaxConcurrency < 0 {
+		return 0
+	}
+	return *channel.MaxConcurrency
+}
+
+// ValidateMaxConcurrency 校验客户端提交的并发上限：未提交放行，提交则必须在 [0, MaxChannelConcurrencyLimit]。
+func (channel *Channel) ValidateMaxConcurrency() error {
+	if channel.MaxConcurrency == nil {
+		return nil
+	}
+	if v := *channel.MaxConcurrency; v < 0 || v > MaxChannelConcurrencyLimit {
+		return fmt.Errorf("并发上限必须在 0 到 %d 之间（0 表示不限）", MaxChannelConcurrencyLimit)
+	}
+	return nil
 }
 
 func (channel *Channel) GetBaseURL() string {

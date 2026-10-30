@@ -58,12 +58,23 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
+// errAllCandidatesExcluded 候选渠道全部被调用方排除（如并发已满），视为「无可用渠道」而非一致性错误。
+var errAllCandidatesExcluded = errors.New("all candidate channels excluded")
+
+// excludeChannels 给 ability 查询追加 channel_id NOT IN 条件；excluded 为空时原样返回。
+func excludeChannels(query *gorm.DB, excluded []int) *gorm.DB {
+	if len(excluded) == 0 {
+		return query
+	}
+	return query.Where("channel_id NOT IN ?", excluded)
+}
+
+func getPriority(group string, model string, retry int, excluded []int) (int, error) {
 
 	var priorities []int
-	err := DB.Model(&Ability{}).
+	err := excludeChannels(DB.Model(&Ability{}).
 		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true), excluded).
 		Order("priority DESC").              // 按优先级降序排序
 		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
 
@@ -73,6 +84,9 @@ func getPriority(group string, model string, retry int) (int, error) {
 	}
 
 	if len(priorities) == 0 {
+		if len(excluded) > 0 {
+			return 0, errAllCandidatesExcluded
+		}
 		// 如果没有查询到优先级，则返回错误
 		return 0, errors.New("数据库一致性被破坏")
 	}
@@ -88,11 +102,11 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+func getChannelQuery(group string, model string, retry int, excluded []int) (*gorm.DB, error) {
+	maxPrioritySubQuery := excludeChannels(DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true), excluded)
 	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
 	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
+		priority, err := getPriority(group, model, retry, excluded)
 		if err != nil {
 			return nil, err
 		} else {
@@ -100,14 +114,28 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 		}
 	}
 
-	return channelQuery, nil
+	return excludeChannels(channelQuery, excluded), nil
 }
 
 func GetChannel(group string, model string, retry int) (*Channel, error) {
+	return getChannelExcluding(group, model, retry, nil)
+}
+
+func getChannelExcluding(group string, model string, retry int, excluded map[int]bool) (*Channel, error) {
 	var abilities []Ability
 
+	excludedIds := make([]int, 0, len(excluded))
+	for id, skip := range excluded {
+		if skip {
+			excludedIds = append(excludedIds, id)
+		}
+	}
+
 	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+	channelQuery, err := getChannelQuery(group, model, retry, excludedIds)
+	if errors.Is(err, errAllCandidatesExcluded) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

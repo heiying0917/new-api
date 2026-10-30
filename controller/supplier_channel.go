@@ -131,6 +131,10 @@ func SupplierAddChannel(c *gin.Context) {
 		common.ApiErrorMsg(c, "name, key and models are required")
 		return
 	}
+	if err := ch.ValidateMaxConcurrency(); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 	if err := validateSupplierChannelBaseURL(ch.BaseURL); err != nil {
 		common.ApiErrorMsg(c, "base_url 不被允许（疑似指向内部地址）："+err.Error())
 		return
@@ -169,6 +173,10 @@ func SupplierUpdateChannel(c *gin.Context) {
 	}
 	if patch.CostPrice != nil && *patch.CostPrice <= 0 {
 		common.ApiErrorMsg(c, "cost_price must be > 0")
+		return
+	}
+	if err := patch.ValidateMaxConcurrency(); err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
 	if err := validateSupplierChannelBaseURL(patch.BaseURL); err != nil {

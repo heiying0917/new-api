@@ -51,6 +51,9 @@ const (
 	ErrorCodeGetChannelFailed   ErrorCode = "get_channel_failed"
 	ErrorCodeGenRelayInfoFailed ErrorCode = "gen_relay_info_failed"
 
+	// 渠道并发已满：刻意不带 "channel:" 前缀——满载不是渠道故障，不能被 IsChannelError 当作渠道错误
+	ErrorCodeChannelConcurrencyLimited ErrorCode = "channel_concurrency_limited"
+
 	// channel error
 	ErrorCodeChannelNoAvailableKey        ErrorCode = "channel:no_available_key"
 	ErrorCodeChannelParamOverrideInvalid  ErrorCode = "channel:param_override_invalid"

@@ -1,5 +1,9 @@
 {
   "translation": {
+    "并发": "Concurrency",
+    "并发上限": "Max Concurrency",
+    "当前并发 / 并发上限": "Current concurrency / Max concurrency",
+    "同时处理的请求数，0 表示不限；满载时自动切换到其他渠道": "Max in-flight requests; 0 means unlimited. When full, requests switch to other channels automatically",
     "强制使用 Global 跨区域推理": "Force Global cross-region inference",
     "启用后模型 ID 使用 global. 前缀，请求可路由到全球任意支持区域。需该模型已开通 Global 跨区域推理。": "When enabled, model IDs use the global. prefix and requests can route to any supported region worldwide. The model must have Global cross-region inference enabled.",
     "选择要测试 / 写回的区域": "Select regions to test / write back",

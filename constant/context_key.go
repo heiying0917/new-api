@@ -37,6 +37,8 @@ const (
 	ContextKeyChannelIsMultiKey        ContextKey = "channel_is_multi_key"
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
+	// ContextKeyChannelConcurrencySlot 当前请求持有的渠道并发占位（service.TryAcquireChannelSlot 写入）
+	ContextKeyChannelConcurrencySlot ContextKey = "channel_concurrency_slot"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"

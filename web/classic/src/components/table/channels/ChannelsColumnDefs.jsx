@@ -231,6 +231,33 @@ const renderMultiKeyStatus = (status, keySize, enabledKeySize, t) => {
   }
 };
 
+// 并发：「当前 / 上限」，上限为 0 显示「不限」；满载标红、≥80% 标橙。
+// 标签聚合行：当前为子渠道之和；上限只算已启用子渠道，其中任一不限则「不限」，否则求和（见 useChannelsData）。
+const renderConcurrency = (record, t) => {
+  const current = Number(record.current_concurrency) || 0;
+  const limit =
+    record.children !== undefined && record.concurrency_unlimited
+      ? 0
+      : Number(record.max_concurrency) || 0;
+  let color = 'white';
+  if (limit > 0 && current >= limit) {
+    color = 'red';
+  } else if (limit > 0 && current >= limit * 0.8) {
+    color = 'orange';
+  }
+  return (
+    <Tooltip content={t('当前并发 / 并发上限')}>
+      <Tag
+        color={color}
+        type={color === 'white' ? 'ghost' : 'light'}
+        shape='circle'
+      >
+        {`${current} / ${limit > 0 ? limit : t('不限')}`}
+      </Tag>
+    </Tooltip>
+  );
+};
+
 const renderResponseTime = (responseTime, t) => {
   let time = responseTime / 1000;
   time = time.toFixed(2) + t(' 秒');
@@ -348,6 +375,7 @@ export const getChannelsColumns = ({
   const VIEWER_HIDDEN_COLUMN_KEYS = new Set([
     'cost_price',
     COLUMN_KEYS.CONSUMPTION,
+    COLUMN_KEYS.CONCURRENCY,
     COLUMN_KEYS.SUPPLIER,
     COLUMN_KEYS.PRIORITY,
     COLUMN_KEYS.WEIGHT,
@@ -561,6 +589,12 @@ export const getChannelsColumns = ({
       title: t('响应时间'),
       dataIndex: 'response_time',
       render: (text, record, index) => <div>{renderResponseTime(text, t)}</div>,
+    },
+    {
+      key: COLUMN_KEYS.CONCURRENCY,
+      title: t('并发'),
+      dataIndex: 'current_concurrency',
+      render: (text, record) => renderConcurrency(record, t),
     },
     {
       key: COLUMN_KEYS.BALANCE,

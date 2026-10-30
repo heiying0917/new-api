@@ -167,6 +167,7 @@ export const useChannelsData = (mode = 'admin') => {
     TYPE: 'type',
     STATUS: 'status',
     RESPONSE_TIME: 'response_time',
+    CONCURRENCY: 'concurrency',
     BALANCE: 'balance',
     CONSUMPTION: 'consumption',
     PRIORITY: 'priority',
@@ -233,6 +234,7 @@ export const useChannelsData = (mode = 'admin') => {
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.STATUS]: true,
       [COLUMN_KEYS.RESPONSE_TIME]: true,
+      [COLUMN_KEYS.CONCURRENCY]: true,
       [COLUMN_KEYS.BALANCE]: true,
       [COLUMN_KEYS.CONSUMPTION]: true,
       [COLUMN_KEYS.PRIORITY]: true,
@@ -316,6 +318,9 @@ export const useChannelsData = (mode = 'admin') => {
             used_quota: 0,
             official_usd: 0,
             receivable: 0,
+            current_concurrency: 0,
+            max_concurrency: 0,
+            concurrency_unlimited: false,
             response_time: 0,
             priority: -1,
             weight: -1,
@@ -360,6 +365,16 @@ export const useChannelsData = (mode = 'admin') => {
         tagChannelDates.used_quota += channels[i].used_quota;
         tagChannelDates.official_usd += Number(channels[i].official_usd) || 0;
         tagChannelDates.receivable += Number(channels[i].receivable) || 0;
+        tagChannelDates.current_concurrency +=
+          Number(channels[i].current_concurrency) || 0;
+        // 上限只统计已启用子渠道：禁用渠道不参与调度，不算可用容量
+        if (channels[i].status === 1) {
+          const childMaxConcurrency = Number(channels[i].max_concurrency) || 0;
+          if (childMaxConcurrency <= 0) {
+            tagChannelDates.concurrency_unlimited = true;
+          }
+          tagChannelDates.max_concurrency += childMaxConcurrency;
+        }
         tagChannelDates.response_time += channels[i].response_time;
         tagChannelDates.response_time = tagChannelDates.response_time / 2;
       }

@@ -191,7 +191,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
-			newAPIError = channelErr
+			// 重试时其余渠道并发已满：返回上一次上游的真实错误，比「并发已满」更有信息量
+			if relayInfo.LastError != nil && channelErr.GetErrorCode() == types.ErrorCodeChannelConcurrencyLimited {
+				newAPIError = relayInfo.LastError
+			} else {
+				newAPIError = channelErr
+			}
 			break
 		}
 
@@ -302,10 +307,15 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			AutoBan: &autoBanInt,
 		}, nil
 	}
+	// 重试换渠道：先放掉上一个渠道的并发占位，选路时再为新渠道占位
+	service.ReleaseChannelSlot(c)
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
+	if errors.Is(err, service.ErrChannelConcurrencyLimited) {
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("分组 %s 下模型 %s 的渠道并发已满（retry）", selectGroup, info.OriginModelName), types.ErrorCodeChannelConcurrencyLimited, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+	}
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
@@ -505,6 +515,15 @@ func RelayTask(c *gin.Context) {
 		}
 	}()
 
+	// remix / continuation 锁定原任务渠道：并发占位切到锁定渠道，满载直接 429
+	if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
+		if !service.HoldsChannelSlot(c, lockedCh.Id) && !service.TryAcquireChannelSlot(c, lockedCh) {
+			taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("渠道 #%d 并发已满", lockedCh.Id), string(types.ErrorCodeChannelConcurrencyLimited), http.StatusTooManyRequests)
+			respondTaskError(c, taskErr)
+			return
+		}
+	}
+
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,
@@ -528,7 +547,14 @@ func RelayTask(c *gin.Context) {
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				if channelErr.GetErrorCode() == types.ErrorCodeChannelConcurrencyLimited {
+					// 重试时其余渠道并发已满：保留上一次上游错误；首次即满载则 429
+					if taskErr == nil {
+						taskErr = service.TaskErrorWrapperLocal(channelErr.Err, string(types.ErrorCodeChannelConcurrencyLimited), http.StatusTooManyRequests)
+					}
+				} else {
+					taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				}
 				break
 			}
 		}

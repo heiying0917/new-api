@@ -128,9 +128,15 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+	return GetRandomSatisfiedChannelExcluding(group, model, retry, nil)
+}
+
+// GetRandomSatisfiedChannelExcluding 同 GetRandomSatisfiedChannel，但跳过 excluded 中的渠道（如并发已满）。
+// 排除发生在计算优先级档位之前：某一档的渠道全被排除时，retry 自然落到下一档。
+func GetRandomSatisfiedChannelExcluding(group string, model string, retry int, excluded map[int]bool) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return getChannelExcluding(group, model, retry, excluded)
 	}
 
 	channelSyncLock.RLock()
@@ -143,6 +149,16 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = group2model2channels[group][normalizedModel]
+	}
+
+	if len(excluded) > 0 {
+		remaining := make([]int, 0, len(channels))
+		for _, channelId := range channels {
+			if !excluded[channelId] {
+				remaining = append(remaining, channelId)
+			}
+		}
+		channels = remaining
 	}
 
 	if len(channels) == 0 {
@@ -224,6 +240,32 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+// GetSatisfiedChannelCandidates 返回分组 + 模型下全部可调度的候选渠道（不分优先级档位），供调用方批量预判（如并发满载）。
+// 内存缓存模式下返回的是缓存对象，调用方只读不改。
+func GetSatisfiedChannelCandidates(group string, model string) ([]*Channel, error) {
+	if !common.MemoryCacheEnabled {
+		var channels []*Channel
+		err := DB.Omit("key").
+			Where("id IN (?)", DB.Model(&Ability{}).Select("channel_id").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)).
+			Find(&channels).Error
+		return channels, err
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	ids := group2model2channels[group][model]
+	if len(ids) == 0 {
+		ids = group2model2channels[group][ratio_setting.FormatMatchingModelName(model)]
+	}
+	channels := make([]*Channel, 0, len(ids))
+	for _, id := range ids {
+		if channel, ok := channelsIDM[id]; ok {
+			channels = append(channels, channel)
+		}
+	}
+	return channels, nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

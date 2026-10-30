@@ -189,6 +189,8 @@ const EditChannelModal = (props) => {
     groups: [],
     priority: 0,
     weight: 0,
+    // 并发上限：同一时刻最多在途请求数，0 = 不限
+    max_concurrency: 0,
     tag: '',
     multi_key_mode: 'random',
     // 成本价：供应商必填、管理员选填（代供应商上传时填写），用于结算
@@ -1051,6 +1053,7 @@ const EditChannelModal = (props) => {
         (data.remark && data.remark.trim()) ||
         (data.priority && data.priority !== 0) ||
         (data.weight && data.weight !== 0) ||
+        (data.max_concurrency && data.max_concurrency !== 0) ||
         (data.proxy && data.proxy.trim()) ||
         (data.system_prompt && data.system_prompt.trim()) ||
         data.thinking_to_content ||
@@ -1907,6 +1910,13 @@ const EditChannelModal = (props) => {
       }
     }
 
+    // 并发上限：清空或非法值按 0（不限）提交，避免空串导致后端整型解析失败
+    const maxConcurrency = Number(localInputs.max_concurrency);
+    localInputs.max_concurrency =
+      Number.isInteger(maxConcurrency) && maxConcurrency > 0
+        ? maxConcurrency
+        : 0;
+
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
     localInputs.models = localInputs.models.join(',');
@@ -2654,7 +2664,7 @@ const EditChannelModal = (props) => {
                   />
 
                   <Row gutter={12}>
-                    <Col span={12}>
+                    <Col span={8}>
                       <Form.InputNumber
                         field='priority'
                         label={t('渠道优先级')}
@@ -2664,13 +2674,26 @@ const EditChannelModal = (props) => {
                         style={{ width: '100%' }}
                       />
                     </Col>
-                    <Col span={12}>
+                    <Col span={8}>
                       <Form.InputNumber
                         field='weight'
                         label={t('渠道权重')}
                         placeholder={t('渠道权重')}
                         min={0}
                         onNumberChange={(value) => handleInputChange('weight', value)}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col span={8}>
+                      <Form.InputNumber
+                        field='max_concurrency'
+                        label={t('并发上限')}
+                        placeholder={t('0 表示不限')}
+                        min={0}
+                        max={10000}
+                        precision={0}
+                        extraText={t('同时处理的请求数，0 表示不限；满载时自动切换到其他渠道')}
+                        onNumberChange={(value) => handleInputChange('max_concurrency', value)}
                         style={{ width: '100%' }}
                       />
                     </Col>
