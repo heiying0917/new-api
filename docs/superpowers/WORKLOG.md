@@ -715,3 +715,11 @@
 - **验证**：TDD 先红后绿；新增 `controller/channel_consumption_test.go`（5：管理员列表回填累计值且保留 used_quota、供应商列表/搜索抹 used_quota 并回填、供应商详情抹 used_quota、供应商 pricing 全空而普通用户仍有倍率）、`model/supplier_stats_total_receivable_test.go`（1）；既有观察员白名单测试继续锁定新字段不外泄。四包测试仅白名单 `TestListModelsTokenLimitIncludesTieredBillingModel`；build/vet/gofmt 干净。真 PG 冒烟：`/tmp/pg-reprice-smoke.sh`（改价 hook、对齐接口、待结算随新价、管理员列表 已消耗 $2.00/应收款 ¥4.20、pricing 管理员路径正常）与 SOP `pg-write-smoke.sh` 均 PASS。
 - **随同发版**：同批含上一条「成本价改价即时生效」（reprice hook + `reprice-unsettled` 接口）。上线后待办：`reprice-unsettled` dry-run→apply 对齐存量；核对供应商管理页待结算与渠道表已消耗/应收款；账单 #5（¥2.2 口径）按用户决定是否撤销重发。
 - **提交状态**：待随 v2026.09.18.2 一并 commit/发版（用户已授权"测试后进行发布"，发版前仍按 SOP 弹窗确认）。
+
+### [2026-09-18 09:21–09:36] 生产发版 v2026.09.18.2（成本价改价即时生效 + 渠道表按角色分列 + 供应商锁闭售价，tke-release 全流程）+ 发版后核数
+- **提交**：用户确认弹窗后 → `683a033c0 feat(supplier)`（后端+测试+classic）、`c2191772b docs(deploy)`（v2026.09.18.1 报告 + WORKLOG）→ push main → tag v2026.09.18.2。
+- **6 Phase 全过**：P1 build / 四包测试仅白名单 / PG 写路径冒烟 PASS / 改价+列表 PG 冒烟 PASS / classic build → P2 run 35295031662 completed/success（约 7 分钟）→ P3 master 09:30:19 → slave 09:31:01，健康 200，3 Pod Running restarts=0，migration 无 error，无 panic → P4 冒烟 8 条（relay 基线 503 与历次一致；新接口/供应商接口未登录 401；`/api/pricing` 站点模块已关闭返回 403；SPA 主包含「已消耗/应收款」；管理员 Davse 渠道列表回填 已消耗 $6,839.88+$6,627.17 / 应收款 ¥14,460.81+¥14,001.85）→ P6 两轮：429×105（发版前 202）、401×5 与 403×2 全为探测/冒烟、503×2 全为 user_id=2 冒烟，真实用户 5xx=0，panic 0，老 Pod 09:35 前退出。
+- **发版后核数**：`reprice-unsettled` dry-run 27,244 条未结算全在 ¥2.0，Δ0，无需 apply（用户在本会话间隙已把 ¥2.2 口径账单结算掉：已结算 2 单 $8,149.14，含供应商 9 测试单 $0.43）。**口径互证**：渠道表已消耗合计 $13,467.05 = Davse 已结算 $8,148.71 + 待结算 $5,318.34，分毫不差；待结算 ¥/$ = 2.000 与当前成本价一致；「已用」$30,110（含倍率售价）与结算无关。
+- **结果**：✅ prod = v2026.09.18.2。发版报告 `docs/deploy/report/2026-09-18-tokenki-prod-v2026.09.18.2.md`。
+- **覆盖说明**：供应商/观察员会话 prod 无账号，前端三种模式列可见性与供应商端 used_quota 抹零、模型广场锁闭由 5 个新单测 + 既有观察员白名单测试锁定；建议用户用一个供应商账号实际打开「我的渠道」确认只见 已消耗/应收款、不见 已用/剩余。
+- **提交状态**：代码已 commit+push、tag 已推、prod 已部署。**本发版报告 + 本 WORKLOG 条目尚未 commit**（等用户指令）。
