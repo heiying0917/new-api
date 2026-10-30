@@ -887,8 +887,21 @@ html.dark .with-pastel-balls::before {
   overflow-y: auto;
 }
 
+/* 修复：列多时表格无法横向滚动。表格自带的横向滚动容器(.semi-table-body)高度等于整张表,
+   其横向滚动条落在表格最底部、被卡片纵向滚动区挡住,不滚到底根本看不到,鼠标用户无从横向滚动。
+   改为放开表格内部 overflow,由卡片主体同时承担横/纵向滚动,横向滚动条始终贴在可视区底部;
+   固定列(position: sticky)随之以卡片主体为滚动容器,照常吸附。 */
+.table-scroll-card .semi-card-body > .semi-table-wrapper {
+  overflow: visible;
+}
+
+.table-scroll-card .semi-card-body .semi-table-body {
+  overflow: visible !important;
+}
+
 .table-scroll-card .semi-card-body::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 .table-scroll-card .semi-card-body::-webkit-scrollbar-thumb {
