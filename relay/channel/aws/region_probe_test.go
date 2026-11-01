@@ -88,3 +88,12 @@ func TestBuildBedrockRuntimeClient_DisablesSDKRetries(t *testing.T) {
 		require.Equal(t, 1, cli.Options().Retryer.MaxAttempts(), "key type %s", keyType)
 	}
 }
+
+// 别名 claude-haiku-4-5 必须解析到 Bedrock 真实存在的 ID（曾映射为不存在的 anthropic.claude-haiku-4-5，
+// 渠道测试默认用模型列表首个模型时必然 400 model identifier is invalid），且跨区前缀与正式名称一致。
+func TestHaikuAliasResolvesToDatedBedrockID(t *testing.T) {
+	require.Equal(t, "anthropic.claude-haiku-4-5-20251001-v1:0", getAwsModelID("claude-haiku-4-5"))
+	for _, region := range []string{"us-east-1", "eu-west-1", "ap-northeast-1"} {
+		require.Equal(t, ResolveModelIDForRegion("claude-haiku-4-5-20251001", region), ResolveModelIDForRegion("claude-haiku-4-5", region), region)
+	}
+}

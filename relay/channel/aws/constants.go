@@ -20,7 +20,7 @@ var awsModelIDMap = map[string]string{
 	"claude-opus-4-6":            "anthropic.claude-opus-4-6-v1",
 	"claude-opus-4-7":            "anthropic.claude-opus-4-7",
 	"claude-opus-4-8":            "anthropic.claude-opus-4-8",
-	"claude-haiku-4-5":           "anthropic.claude-haiku-4-5",
+	"claude-haiku-4-5":           "anthropic.claude-haiku-4-5-20251001-v1:0", // 别名：Bedrock 无 anthropic.claude-haiku-4-5 这个 ID（400 model identifier is invalid）
 	"claude-sonnet-5":            "anthropic.claude-sonnet-5",
 	"claude-opus-5":              "anthropic.claude-opus-5",
 	"claude-fable-5-1":           "anthropic.claude-fable-5-1",
