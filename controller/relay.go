@@ -185,6 +185,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	rateLimitFailures := 0
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
@@ -237,6 +238,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
+		}
+		if isUpstreamRateLimited(newAPIError) {
+			rateLimitFailures++
+			if rateLimitFailures > common.RateLimitRetryTimes {
+				logger.LogInfo(c, fmt.Sprintf("上游限流已连续换 %d 个渠道仍失败，停止重试（限流重试次数 %d）", rateLimitFailures, common.RateLimitRetryTimes))
+				break
+			}
 		}
 	}
 
@@ -366,6 +374,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+// isUpstreamRateLimited 上游限流（429）且不是渠道失效（如额度耗尽 "You exceeded your current quota" 也回 429，
+// 那是渠道本身不可用，应照常换渠道，不计入限流重试次数）。
+func isUpstreamRateLimited(err *types.NewAPIError) bool {
+	return err != nil && err.StatusCode == http.StatusTooManyRequests && !service.IsChannelFatalError(err)
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

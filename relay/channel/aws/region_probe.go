@@ -18,6 +18,10 @@ import (
 // 注意：探测固定使用 Claude/Anthropic 格式，因此测试模型必须是 Claude 模型。
 const awsProbePayload = `{"anthropic_version":"bedrock-2023-05-31","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}`
 
+// bedrockRetryMaxAttempts SDK 只发一次、不在同一渠道内重试：SDK 默认对限流/5xx 在同一渠道退避重试 3 次
+// （单次失败约 4–5s），限流时拖慢换渠道且成倍放大上游请求；限流与故障统一交给上层换渠道重试。
+const bedrockRetryMaxAttempts = 1
+
 // BuildBedrockRuntimeClient 按密钥类型构造 bedrockruntime 客户端，供 relay 与区域测试接口共用。
 // keyType 决定使用 Bearer Token (api_key) 还是静态 AK/SK 凭证。
 func BuildBedrockRuntimeClient(keyType dto.AwsKeyType, accessKey, secretKey, apiKey, region string, httpClient *http.Client) (*bedrockruntime.Client, error) {
@@ -33,15 +37,17 @@ func BuildBedrockRuntimeClient(keyType dto.AwsKeyType, accessKey, secretKey, api
 			Region:                  region,
 			BearerAuthTokenProvider: bearer.StaticTokenProvider{Token: bearer.Token{Value: apiKey}},
 			HTTPClient:              httpClient,
+			RetryMaxAttempts:        bedrockRetryMaxAttempts,
 		}), nil
 	case dto.AwsKeyTypeAKSK:
 		if accessKey == "" || secretKey == "" {
 			return nil, errors.New("aws access key and secret key are required")
 		}
 		return bedrockruntime.New(bedrockruntime.Options{
-			Region:      region,
-			Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-			HTTPClient:  httpClient,
+			Region:           region,
+			Credentials:      aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+			HTTPClient:       httpClient,
+			RetryMaxAttempts: bedrockRetryMaxAttempts,
 		}), nil
 	default:
 		return nil, errors.New("invalid aws key type")

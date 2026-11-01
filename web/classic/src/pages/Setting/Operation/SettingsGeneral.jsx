@@ -52,6 +52,7 @@ export default function GeneralSettings(props) {
     'general_setting.custom_currency_exchange_rate': '',
     QuotaPerUnit: '',
     RetryTimes: '',
+    RateLimitRetryTimes: '',
     USDExchangeRate: '',
     DisplayTokenStatEnabled: false,
     DefaultCollapseSidebar: false,
@@ -270,6 +271,19 @@ export default function GeneralSettings(props) {
                   initValue={''}
                   placeholder={t('失败重试次数')}
                   onChange={handleFieldChange('RetryTimes')}
+                  showClear
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'RateLimitRetryTimes'}
+                  label={t('限流重试次数')}
+                  initValue={''}
+                  placeholder={t('限流重试次数')}
+                  extraText={t(
+                    '上游限流（429）时单个请求最多换几个渠道重试，0 为不重试；上游大面积限流时避免重试放大压力和等待',
+                  )}
+                  onChange={handleFieldChange('RateLimitRetryTimes')}
                   showClear
                 />
               </Col>

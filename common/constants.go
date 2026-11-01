@@ -152,6 +152,10 @@ var PreConsumedQuota = 500
 
 var RetryTimes = 0
 
+// RateLimitRetryTimes 上游限流（429）时单个请求最多因此换几次渠道（仍受 RetryTimes 约束），0 表示限流不换渠道。
+// 上游大面积限流时所有渠道一起 429，换渠道救不回请求，只会成倍放大上游压力、拉长用户等待。
+var RateLimitRetryTimes = 5
+
 //var RootUserEmail = ""
 
 var IsMasterNode bool

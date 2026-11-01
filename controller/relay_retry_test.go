@@ -51,3 +51,11 @@ func TestShouldRetry_ChannelFailureStillHonorsLimits(t *testing.T) {
 	c.Set("specific_channel_id", 88)
 	require.False(t, shouldRetry(c, err, 3), "指定渠道的请求不换渠道")
 }
+
+// 限流重试计数只统计真正的上游限流；额度耗尽等回 429 的渠道失效照常换渠道，不占限流重试次数。
+func TestIsUpstreamRateLimited(t *testing.T) {
+	require.True(t, isUpstreamRateLimited(awsRelayErr("ThrottlingException: Too many tokens, please wait before trying again.", 429)))
+	require.False(t, isUpstreamRateLimited(awsRelayErr("You exceeded your current quota, please check your plan and billing details.", 429)), "额度耗尽是渠道失效")
+	require.False(t, isUpstreamRateLimited(awsRelayErr("ServiceUnavailableException: Bedrock is unable to process your request.", 503)))
+	require.False(t, isUpstreamRateLimited(nil))
+}

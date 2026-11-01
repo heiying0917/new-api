@@ -78,3 +78,13 @@ func TestAwsErrorCode(t *testing.T) {
 	require.Equal(t, "", AwsErrorCode(errors.New("dial tcp: i/o timeout")))
 	require.Equal(t, "", AwsErrorCode(nil))
 }
+
+// Bedrock 客户端不在同一渠道内重试：限流/故障立即返回，由上层换渠道重试（SDK 默认 3 次退避重试会拖慢切换、放大上游压力）。
+func TestBuildBedrockRuntimeClient_DisablesSDKRetries(t *testing.T) {
+	hc := &http.Client{}
+	for _, keyType := range []dto.AwsKeyType{dto.AwsKeyTypeAKSK, dto.AwsKeyTypeApiKey} {
+		cli, err := BuildBedrockRuntimeClient(keyType, "ak", "sk", "api-key", "us-east-1", hc)
+		require.NoError(t, err)
+		require.Equal(t, 1, cli.Options().Retryer.MaxAttempts(), "key type %s", keyType)
+	}
+}
