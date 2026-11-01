@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,4 +22,17 @@ func TestUpdateOptionMap_RateLimitRetryTimes(t *testing.T) {
 
 	require.NoError(t, updateOptionMap("RateLimitRetryTimes", "0"))
 	require.Equal(t, 0, common.RateLimitRetryTimes, "0 表示限流不换渠道")
+}
+
+// 后台「Claude 设置 → Bedrock 不支持的 beta」保存后写入 Claude 配置，AWS 渠道即时按新名单过滤。
+func TestUpdateOptionMap_ClaudeBedrockUnsupportedBetas(t *testing.T) {
+	settings := model_setting.GetClaudeSettings()
+	saved := settings.BedrockUnsupportedBetas
+	t.Cleanup(func() { settings.BedrockUnsupportedBetas = saved })
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+
+	require.NoError(t, updateOptionMap("claude.bedrock_unsupported_betas", `["oauth-2025-04-20","new-beta-2026-12-01"]`))
+	require.Equal(t, []string{"oauth-2025-04-20", "new-beta-2026-12-01"}, model_setting.GetClaudeSettings().BedrockUnsupportedBetas)
 }

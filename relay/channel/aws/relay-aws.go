@@ -187,6 +187,16 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 		}
 		delete(data, "model")
 		delete(data, "stream")
+		// 透传同样剔除 Bedrock 不支持的 beta，否则整单 400
+		if v, exists := data["anthropic_beta"]; exists {
+			if values, ok := bedrockBetaValues(v); ok {
+				if betas := normalizeBedrockBetas(values); len(betas) > 0 {
+					data["anthropic_beta"] = betas
+				} else {
+					delete(data, "anthropic_beta")
+				}
+			}
+		}
 		return common.Marshal(data)
 	}
 	return common.Marshal(awsClaudeReq)

@@ -47,6 +47,11 @@ const CLAUDE_HEADER_APPEND_CONFIG = {
 
 const CLAUDE_HEADER_APPEND_BEFORE = `anthropic-beta: output-128k-2025-02-19`;
 
+const CLAUDE_BEDROCK_UNSUPPORTED_BETAS = [
+  'prompt-caching-scope-2026-01-05',
+  'redact-thinking-2026-02-12',
+];
+
 const CLAUDE_HEADER_APPEND_AFTER = `anthropic-beta: output-128k-2025-02-19,token-efficient-tools-2025-02-19`;
 
 const CLAUDE_DEFAULT_MAX_TOKENS = {
@@ -65,6 +70,7 @@ export default function SettingClaudeModel(props) {
     'claude.thinking_adapter_enabled': true,
     'claude.default_max_tokens': '',
     'claude.thinking_adapter_budget_tokens_percentage': 0.8,
+    'claude.bedrock_unsupported_betas': '',
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -191,6 +197,37 @@ export default function SettingClaudeModel(props) {
                   ]}
                   onChange={(value) =>
                     setInputs({ ...inputs, 'claude.default_max_tokens': value })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.TextArea
+                  label={t('Bedrock 不支持的 beta')}
+                  field={'claude.bedrock_unsupported_betas'}
+                  placeholder={
+                    t('为一个 JSON 文本，例如：') +
+                    '\n' +
+                    JSON.stringify(CLAUDE_BEDROCK_UNSUPPORTED_BETAS, null, 2)
+                  }
+                  extraText={t(
+                    'AWS Bedrock 渠道写入请求体前剔除这些 anthropic-beta 值（Bedrock 遇到不认识的值会整单 400）；advanced-tool-use-2025-11-20 会自动改名为 tool-search-tool-2025-10-19',
+                  )}
+                  autosize={{ minRows: 6, maxRows: 12 }}
+                  trigger='blur'
+                  stopValidateWithError
+                  rules={[
+                    {
+                      validator: (rule, value) => verifyJSON(value),
+                      message: t('不是合法的 JSON 字符串'),
+                    },
+                  ]}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'claude.bedrock_unsupported_betas': value,
+                    })
                   }
                 />
               </Col>

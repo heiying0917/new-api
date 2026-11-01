@@ -39,6 +39,7 @@ const ModelSetting = () => {
     'claude.thinking_adapter_enabled': true,
     'claude.default_max_tokens': '',
     'claude.thinking_adapter_budget_tokens_percentage': 0.8,
+    'claude.bedrock_unsupported_betas': '',
     'global.pass_through_request_enabled': false,
     'global.thinking_model_blacklist': '[]',
     'global.chat_completions_to_responses_policy': '{}',
@@ -63,6 +64,7 @@ const ModelSetting = () => {
           item.key === 'gemini.version_settings' ||
           item.key === 'claude.model_headers_settings' ||
           item.key === 'claude.default_max_tokens' ||
+          item.key === 'claude.bedrock_unsupported_betas' ||
           item.key === 'gemini.supported_imagine_models' ||
           item.key === 'global.thinking_model_blacklist' ||
           item.key === 'global.chat_completions_to_responses_policy'

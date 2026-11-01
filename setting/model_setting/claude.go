@@ -19,6 +19,9 @@ type ClaudeSettings struct {
 	DefaultMaxTokens                      map[string]int                 `json:"default_max_tokens"`
 	ThinkingAdapterEnabled                bool                           `json:"thinking_adapter_enabled"`
 	ThinkingAdapterBudgetTokensPercentage float64                        `json:"thinking_adapter_budget_tokens_percentage"`
+	// BedrockUnsupportedBetas 写入 AWS Bedrock 请求体前剔除的 anthropic-beta 值：Claude Code 等客户端会带 Anthropic
+	// 官方 API 专用的 beta，Bedrock 遇到不认识的值整单 400。Bedrock 会不定期新增或退役 beta，因此做成可配置。
+	BedrockUnsupportedBetas []string `json:"bedrock_unsupported_betas"`
 }
 
 // 默认配置
@@ -29,6 +32,21 @@ var defaultClaudeSettings = ClaudeSettings{
 		"default": 8192,
 	},
 	ThinkingAdapterBudgetTokensPercentage: 0.8,
+	BedrockUnsupportedBetas: []string{
+		"oauth-2025-04-20",
+		"prompt-caching-scope-2026-01-05",
+		"redact-thinking-2026-02-12",
+		"token-efficient-tools-2026-03-28",
+		"extended-cache-ttl-2025-04-11",
+		"files-api-2025-04-14",
+		"web-fetch-2025-09-10",
+		"mcp-client-2025-04-04",
+		"advisor-tool-2026-03-01",
+		"prompt-caching-2024-07-31",
+		"message-batches-2024-09-24",
+		"max-tokens-3-5-sonnet-2024-07-15",
+		"messages-2023-12-15",
+	},
 }
 
 // 全局实例

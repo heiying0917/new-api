@@ -38,18 +38,19 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 	}
 	awsClaudeRequest.AnthropicVersion = "bedrock-2023-05-31"
 
-	// check header anthropic-beta
-	anthropicBetaValues := requestHeader.Get("anthropic-beta")
-	if len(anthropicBetaValues) > 0 {
-		var tempArray []string
-		tempArray = strings.Split(anthropicBetaValues, ",")
-		if len(tempArray) > 0 {
-			betaJson, err := json.Marshal(tempArray)
+	// anthropic-beta 请求头（已含渠道 header override）优先，否则沿用请求体自带的 anthropic_beta；
+	// 两者都先规范化，剔除 Bedrock 不支持的值，避免整单 400。
+	if anthropicBetaValues := requestHeader.Get("anthropic-beta"); len(anthropicBetaValues) > 0 {
+		awsClaudeRequest.AnthropicBeta = nil
+		if betas := normalizeBedrockBetas(strings.Split(anthropicBetaValues, ",")); len(betas) > 0 {
+			betaJson, err := common.Marshal(betas)
 			if err != nil {
 				return nil, err
 			}
 			awsClaudeRequest.AnthropicBeta = betaJson
 		}
+	} else if awsClaudeRequest.AnthropicBeta, err = normalizeBedrockBetaJSON(awsClaudeRequest.AnthropicBeta); err != nil {
+		return nil, err
 	}
 	logger.LogJson(context.Background(), "json", awsClaudeRequest)
 	return &awsClaudeRequest, nil
