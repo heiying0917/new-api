@@ -15,6 +15,7 @@ type Supplier struct {
 	UserId          int    `json:"user_id" gorm:"primaryKey;autoIncrement:false"`
 	Priority        int    `json:"priority" gorm:"type:int;default:0;index"` // 管理员设，优先级调度模式用
 	Enabled         bool   `json:"enabled" gorm:"default:true"`
+	AutoDisabled    bool   `json:"auto_disabled" gorm:"default:false"`                       // 因名下无可用渠道被级联停用；仅此类停用会随渠道恢复级联启用，管理员手动停用不受影响
 	SettlementMode  string `json:"settlement_mode" gorm:"type:varchar(16);default:'manual'"` // manual|auto
 	SettlementCycle string `json:"settlement_cycle" gorm:"type:varchar(16);default:'month'"` // day|week|month
 	Remark          string `json:"remark" gorm:"type:varchar(255)"`
@@ -49,19 +50,19 @@ func GetSupplierIdsByKeyword(keyword string) ([]int, error) {
 
 // SupplierListItem 供应商管理页列表项 = User 基本信息 + Supplier 资料
 type SupplierListItem struct {
-	UserId          int    `json:"user_id"`
-	Username        string `json:"username"`
-	Email           string `json:"email"`
-	Phone           string `json:"phone"`
-	UserStatus      int    `json:"user_status"`
-	Priority        int    `json:"priority"`
-	Enabled         bool   `json:"enabled"`
-	SettlementMode  string `json:"settlement_mode"`
-	SettlementCycle string `json:"settlement_cycle"`
-	Remark          string `json:"remark"`
-	PendingCNY      float64 `json:"pending_cny"` // 待结算应付人民币 = GetSupplierPendingStat.PayableCNY
-	PendingUsd      float64 `json:"pending_usd"` // 待结算官方价($) = GetSupplierPendingStat.OfficialUsd
-	SettledCNY      float64 `json:"settled_cny"` // 已结算人民币总额 = Σ settled settlements.computed_cny
+	UserId          int     `json:"user_id"`
+	Username        string  `json:"username"`
+	Email           string  `json:"email"`
+	Phone           string  `json:"phone"`
+	UserStatus      int     `json:"user_status"`
+	Priority        int     `json:"priority"`
+	Enabled         bool    `json:"enabled"`
+	SettlementMode  string  `json:"settlement_mode"`
+	SettlementCycle string  `json:"settlement_cycle"`
+	Remark          string  `json:"remark"`
+	PendingCNY      float64 `json:"pending_cny"`     // 待结算应付人民币 = GetSupplierPendingStat.PayableCNY
+	PendingUsd      float64 `json:"pending_usd"`     // 待结算官方价($) = GetSupplierPendingStat.OfficialUsd
+	SettledCNY      float64 `json:"settled_cny"`     // 已结算人民币总额 = Σ settled settlements.computed_cny
 	ChannelTotal    int     `json:"channel_total"`   // 上架渠道数（全部状态，V12）
 	ChannelEnabled  int     `json:"channel_enabled"` // 启用渠道数（status=enabled，V12）
 }
@@ -103,6 +104,9 @@ func UpdateSupplier(userId int, fields map[string]interface{}) error {
 	if len(patch) == 0 {
 		return nil
 	}
+	if _, ok := patch["enabled"]; ok {
+		patch["auto_disabled"] = false // 管理员明确设置启停，以管理员为准，不再参与级联恢复
+	}
 	result := DB.Model(&Supplier{}).Where("user_id = ?", userId).Updates(patch)
 	if result.Error != nil {
 		return result.Error
@@ -114,7 +118,8 @@ func UpdateSupplier(userId int, fields map[string]interface{}) error {
 }
 
 // CascadeSupplierBySupplierId 根据供应商名下渠道的可用情况，级联更新供应商 enabled。
-// 全部渠道不可用 → enabled=false；存在可用渠道 → enabled=true。supplierId<=0 时为 no-op。
+// 已启用且全部渠道不可用 → 停用并标记 auto_disabled；因此被停用后重新有可用渠道 → 恢复启用。
+// 管理员手动停用（auto_disabled=false）的供应商不会被级联启用。supplierId<=0 时为 no-op。
 func CascadeSupplierBySupplierId(supplierId int) error {
 	if supplierId <= 0 {
 		return nil
@@ -125,8 +130,12 @@ func CascadeSupplierBySupplierId(supplierId int) error {
 		Count(&enabledCount).Error; err != nil {
 		return err
 	}
-	return DB.Model(&Supplier{}).Where("user_id = ?", supplierId).
-		Update("enabled", enabledCount > 0).Error
+	if enabledCount == 0 {
+		return DB.Model(&Supplier{}).Where("user_id = ? AND enabled = ?", supplierId, true).
+			Updates(map[string]interface{}{"enabled": false, "auto_disabled": true}).Error
+	}
+	return DB.Model(&Supplier{}).Where("user_id = ? AND enabled = ? AND auto_disabled = ?", supplierId, false, true).
+		Updates(map[string]interface{}{"enabled": true, "auto_disabled": false}).Error
 }
 
 func GetAllSuppliers(startIdx, num int, sortBy, sortOrder string) ([]*SupplierListItem, int64, error) {

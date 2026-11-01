@@ -41,3 +41,41 @@ func TestCascadeSupplier(t *testing.T) {
 	// supplierId 0 → no-op, no error
 	require.NoError(t, CascadeSupplierBySupplierId(0))
 }
+
+// 管理员手动停用的供应商不参与级联恢复：渠道恢复可用也保持停用；只有因无可用渠道被自动停用的才会恢复。
+func TestCascadeSupplier_AdminDisabledStaysDisabled(t *testing.T) {
+	setupCascadeTables(t)
+	require.NoError(t, DB.Create(&Supplier{UserId: 7, Enabled: true}).Error)
+	require.NoError(t, DB.Create(&Channel{Id: 1, Name: "a", Key: "k1", SupplierId: 7, Status: common.ChannelStatusAutoDisabled, Models: "m", Group: "g"}).Error)
+
+	// 全部渠道不可用 → 自动停用并打标
+	require.NoError(t, CascadeSupplierBySupplierId(7))
+	s, err := GetSupplierByUserId(7)
+	require.NoError(t, err)
+	require.False(t, s.Enabled)
+	require.True(t, s.AutoDisabled)
+
+	// 管理员明确停用 → 清除自动标记；之后渠道恢复也不能把供应商启用
+	require.NoError(t, UpdateSupplier(7, map[string]interface{}{"enabled": false}))
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 1).Update("status", common.ChannelStatusEnabled).Error)
+	require.NoError(t, CascadeSupplierBySupplierId(7))
+	s, err = GetSupplierByUserId(7)
+	require.NoError(t, err)
+	require.False(t, s.Enabled, "管理员停用的供应商不被级联启用")
+	require.False(t, s.AutoDisabled)
+
+	// 管理员停用期间渠道全部失效：仍是管理员停用，不改记为自动停用
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 1).Update("status", common.ChannelStatusAutoDisabled).Error)
+	require.NoError(t, CascadeSupplierBySupplierId(7))
+	s, err = GetSupplierByUserId(7)
+	require.NoError(t, err)
+	require.False(t, s.AutoDisabled)
+
+	// 管理员重新启用后恢复正常级联
+	require.NoError(t, UpdateSupplier(7, map[string]interface{}{"enabled": true}))
+	require.NoError(t, CascadeSupplierBySupplierId(7))
+	s, err = GetSupplierByUserId(7)
+	require.NoError(t, err)
+	require.False(t, s.Enabled)
+	require.True(t, s.AutoDisabled)
+}

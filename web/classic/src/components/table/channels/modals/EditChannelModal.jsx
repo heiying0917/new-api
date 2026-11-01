@@ -3983,18 +3983,20 @@ const EditChannelModal = (props) => {
                     )}
                   />
 
-                  {/* Auto Ban - Core Config */}
-                  <Form.Switch
-                    field='auto_ban'
-                    label={t('是否自动禁用')}
-                    checkedText={t('开')}
-                    uncheckedText={t('关')}
-                    onChange={(value) => setAutoBan(value)}
-                    extraText={t(
-                      '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
-                    )}
-                    initValue={autoBan}
-                  />
+                  {/* Auto Ban - Core Config（供应商渠道强制开启，不提供开关） */}
+                  {!isSupplierMode && (
+                    <Form.Switch
+                      field='auto_ban'
+                      label={t('是否自动禁用')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) => setAutoBan(value)}
+                      extraText={t(
+                        '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
+                      )}
+                      initValue={autoBan}
+                    />
+                  )}
 
                   {/* Test Model - Core Config */}
                   <Form.Input

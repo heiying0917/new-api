@@ -3913,6 +3913,7 @@
     "当前应结算金额：": "Current settlement amount: ",
     "条待结算": "pending settlement",
     "确定申请结算？": "Request settlement?",
+    "渠道 ${name} 已失效，已自动禁用": "Channel ${name} is no longer valid and has been disabled automatically",
     "确定为该供应商发起结算？": "Initiate settlement for this supplier?",
     "将把该供应商当前所有待结算消费打包为一张待审核结算单（金额以生成时为准），待结算随即清零；生成后可立即登记打款，也可稍后在「结算审核」中处理。": "All of this supplier's pending consumption will be packaged into a new settlement awaiting review (the final amount is determined at creation), and pending will be cleared. You can record the payment right away or handle it later in Settlement Review.",
     "结算单 #${id} 已生成（待审核）：应付 ¥${amount}，共 ${count} 条消费。": "Settlement #${id} created (awaiting review): payable ¥${amount}, ${count} consumption records.",

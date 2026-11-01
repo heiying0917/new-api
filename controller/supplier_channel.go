@@ -2,6 +2,8 @@ package controller
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -143,6 +145,7 @@ func SupplierAddChannel(c *gin.Context) {
 	ch.SupplierId = supplierId
 	ch.CreatedBy = supplierId // 供应商建的渠道，创建者即本人
 	ch.Status = common.ChannelStatusEnabled
+	ch.AutoBan = common.GetPointer(1) // 供应商渠道必须开启自动禁用，失效 key 不能留在调度里
 	if ch.Group == "" {
 		ch.Group = "default"
 	}
@@ -150,6 +153,8 @@ func SupplierAddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 新增了可用渠道：因无可用渠道被自动停用的供应商随之恢复
+	_ = model.CascadeSupplierBySupplierId(supplierId)
 	model.InitChannelCache()
 	common.ApiSuccess(c, gin.H{"id": ch.Id})
 }
@@ -185,6 +190,12 @@ func SupplierUpdateChannel(c *gin.Context) {
 	}
 	patch.SupplierId = supplierId
 	patch.CreatedBy = existing.CreatedBy // 创建者不可篡改
+	patch.AutoBan = common.GetPointer(1) // 供应商不能关闭自动禁用
+	// 被自动禁用（key 失效、账号被封等）的渠道不能直接启用：先保存其它修改并保持禁用，测试通过再启用
+	enableFromAutoDisabled := existing.Status == common.ChannelStatusAutoDisabled && patch.Status == common.ChannelStatusEnabled
+	if enableFromAutoDisabled {
+		patch.Status = existing.Status
+	}
 	if err := patch.Update(); err != nil {
 		common.ApiError(c, err)
 		return
@@ -192,6 +203,17 @@ func SupplierUpdateChannel(c *gin.Context) {
 	// 成本价变更：未结算日志的成交价跟随新价（打包进账单的已冻结），并记 reprice 账本供审计
 	if updated, fetchErr := model.GetChannelById(patch.Id, true); fetchErr == nil {
 		repriceChannelIfCostChanged(c, existing, updated, false)
+	}
+	if enableFromAutoDisabled {
+		if err := enableAutoDisabledChannelAfterTest(c, patch.Id); err != nil {
+			model.InitChannelCache()
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		patch.Status = common.ChannelStatusEnabled
+	} else if patch.Status != 0 && patch.Status != existing.Status {
+		// 渠道启停：供应商状态随名下可用渠道级联（管理员手动停用的供应商不受影响）
+		_ = model.CascadeSupplierBySupplierId(supplierId)
 	}
 	model.InitChannelCache()
 	// 返回更新后的渠道(Update 内已回填全字段),供前端 manageChannel 就地刷新行状态;不回传 key。
@@ -275,6 +297,30 @@ func supplierOwnsChannelBody(c *gin.Context) bool {
 }
 
 // 以下供应商作用域操作:先校验「本人渠道」,再委托给现成的管理员 handler 完整复用其解析/逻辑/响应。
+
+// enableAutoDisabledChannelAfterTest 用渠道当前配置（含本次修改）测试一次，通过才把自动禁用的渠道恢复启用；
+// 不通过则保持禁用并返回原因。启用走 UpdateChannelStatus：清除禁用原因、刷新能力表与缓存、级联供应商状态。
+func enableAutoDisabledChannelAfterTest(c *gin.Context, channelId int) error {
+	ch, err := model.GetChannelById(channelId, true)
+	if err != nil {
+		return err
+	}
+	testUserID, err := resolveChannelTestUserID(c)
+	if err != nil {
+		return err
+	}
+	result := testChannel(ch, testUserID, "", "", false)
+	if result.localErr != nil {
+		return fmt.Errorf("渠道测试未通过，保持禁用（其它修改已保存）：%s", result.localErr.Error())
+	}
+	if result.newAPIError != nil {
+		return fmt.Errorf("渠道测试未通过，保持禁用（其它修改已保存）：%s", result.newAPIError.Error())
+	}
+	if !model.UpdateChannelStatus(ch.Id, "", common.ChannelStatusEnabled, "") {
+		return errors.New("渠道测试已通过，但启用失败，请重试")
+	}
+	return nil
+}
 
 // SupplierTestChannel 测试本人单个渠道 GET /api/supplier/channel/test/:id
 func SupplierTestChannel(c *gin.Context) {

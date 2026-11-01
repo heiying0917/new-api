@@ -876,10 +876,11 @@ func TestChannel(c *gin.Context) {
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"success":    false,
-			"message":    result.newAPIError.Error(),
-			"time":       consumedTime,
-			"error_code": result.newAPIError.GetErrorCode(),
+			"success":          false,
+			"message":          result.newAPIError.Error(),
+			"time":             consumedTime,
+			"error_code":       result.newAPIError.GetErrorCode(),
+			"channel_disabled": disableChannelOnTestFailure(channel, result),
 		})
 		return
 	}
@@ -888,6 +889,22 @@ func TestChannel(c *gin.Context) {
 		"message": "",
 		"time":    consumedTime,
 	})
+}
+
+// disableChannelOnTestFailure 手动测试命中渠道失效（key 失效、账号被封等自动禁用规则）时，与转发失败一样禁用该渠道，
+// 返回渠道是否因此被禁用。仅对启用中且开启自动禁用的渠道生效；「模型 ID 无效」不在此列（手动测试可能选错了模型）。
+func disableChannelOnTestFailure(channel *model.Channel, result testResult) bool {
+	if channel.Status != common.ChannelStatusEnabled || !channel.GetAutoBan() || !service.ShouldDisableChannel(result.newAPIError) {
+		return false
+	}
+	usingKey := ""
+	if result.context != nil {
+		usingKey = common.GetContextKeyString(result.context, constant.ContextKeyChannelKey)
+	}
+	service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, usingKey, channel.GetAutoBan()), result.newAPIError.ErrorWithStatusCode())
+	// 多 Key 渠道只禁用出错的那个 Key，渠道本身可能仍启用：以落库状态为准
+	latest, err := model.GetChannelById(channel.Id, false)
+	return err == nil && latest.Status != common.ChannelStatusEnabled
 }
 
 var testAllChannelsLock sync.Mutex

@@ -25,6 +25,7 @@ import {
   showError,
   showInfo,
   showSuccess,
+  showWarning,
   loadChannelModels,
   copy,
   toBoolean,
@@ -1108,7 +1109,7 @@ export const useChannelsData = (mode = 'admin') => {
         return Promise.resolve();
       }
 
-      const { success, message, time, error_code } = res.data;
+      const { success, message, time, error_code, channel_disabled } = res.data;
 
       // 更新测试结果
       setModelTestResults((prev) => ({
@@ -1147,6 +1148,18 @@ export const useChannelsData = (mode = 'admin') => {
         }
       } else {
         showError(message);
+        // 测试命中渠道失效（key 失效、账号被封等），后端已自动禁用该渠道：同步本地状态
+        if (channel_disabled) {
+          updateChannelProperty(record.id, (channel) => {
+            channel.status = 3;
+          });
+          showWarning(
+            t('渠道 ${name} 已失效，已自动禁用').replace(
+              '${name}',
+              record.name,
+            ),
+          );
+        }
       }
     } catch (error) {
       // 处理网络错误
