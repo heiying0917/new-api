@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -162,4 +163,42 @@ func TestDisableChannelOnTestFailure(t *testing.T) {
 	ch := channelOf(t, 22)
 	require.Equal(t, common.ChannelStatusAutoDisabled, ch.Status)
 	require.Contains(t, ch.GetOtherInfo()["status_reason"], "Please make sure your API Key is valid")
+}
+
+// 回归：上游失败时 testChannel 同时返回 localErr 与 newAPIError，TestChannel 曾在 localErr 分支提前返回，
+// 手动测试从未触发自动禁用（v2026.11.01.1 线上冒烟发现）。这里走完整 TestChannel 接口验证（调用者用夹具里存在的用户 777）。
+func TestTestChannel_UpstreamFailureDisablesChannel(t *testing.T) {
+	seedSupplierChannelGuardFixture(t, true, false)
+	prev := common.AutomaticDisableChannelEnabled
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = prev })
+	common.AutomaticDisableChannelEnabled = true
+	savedModelRatios := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedModelRatios)) })
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"gpt-4o-mini":0.075}`))
+	service.InitHttpClient()
+
+	status, message := http.StatusTooManyRequests, "Rate limit reached for requests"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":{"message":"` + message + `","type":"upstream_error"}}`))
+	}))
+	t.Cleanup(upstream.Close)
+	setChannelFields(t, 22, map[string]interface{}{
+		"status": common.ChannelStatusEnabled, "auto_ban": 1, "type": constant.ChannelTypeOpenAI,
+		"base_url": upstream.URL, "models": "gpt-4o-mini",
+	})
+
+	c, w := newGetContext(777, "/api/channel/test/22")
+	c.Params = gin.Params{{Key: "id", Value: "22"}}
+	TestChannel(c)
+	require.Contains(t, w.Body.String(), `"channel_disabled":false`, "限流不禁用, resp=%s", w.Body.String())
+	require.Equal(t, common.ChannelStatusEnabled, channelOf(t, 22).Status)
+
+	status, message = http.StatusForbidden, "AccessDeniedException: Authentication failed: Please make sure your API Key is valid."
+	c, w = newGetContext(777, "/api/channel/test/22")
+	c.Params = gin.Params{{Key: "id", Value: "22"}}
+	TestChannel(c)
+	require.Contains(t, w.Body.String(), `"channel_disabled":true`, "resp=%s", w.Body.String())
+	require.Equal(t, common.ChannelStatusAutoDisabled, channelOf(t, 22).Status)
 }

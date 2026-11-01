@@ -866,6 +866,8 @@ func TestChannel(c *gin.Context) {
 		}
 		if result.newAPIError != nil {
 			resp["error_code"] = result.newAPIError.GetErrorCode()
+			// 上游失败（非 200、SDK 调用报错等）也走这一分支：localErr 与 newAPIError 同时设置
+			resp["channel_disabled"] = disableChannelOnTestFailure(channel, result)
 		}
 		c.JSON(http.StatusOK, resp)
 		return
