@@ -55,9 +55,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	claudeCaps := reasoning.ClaudeCapabilitiesFor(request.Model)
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" && claudeCaps.Adaptive {
 		request.Model = baseModel
-		request.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
+		request.Thinking = dto.NewAdaptiveThinkingFrom(request.Thinking)
 		effortLevel = reasoning.NormalizeClaudeEffort(baseModel, effortLevel)
 		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
 		if claudeCaps.StrictSampling {

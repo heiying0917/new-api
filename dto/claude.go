@@ -1,8 +1,12 @@
 package dto
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -453,6 +457,97 @@ type Thinking struct {
 	// the visible summary that was default on Opus 4.6; "omitted" (default on
 	// 4.7) suppresses it. Pass-through field from upstream Anthropic API.
 	Display string `json:"display,omitempty"`
+	// BlockBinding carries the client's preserved-thinking controls, such as
+	// {"prefix_mismatch_behavior":"drop_block"} (beta
+	// thinking-binding-controls-2026-08-01). It is forwarded verbatim and
+	// never added by the gateway.
+	BlockBinding json.RawMessage `json:"block_binding,omitempty"`
+	// Extra 保存客户端传入但这里没建模的其他子字段，序列化时原样追加，
+	// 避免官方新增的 thinking 参数在网关重建请求时被静默丢弃。字段与上游 new-api 一致，
+	// 需导出以便 common.DeepCopy 复制。网关把 thinking 改写成 adaptive 时用 NewAdaptiveThinkingFrom 带过去。
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+type thinkingFields Thinking
+
+var thinkingFieldNames = GetJSONFieldNames(reflect.TypeOf(Thinking{}))
+
+func (c *Thinking) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+	var fields thinkingFields
+	if err := common.Unmarshal(data, &fields); err != nil {
+		// 类型错误的 400 文案保持指向 dto.Thinking，而不是内部别名类型
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && typeErr.Type == reflect.TypeOf(fields) {
+			typeErr.Type = reflect.TypeOf(Thinking{})
+		}
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := common.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = Thinking(fields)
+	for k, v := range raw {
+		if _, known := thinkingFieldNames[k]; known {
+			continue
+		}
+		if c.Extra == nil {
+			c.Extra = make(map[string]json.RawMessage)
+		}
+		c.Extra[k] = v
+	}
+	return nil
+}
+
+// MarshalJSON 已建模字段顺序不变，未建模字段按键名排序追加在后面；没有未建模字段时与普通序列化一致。
+func (c Thinking) MarshalJSON() ([]byte, error) {
+	base, err := common.Marshal(thinkingFields(c))
+	if err != nil || len(c.Extra) == 0 {
+		return base, err
+	}
+	keys := make([]string, 0, len(c.Extra))
+	for k := range c.Extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	buf.Write(base[:len(base)-1])
+	for i, k := range keys {
+		if i > 0 || len(base) > 2 {
+			buf.WriteByte(',')
+		}
+		keyJSON, err := common.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(keyJSON)
+		buf.WriteByte(':')
+		buf.Write(c.Extra[k])
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// NewAdaptiveThinkingFrom 构造 adaptive thinking，并深拷贝 prev 中客户端传的 block_binding 与其他未建模子字段。
+func NewAdaptiveThinkingFrom(prev *Thinking) *Thinking {
+	t := &Thinking{Type: "adaptive"}
+	if prev == nil {
+		return t
+	}
+	if len(prev.BlockBinding) > 0 {
+		t.BlockBinding = append(json.RawMessage(nil), prev.BlockBinding...)
+	}
+	if len(prev.Extra) > 0 {
+		t.Extra = make(map[string]json.RawMessage, len(prev.Extra))
+		for k, v := range prev.Extra {
+			t.Extra[k] = append(json.RawMessage(nil), v...)
+		}
+	}
+	return t
 }
 
 func (c *Thinking) GetBudgetTokens() int {
