@@ -331,7 +331,8 @@ func TestTryAcquireChannelSlot_AtomicUnderContention(t *testing.T) {
 }
 
 // 首次撞满后一次性排除所有已满渠道：组内大量渠道满载时不逐个试占（每次试占在 Redis 下是一次往返）。
-func TestExcludeSaturatedChannels_MarksAllFullChannelsAtOnce(t *testing.T) {
+// 选路一次批量读出全部候选的在飞数（不再逐个试占）：已满的 1、2 直接跳过，选不限的 3。
+func TestBuildSelectTiers_ReadsAllInflightAtOnce(t *testing.T) {
 	for _, memoryCache := range []bool{true, false} {
 		seedConcurrencySelectChannels(t, memoryCache)
 		resetMemChannelInflight(t)
@@ -340,15 +341,24 @@ func TestExcludeSaturatedChannels_MarksAllFullChannelsAtOnce(t *testing.T) {
 		require.True(t, TryAcquireChannelSlot(h1, &model.Channel{Id: 1, MaxConcurrency: &one}))
 		require.True(t, TryAcquireChannelSlot(h2, &model.Channel{Id: 2, MaxConcurrency: &one}))
 
-		excluded := map[int]bool{}
-		excludeSaturatedChannels("g", "m", excluded)
-		require.Equal(t, map[int]bool{1: true, 2: true}, excluded, "memoryCache=%v：已满的 1、2 一次排除，不限的 3 保留", memoryCache)
+		channels, err := model.GetSatisfiedChannelCandidates("g", "m")
+		require.NoError(t, err)
+		inflight := map[int]int{}
+		for _, tier := range buildSelectTiers(channels, "m") {
+			for _, cand := range tier {
+				inflight[cand.ch.Id] = cand.inflight
+			}
+		}
+		require.Equal(t, map[int]int{1: 1, 2: 1, 3: 0}, inflight, "memoryCache=%v", memoryCache)
 
-		ReleaseChannelSlot(h1)
-		excluded = map[int]bool{}
-		excludeSaturatedChannels("g", "m", excluded)
-		require.Equal(t, map[int]bool{2: true}, excluded, "memoryCache=%v：释放后的渠道不再被排除", memoryCache)
-		ReleaseChannelSlot(h2)
+		c := newConcurrencyTestContext()
+		ch, busy, err := acquireSatisfiedChannel(c, "g", "m", nil)
+		require.NoError(t, err)
+		require.Equal(t, 3, ch.Id, "memoryCache=%v", memoryCache)
+		require.False(t, busy)
+		for _, h := range []*gin.Context{h1, h2, c} {
+			ReleaseChannelSlot(h)
+		}
 	}
 }
 

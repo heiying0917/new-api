@@ -53,6 +53,7 @@ export default function GeneralSettings(props) {
     QuotaPerUnit: '',
     RetryTimes: '',
     RateLimitRetryTimes: '',
+    RateLimitCooldownSeconds: '',
     USDExchangeRate: '',
     DisplayTokenStatEnabled: false,
     DefaultCollapseSidebar: false,
@@ -284,6 +285,19 @@ export default function GeneralSettings(props) {
                     '上游限流（429）时单个请求最多换几个渠道重试，0 为不重试；上游大面积限流时避免重试放大压力和等待',
                   )}
                   onChange={handleFieldChange('RateLimitRetryTimes')}
+                  showClear
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'RateLimitCooldownSeconds'}
+                  label={t('限流冷却秒数')}
+                  initValue={''}
+                  placeholder={t('限流冷却秒数')}
+                  extraText={t(
+                    '上游限流（429）后该渠道（多密钥渠道细到密钥）对该模型冷却的秒数，冷却期间新请求和重试都绕开它；0 为不冷却',
+                  )}
+                  onChange={handleFieldChange('RateLimitCooldownSeconds')}
                   showClear
                 />
               </Col>

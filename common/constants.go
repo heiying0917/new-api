@@ -156,6 +156,9 @@ var RetryTimes = 0
 // 上游大面积限流时所有渠道一起 429，换渠道救不回请求，只会成倍放大上游压力、拉长用户等待。
 var RateLimitRetryTimes = 5
 
+// RateLimitCooldownSeconds 上游限流（429）后该渠道（多 key 渠道细到 key）对该模型冷却的秒数，冷却期间选路绕开；0 表示不冷却。
+var RateLimitCooldownSeconds = 5
+
 //var RootUserEmail = ""
 
 var IsMasterNode bool

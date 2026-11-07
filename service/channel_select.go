@@ -1,7 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"math/rand"
+	"sort"
+	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -9,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 )
 
 type RetryParam struct {
@@ -61,8 +67,12 @@ func (p *RetryParam) ResetRetryNextTry() {
 // For "auto" tokenGroup with cross-group Retry enabled:
 // 对于启用了跨分组重试的 "auto" tokenGroup：
 //
-//   - Each group will exhaust all its priorities before moving to the next group.
-//     每个分组会用完所有优先级后才会切换到下一个分组。
+//   - Within a group, channels are picked by acquireSatisfiedChannel (tiers high→low, least in-flight first,
+//     skipping channels that already failed for this request or are cooling down after a 429).
+//     The request moves to the next group when the current one has no available channel, or when
+//     cross-group retry is on and the retries spent in this group reach RetryTimes.
+//     组内按 acquireSatisfiedChannel 选路（档位从高到低、在飞最少优先、跳过本请求失败过的与 429 冷却中的渠道）；
+//     当前分组没有可用渠道，或开启跨分组重试且本组重试次数达到 RetryTimes 时，切到下一个分组。
 //
 //   - Uses ContextKeyAutoGroupIndex to track current group index.
 //     使用 ContextKeyAutoGroupIndex 跟踪当前分组索引。
@@ -131,7 +141,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, busy, _ = acquireSatisfiedChannel(param.Ctx, autoGroup, param.ModelName, priorityRetry, param.failedChannels)
+			channel, busy, _ = acquireSatisfiedChannel(param.Ctx, autoGroup, param.ModelName, param.failedChannels)
 			sawBusy = sawBusy || busy
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -170,7 +180,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, sawBusy, err = acquireSatisfiedChannel(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry(), param.failedChannels)
+		channel, sawBusy, err = acquireSatisfiedChannel(param.Ctx, param.TokenGroup, param.ModelName, param.failedChannels)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
@@ -181,76 +191,191 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	return channel, selectGroup, nil
 }
 
-// acquireSatisfiedChannel 先避开本次请求已失败过的渠道选路；除此之外已无可选渠道（或都满载）时，
-// 退回在全部渠道里按原规则选，单渠道、渠道都失败过等情况的行为与不避开时一致。
-func acquireSatisfiedChannel(c *gin.Context, group string, modelName string, retry int, failed map[int]bool) (channel *model.Channel, busy bool, err error) {
-	if len(failed) > 0 {
-		channel, busy, err = acquireSatisfiedChannelExcluding(c, group, modelName, retry, failed)
-		if err != nil || channel != nil {
-			return channel, busy, err
-		}
-	}
-	return acquireSatisfiedChannelExcluding(c, group, modelName, retry, nil)
+// selectCandidate 一次选路中的候选渠道快照。
+type selectCandidate struct {
+	ch       *model.Channel
+	inflight int
+	limit    int   // 并发上限，0 = 不限
+	cooling  bool  // 对该模型处于 429 冷却
+	thawAt   int64 // 冷却中时最早有 key 解冻的毫秒时间
 }
 
-// acquireSatisfiedChannelExcluding 在 skip 之外按 retry 档位随机选渠道并占并发位；渠道并发已满则排除后重选：同档还有空位就留在同档，
-// 整档满了按剩余档位重新套用 retry 档位规则（retry 超出档位数时钳到最末档，因此也可能回到更高档的渠道）。
-// busy 表示有候选渠道因并发已满被跳过。满载排除集只在本次选路内有效，下一次重试会重新尝试这些渠道。
-func acquireSatisfiedChannelExcluding(c *gin.Context, group string, modelName string, retry int, skip map[int]bool) (channel *model.Channel, busy bool, err error) {
-	var excluded map[int]bool
-	if len(skip) > 0 {
-		excluded = make(map[int]bool, len(skip))
-		for id := range skip {
-			excluded[id] = true
-		}
+// acquireSatisfiedChannel 选路并为本请求占好并发位（首次选路与重试统一走这里）。
+//
+// 分三轮，前一轮选不出才进下一轮：
+//  1. 排除本请求失败过的、429 冷却中的、并发已满的；
+//  2. 排除失败过的、已满的（全部冷却时也不报错，按解冻早的优先）；
+//  3. 只排除已满的（失败过的也可再用：分组只有一个渠道等情况的行为与原来一致）。
+//
+// 每轮内按有效优先级（竞价：成本价 → 渠道优先级）从高到低逐档；档内选负载最低的，并列按权重随机。
+// 占位失败说明刚被别人占满，记为已满后继续本档。busy 表示有候选渠道因并发已满被跳过。
+func acquireSatisfiedChannel(c *gin.Context, group string, modelName string, failed map[int]bool) (channel *model.Channel, busy bool, err error) {
+	channels, err := model.GetSatisfiedChannelCandidates(group, modelName)
+	if err != nil || len(channels) == 0 {
+		return nil, false, err
 	}
-	sawSaturated := false
-	for {
-		channel, err = model.GetRandomSatisfiedChannelExcluding(group, modelName, retry, excluded)
-		if err != nil || channel == nil {
-			return nil, sawSaturated, err
-		}
-		if excluded[channel.Id] {
-			// 防御：选路实现若未遵守排除集，直接结束，避免死循环
-			return nil, sawSaturated, nil
-		}
-		if TryAcquireChannelSlot(c, channel) {
-			return channel, false, nil
-		}
-		if !sawSaturated {
-			sawSaturated = true
-			if excluded == nil {
-				excluded = make(map[int]bool)
+	tiers := buildSelectTiers(channels, modelName)
+	saturated := make(map[int]bool)
+	for _, tier := range tiers {
+		for _, cand := range tier {
+			if cand.limit > 0 && cand.inflight >= cand.limit {
+				saturated[cand.ch.Id] = true
+				busy = true
 			}
-			// 首次撞上满载：一次性排除所有已满渠道，避免组内大量渠道满载时逐个试占、每个请求打出 N 次 Redis 往返
-			excludeSaturatedChannels(group, modelName, excluded)
 		}
-		excluded[channel.Id] = true
 	}
+	for pass := 0; pass < 3; pass++ {
+		for _, tier := range tiers {
+			for {
+				cand := pickFromTier(tier, pass, failed, saturated)
+				if cand == nil {
+					break
+				}
+				if TryAcquireChannelSlot(c, cand.ch) {
+					if cand.cooling {
+						logger.LogDebug(c, "channel #%d is cooling down for model %s, but no other channel is available", cand.ch.Id, modelName)
+					}
+					if common.MemoryCacheEnabled {
+						return cand.ch, false, nil
+					}
+					// DB 路径的候选查询不取 key：选中后读完整渠道（与原 DB 选路一致）
+					full, err := model.GetChannelById(cand.ch.Id, true)
+					if err != nil {
+						ReleaseChannelSlot(c)
+						return nil, false, err
+					}
+					return full, false, nil
+				}
+				saturated[cand.ch.Id] = true
+				busy = true
+			}
+		}
+	}
+	return nil, busy, nil
 }
 
-// excludeSaturatedChannels 读一次候选渠道的在途数（Redis 下为一次 pipeline），把已达上限的渠道加入排除集。
-// 读数只是快照，最终能否占位仍以 TryAcquireChannelSlot 的原子结果为准。
-func excludeSaturatedChannels(group string, modelName string, excluded map[int]bool) {
-	candidates, err := model.GetSatisfiedChannelCandidates(group, modelName)
-	if err != nil {
-		return
+// buildSelectTiers 读取候选渠道的在飞数与冷却状态，按有效优先级从高到低分档。
+func buildSelectTiers(channels []*model.Channel, modelName string) [][]*selectCandidate {
+	ids := make([]int, 0, len(channels))
+	for _, ch := range channels {
+		ids = append(ids, ch.Id)
 	}
-	limits := make(map[int]int)
-	ids := make([]int, 0, len(candidates))
-	for _, ch := range candidates {
-		if limit := ch.GetMaxConcurrency(); limit > 0 && !excluded[ch.Id] {
-			limits[ch.Id] = limit
-			ids = append(ids, ch.Id)
+	inflight, cooldowns := loadChannelSelectState(ids, modelName)
+	strategy := model.GetDispatchStrategy()
+	byTier := make(map[int64][]*selectCandidate)
+	tierKeys := make([]int64, 0)
+	for _, ch := range channels {
+		cooling, thawAt := channelCoolingUntil(ch, cooldowns[ch.Id])
+		cand := &selectCandidate{ch: ch, inflight: inflight[ch.Id], limit: ch.GetMaxConcurrency(), cooling: cooling, thawAt: thawAt}
+		tier := model.DispatchEffectivePriority(ch, strategy)
+		if _, ok := byTier[tier]; !ok {
+			tierKeys = append(tierKeys, tier)
+		}
+		byTier[tier] = append(byTier[tier], cand)
+	}
+	sort.Slice(tierKeys, func(i, j int) bool { return tierKeys[i] > tierKeys[j] })
+	tiers := make([][]*selectCandidate, 0, len(tierKeys))
+	for _, k := range tierKeys {
+		tiers = append(tiers, byTier[k])
+	}
+	return tiers
+}
+
+// pickFromTier 在一档内按本轮规则选出解冻最早（未冷却视为 0）、负载最低的渠道，并列按权重随机；无可选返回 nil。
+// 负载 = 在飞数 ÷ 容量；容量 = 并发上限，不限并发的渠道取本档最大上限（本档都不限则为 1，即直接比在飞数）。
+func pickFromTier(tier []*selectCandidate, pass int, failed map[int]bool, saturated map[int]bool) *selectCandidate {
+	refCap := 1
+	for _, cand := range tier {
+		if cand.limit > refCap {
+			refCap = cand.limit
 		}
 	}
-	if len(ids) == 0 {
-		return
-	}
-	counts := GetChannelConcurrencyCounts(ids)
-	for id, limit := range limits {
-		if counts[id] >= limit {
-			excluded[id] = true
+	const eps = 1e-9
+	var ties []*selectCandidate
+	var bestThaw int64
+	var bestLoad float64
+	for _, cand := range tier {
+		id := cand.ch.Id
+		if saturated[id] {
+			continue
+		}
+		if pass < 2 && failed[id] {
+			continue
+		}
+		if pass == 0 && cand.cooling {
+			continue
+		}
+		var thaw int64
+		if cand.cooling {
+			thaw = cand.thawAt
+		}
+		capacity := cand.limit
+		if capacity <= 0 {
+			capacity = refCap
+		}
+		load := float64(cand.inflight) / float64(capacity)
+		switch {
+		case ties == nil, thaw < bestThaw, thaw == bestThaw && load < bestLoad-eps:
+			ties = []*selectCandidate{cand}
+			bestThaw, bestLoad = thaw, load
+		case thaw == bestThaw && load <= bestLoad+eps:
+			ties = append(ties, cand)
 		}
 	}
+	if len(ties) <= 1 {
+		if len(ties) == 1 {
+			return ties[0]
+		}
+		return nil
+	}
+	sumWeight := 0
+	for _, cand := range ties {
+		sumWeight += cand.ch.GetWeight()
+	}
+	if sumWeight <= 0 {
+		return ties[rand.Intn(len(ties))]
+	}
+	r := rand.Intn(sumWeight)
+	for _, cand := range ties {
+		r -= cand.ch.GetWeight()
+		if r < 0 {
+			return cand
+		}
+	}
+	return ties[len(ties)-1]
+}
+
+// loadChannelSelectState 一次读出候选渠道的在飞数与对该模型的冷却状态（Redis 下为同一个 pipeline）。
+// 读失败按「在飞 0、不冷却」放行；能否占位最终以 TryAcquireChannelSlot 的原子结果为准。
+func loadChannelSelectState(ids []int, modelName string) (map[int]int, map[int]map[string]int64) {
+	if !channelConcurrencyUseRedis() {
+		return GetChannelConcurrencyCounts(ids), loadChannelCooldowns(ids, modelName)
+	}
+	counts := make(map[int]int, len(ids))
+	cooldowns := make(map[int]map[string]int64)
+	ctx, cancel := context.WithTimeout(context.Background(), channelConcurrencyRedisTimeout)
+	defer cancel()
+	pipe := common.RDB.Pipeline()
+	countCmds := make(map[int]*redis.IntCmd, len(ids))
+	minScore := "(" + strconv.FormatInt(time.Now().UnixMilli(), 10)
+	for _, id := range ids {
+		if _, dup := countCmds[id]; !dup {
+			countCmds[id] = pipe.ZCount(ctx, channelConcurrencyKey(id), minScore, "+inf")
+		}
+	}
+	coolCmds := make(map[int]*redis.ZSliceCmd)
+	if rateLimitCooldownEnabled() {
+		queueChannelCooldownReads(ctx, pipe, coolCmds, ids, modelName, cooldownNow().UnixMilli())
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		common.SysError("failed to read channel select state: " + err.Error())
+		return counts, cooldowns
+	}
+	for id, cmd := range countCmds {
+		if n, err := cmd.Result(); err == nil && n > 0 {
+			counts[id] = int(n)
+		}
+	}
+	collectChannelCooldowns(coolCmds, cooldowns)
+	return counts, cooldowns
 }

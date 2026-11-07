@@ -234,6 +234,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+		// 用选路时的模型名：OriginModelName 在部分路径会被改写（Gemini -nothinking、responses compact），记到别处选路就读不到
+		markRateLimitCooldownIfNeeded(c, channel.Id, retryParam.ModelName, newAPIError)
 		retryParam.MarkChannelFailed(channel.Id)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
@@ -380,6 +382,15 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 // 那是渠道本身不可用，应照常换渠道，不计入限流重试次数）。
 func isUpstreamRateLimited(err *types.NewAPIError) bool {
 	return err != nil && err.StatusCode == http.StatusTooManyRequests && !service.IsChannelFatalError(err)
+}
+
+// markRateLimitCooldownIfNeeded 上游限流（429 且不是渠道失效）时，让本次用的 渠道×key×模型 冷却，
+// 冷却期间新请求与其它请求的重试都绕开它（见 service.MarkRateLimitCooldown）。
+func markRateLimitCooldownIfNeeded(c *gin.Context, channelId int, modelName string, err *types.NewAPIError) {
+	if !isUpstreamRateLimited(err) {
+		return
+	}
+	service.MarkRateLimitCooldown(c, channelId, common.GetContextKeyString(c, constant.ContextKeyChannelKey), modelName)
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

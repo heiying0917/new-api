@@ -5,6 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -58,4 +62,31 @@ func TestIsUpstreamRateLimited(t *testing.T) {
 	require.False(t, isUpstreamRateLimited(awsRelayErr("You exceeded your current quota, please check your plan and billing details.", 429)), "额度耗尽是渠道失效")
 	require.False(t, isUpstreamRateLimited(awsRelayErr("ServiceUnavailableException: Bedrock is unable to process your request.", 503)))
 	require.False(t, isUpstreamRateLimited(nil))
+}
+
+// 上游 429（非渠道失效）让本次用的 渠道×key×模型 冷却；渠道失效类 429 与其它错误不冷却。
+func TestMarkRateLimitCooldownIfNeeded(t *testing.T) {
+	prevRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = prevRedis })
+
+	cases := []struct {
+		name    string
+		id      int
+		err     *types.NewAPIError
+		cooling bool
+	}{
+		{"限流 429", 9101, awsRelayErr("ThrottlingException: Too many requests, please wait before trying again.", 429), true},
+		{"额度耗尽 429 属渠道失效，走禁用不走冷却", 9102, awsRelayErr("You exceeded your current quota, please check your plan and billing details.", 429), false},
+		{"上游 503", 9103, awsRelayErr("ServiceUnavailableException: Bedrock is unable to process your request.", 503), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newRetryTestContext()
+			common.SetContextKey(c, constant.ContextKeyChannelKey, "key-of-"+tc.name)
+			markRateLimitCooldownIfNeeded(c, tc.id, "cooldown-model", tc.err)
+			require.Equal(t, tc.cooling, service.IsChannelCooling(&model.Channel{Id: tc.id}, "cooldown-model"))
+			require.False(t, service.IsChannelCooling(&model.Channel{Id: tc.id}, "other-model"), "冷却只针对该模型")
+		})
+	}
 }

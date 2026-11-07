@@ -181,6 +181,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64)
 	common.OptionMap["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	common.OptionMap["RateLimitRetryTimes"] = strconv.Itoa(common.RateLimitRetryTimes)
+	common.OptionMap["RateLimitCooldownSeconds"] = strconv.Itoa(common.RateLimitCooldownSeconds)
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
 	common.OptionMap["DefaultCollapseSidebar"] = strconv.FormatBool(common.DefaultCollapseSidebar)
@@ -547,6 +548,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.RetryTimes, _ = strconv.Atoi(value)
 	case "RateLimitRetryTimes":
 		common.RateLimitRetryTimes, _ = strconv.Atoi(value)
+	case "RateLimitCooldownSeconds":
+		common.RateLimitCooldownSeconds, _ = strconv.Atoi(value)
 	case "DataExportInterval":
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":

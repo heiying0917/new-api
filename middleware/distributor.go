@@ -110,7 +110,7 @@ func Distribute() func(c *gin.Context) {
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
-					// 首选渠道并发已满：本次走正常选路，且不因此清除亲和记录（满载是暂时的）；
+					// 首选渠道并发已满或 429 冷却中：本次走正常选路，且不因此清除亲和记录（满载 / 冷却是暂时的）；
 					// 若改走的渠道请求成功，亲和记录按原有逻辑更新为实际渠道
 					affinityBusy := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
@@ -120,7 +120,7 @@ func Distribute() func(c *gin.Context) {
 							autoGroups := service.GetUserAutoGroup(userGroup)
 							for _, g := range autoGroups {
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									if !service.TryAcquireChannelSlot(c, preferred) {
+									if service.IsChannelCooling(preferred, modelRequest.Model) || !service.TryAcquireChannelSlot(c, preferred) {
 										affinityBusy = true
 										break
 									}
@@ -133,7 +133,7 @@ func Distribute() func(c *gin.Context) {
 								}
 							}
 						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
-							if service.TryAcquireChannelSlot(c, preferred) {
+							if !service.IsChannelCooling(preferred, modelRequest.Model) && service.TryAcquireChannelSlot(c, preferred) {
 								channel = preferred
 								selectGroup = usingGroup
 								affinityUsable = true
@@ -471,7 +471,8 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	// 多 key 渠道跳过对该模型 429 冷却中的 key
+	key, index, newAPIError := service.PickChannelKey(channel, modelName)
 	if newAPIError != nil {
 		return newAPIError
 	}

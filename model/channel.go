@@ -230,7 +230,51 @@ func (channel *Channel) GetKeys() []string {
 	return keys
 }
 
+// EnabledKeys 当前启用的 key（多 key 渠道按状态表过滤，非多 key 渠道即 Key 本身）。
+// 读状态表时持有与 GetNextEnabledKey / UpdateChannelStatus 相同的渠道锁：内存缓存下渠道对象是共享的，
+// 不加锁遍历会与自动禁用 / 启用 key 并发读写 map，导致进程崩溃。
+func (channel *Channel) EnabledKeys() []string {
+	if !channel.ChannelInfo.IsMultiKey {
+		return []string{channel.Key}
+	}
+	keys := channel.GetKeys()
+	lock := GetChannelPollingLock(channel.Id)
+	lock.Lock()
+	defer lock.Unlock()
+	enabled := make([]string, 0, len(keys))
+	for i, key := range keys {
+		if status, ok := channel.ChannelInfo.MultiKeyStatusList[i]; ok && status != common.ChannelStatusEnabled {
+			continue
+		}
+		enabled = append(enabled, key)
+	}
+	return enabled
+}
+
+// EnabledKeyCount 启用中的 key 数（同样持渠道锁读状态表），用于渠道对象不带 key 内容的场景（如 DB 选路候选）。
+func (channel *Channel) EnabledKeyCount() int {
+	if !channel.ChannelInfo.IsMultiKey {
+		return 1
+	}
+	lock := GetChannelPollingLock(channel.Id)
+	lock.Lock()
+	defer lock.Unlock()
+	n := channel.ChannelInfo.MultiKeySize
+	for idx, status := range channel.ChannelInfo.MultiKeyStatusList {
+		if idx < channel.ChannelInfo.MultiKeySize && status != common.ChannelStatusEnabled {
+			n--
+		}
+	}
+	return n
+}
+
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
+	return channel.GetNextEnabledKeyAvoiding(nil)
+}
+
+// GetNextEnabledKeyAvoiding 同 GetNextEnabledKey，但优先避开 avoid 返回 true 的 key（如 429 冷却中）；
+// 启用中的 key 全被避开时照常从中选，不因此报无可用 key。
+func (channel *Channel) GetNextEnabledKeyAvoiding(avoid func(key string) bool) (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
 	if !channel.ChannelInfo.IsMultiKey {
 		return channel.Key, 0, nil
@@ -272,6 +316,22 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 	if len(enabledIdx) == 0 {
 		return "", 0, types.NewError(errors.New("no enabled keys"), types.ErrorCodeChannelNoAvailableKey)
 	}
+	// 可用 = 启用且未被避开；全被避开时退回全部启用 key
+	usable := func(idx int) bool { return getStatus(idx) == common.ChannelStatusEnabled }
+	if avoid != nil {
+		preferredIdx := make([]int, 0, len(enabledIdx))
+		for _, idx := range enabledIdx {
+			if !avoid(keys[idx]) {
+				preferredIdx = append(preferredIdx, idx)
+			}
+		}
+		if len(preferredIdx) > 0 {
+			enabledIdx = preferredIdx
+			usable = func(idx int) bool {
+				return getStatus(idx) == common.ChannelStatusEnabled && !avoid(keys[idx])
+			}
+		}
+	}
 
 	switch channel.ChannelInfo.MultiKeyMode {
 	case constant.MultiKeyModeRandom:
@@ -302,7 +362,7 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 		}
 		for i := 0; i < len(keys); i++ {
 			idx := (start + i) % len(keys)
-			if getStatus(idx) == common.ChannelStatusEnabled {
+			if usable(idx) {
 				// update polling index for next call (point to the next position)
 				channel.ChannelInfo.MultiKeyPollingIndex = (idx + 1) % len(keys)
 				return keys[idx], idx, nil
@@ -549,6 +609,11 @@ func GetDispatchStrategy() string {
 		return "bidding"
 	}
 	return "priority"
+}
+
+// DispatchEffectivePriority 选路分档用的有效优先级（值大者优先），规则见 dispatchEffectivePriority。
+func DispatchEffectivePriority(ch *Channel, strategy string) int64 {
+	return dispatchEffectivePriority(ch, strategy)
 }
 
 // dispatchEffectivePriority 计算分层用有效优先级。

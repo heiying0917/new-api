@@ -1221,6 +1221,8 @@
     "Bedrock 不支持的 beta": "Bedrock unsupported betas",
     "AWS Bedrock 渠道写入请求体前剔除这些 anthropic-beta 值（Bedrock 遇到不认识的值会整单 400）；advanced-tool-use-2025-11-20 会自动改名为 tool-search-tool-2025-10-19": "AWS Bedrock channels drop these anthropic-beta values before building the request body (Bedrock rejects the whole request with 400 on unknown values); advanced-tool-use-2025-11-20 is renamed to tool-search-tool-2025-10-19 automatically",
     "上游限流（429）时单个请求最多换几个渠道重试，0 为不重试；上游大面积限流时避免重试放大压力和等待": "Max channel switches per request when upstream returns 429 (0 disables). Prevents retries from amplifying load and wait time during widespread upstream throttling",
+    "限流冷却秒数": "Rate limit cooldown (seconds)",
+    "上游限流（429）后该渠道（多密钥渠道细到密钥）对该模型冷却的秒数，冷却期间新请求和重试都绕开它；0 为不冷却": "After an upstream 429, the channel (or the specific key of a multi-key channel) cools down for this model for this many seconds; new requests and retries avoid it meanwhile. 0 disables cooldown",
     "奖励说明": "Reward description",
     "套餐": "Plan",
     "套餐副标题": "Plan subtitle",
