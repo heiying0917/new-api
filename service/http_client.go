@@ -111,9 +111,14 @@ func ResetProxyClientCache() {
 	proxyClients = make(map[string]*http.Client)
 }
 
-// NewProxyHttpClient 创建支持代理的 HTTP 客户端
+// NewProxyHttpClient 创建支持代理的 HTTP 客户端。
+// proxyURL 支持多种写法（见 NormalizeProxyURL），按规范化后的地址缓存客户端。
 func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
-	if proxyURL == "" {
+	normalized, err := NormalizeProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if normalized == "" {
 		if client := GetHttpClient(); client != nil {
 			return client, nil
 		}
@@ -121,39 +126,44 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 	}
 
 	proxyClientLock.Lock()
-	if client, ok := proxyClients[proxyURL]; ok {
+	if client, ok := proxyClients[normalized]; ok {
 		proxyClientLock.Unlock()
 		return client, nil
 	}
 	proxyClientLock.Unlock()
 
-	parsedURL, err := url.Parse(proxyURL)
+	parsedURL, err := url.Parse(normalized)
+	if err != nil {
+		return nil, err
+	}
+	transport, err := newProxyTransport(parsedURL)
 	if err != nil {
 		return nil, err
 	}
 
+	client := &http.Client{
+		Transport:     transport,
+		CheckRedirect: checkRedirect,
+		Timeout:       time.Duration(common.RelayTimeout) * time.Second,
+	}
+	proxyClientLock.Lock()
+	proxyClients[normalized] = client
+	proxyClientLock.Unlock()
+	return client, nil
+}
+
+// newProxyTransport 按代理协议构造 Transport（不缓存）。
+func newProxyTransport(parsedURL *url.URL) (*http.Transport, error) {
+	transport := &http.Transport{
+		MaxIdleConns:        common.RelayMaxIdleConns,
+		MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
+		IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
+		ForceAttemptHTTP2:   true,
+	}
+
 	switch parsedURL.Scheme {
 	case "http", "https":
-		transport := &http.Transport{
-			MaxIdleConns:        common.RelayMaxIdleConns,
-			MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
-			IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
-			ForceAttemptHTTP2:   true,
-			Proxy:               http.ProxyURL(parsedURL),
-		}
-		if common.TLSInsecureSkipVerify {
-			transport.TLSClientConfig = common.InsecureTLSConfig
-		}
-		applyResponseHeaderTimeout(transport)
-		client := &http.Client{
-			Transport:     transport,
-			CheckRedirect: checkRedirect,
-		}
-		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
-		proxyClientLock.Lock()
-		proxyClients[proxyURL] = client
-		proxyClientLock.Unlock()
-		return client, nil
+		transport.Proxy = http.ProxyURL(parsedURL)
 
 	case "socks5", "socks5h":
 		// 获取认证信息
@@ -174,29 +184,17 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		transport := &http.Transport{
-			MaxIdleConns:        common.RelayMaxIdleConns,
-			MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
-			IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
-			ForceAttemptHTTP2:   true,
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return dialer.Dial(network, addr)
-			},
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
 		}
-		if common.TLSInsecureSkipVerify {
-			transport.TLSClientConfig = common.InsecureTLSConfig
-		}
-		applyResponseHeaderTimeout(transport)
-
-		client := &http.Client{Transport: transport, CheckRedirect: checkRedirect}
-		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
-		proxyClientLock.Lock()
-		proxyClients[proxyURL] = client
-		proxyClientLock.Unlock()
-		return client, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
 	}
+
+	if common.TLSInsecureSkipVerify {
+		transport.TLSClientConfig = common.InsecureTLSConfig
+	}
+	applyResponseHeaderTimeout(transport)
+	return transport, nil
 }

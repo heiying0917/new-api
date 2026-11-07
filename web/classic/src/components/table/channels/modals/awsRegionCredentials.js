@@ -1,0 +1,236 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+// AWS「测试可用区域 / 批量生成可用区域密钥」的多凭证纯逻辑（不依赖 React，便于单测）。
+//
+// 测试结果结构 resultsByPrefix: { [凭证主体]: { error?: string, items?: [{ region, ok, status_code, latency_ms, message }] } }
+//   - error：该凭证整体请求失败（后端 success=false 或网络异常）
+//   - items：后端逐区域探测结果
+
+// 多组凭证测试时凭证之间的并发上限（每组凭证在后端还会以 8 并发探测各区域）
+export const AWS_CRED_TEST_CONCURRENCY = 3;
+
+// 凭证展示用打码：保留首 4 尾 4，绝不完整展示
+export const maskAwsCredential = (value) => {
+  const s = String(value || '');
+  if (s.length <= 8) return `${s.slice(0, 2)}****`;
+  return `${s.slice(0, 4)}****${s.slice(-4)}`;
+};
+
+// 解析密钥框：每行一组凭证（忽略行内已写的 region），按凭证主体去重，保留首次出现的行号（1 起，含空行计数，便于在文本框里定位）。
+// ak_sk：AK|SK[|region]；api_key：APIKey[|region]
+export const parseAwsCredentials = (text, keyType) => {
+  const credentials = [];
+  const invalidLines = [];
+  const seen = new Set();
+  String(text || '')
+    .split('\n')
+    .forEach((raw, idx) => {
+      const line = raw.trim();
+      if (!line) return;
+      const lineNo = idx + 1;
+      const parts = line.split('|').map((p) => p.trim());
+      let cred;
+      if (keyType === 'api_key') {
+        if (!parts[0]) {
+          invalidLines.push(lineNo);
+          return;
+        }
+        cred = {
+          lineNo,
+          prefix: parts[0],
+          apiKey: parts[0],
+          label: maskAwsCredential(parts[0]),
+        };
+      } else {
+        if (!parts[0] || !parts[1]) {
+          invalidLines.push(lineNo);
+          return;
+        }
+        cred = {
+          lineNo,
+          prefix: `${parts[0]}|${parts[1]}`,
+          accessKey: parts[0],
+          secretKey: parts[1],
+          label: maskAwsCredential(parts[0]),
+        };
+      }
+      if (seen.has(cred.prefix)) return;
+      seen.add(cred.prefix);
+      credentials.push(cred);
+    });
+  return { credentials, invalidLines };
+};
+
+export const getAvailableRegions = (result) =>
+  ((result && result.items) || [])
+    .filter((item) => item.ok)
+    .map((item) => item.region);
+
+// 不可用原因：整体请求错误优先，否则取失败区域里出现最多的错误信息
+export const describeUnavailableReason = (result) => {
+  if (!result) return '';
+  if (result.error) return result.error;
+  const counts = new Map();
+  (result.items || [])
+    .filter((item) => !item.ok)
+    .forEach((item) => {
+      const msg =
+        item.message || (item.status_code ? String(item.status_code) : '');
+      if (!msg) return;
+      counts.set(msg, (counts.get(msg) || 0) + 1);
+    });
+  let best = '';
+  let bestCount = 0;
+  counts.forEach((count, msg) => {
+    if (count > bestCount) {
+      best = msg;
+      bestCount = count;
+    }
+  });
+  return best;
+};
+
+// 汇总测试结果：可用凭证（附可用区域）与不可用凭证（附原因）
+export const summarizeAwsCredentialResults = (credentials, resultsByPrefix) => {
+  const available = [];
+  const unavailable = [];
+  (credentials || []).forEach((cred) => {
+    const result = resultsByPrefix && resultsByPrefix[cred.prefix];
+    if (!result) return;
+    const regions = getAvailableRegions(result);
+    if (regions.length > 0) {
+      available.push({ cred, regions });
+    } else {
+      unavailable.push({ cred, reason: describeUnavailableReason(result) });
+    }
+  });
+  return { available, unavailable };
+};
+
+// 测试后默认勾选：所有可用凭证可用区域的并集，按 allRegions 顺序
+export const unionAvailableRegions = (
+  allRegions,
+  credentials,
+  resultsByPrefix,
+) => {
+  const union = new Set();
+  (credentials || []).forEach((cred) => {
+    getAvailableRegions(
+      resultsByPrefix && resultsByPrefix[cred.prefix],
+    ).forEach((region) => union.add(region));
+  });
+  return (allRegions || []).filter((region) => union.has(region));
+};
+
+// 区域下拉框后缀：单凭证沿用「✓ 延迟 / ✗ 错误」，多凭证显示可用凭证数「✓ k/n」
+export const regionStatusSuffix = (region, credentials, resultsByPrefix) => {
+  const tested = (credentials || [])
+    .map((cred) => resultsByPrefix && resultsByPrefix[cred.prefix])
+    .filter(Boolean);
+  if (tested.length === 0) return '';
+  if (tested.length === 1) {
+    const item = (tested[0].items || []).find((it) => it.region === region);
+    if (!item) return '';
+    return item.ok
+      ? ` ✓ ${item.latency_ms}ms`
+      : ` ✗ ${item.message || item.status_code}`;
+  }
+  const okCount = tested.filter((result) =>
+    (result.items || []).some((it) => it.region === region && it.ok),
+  ).length;
+  return okCount > 0
+    ? ` ✓ ${okCount}/${tested.length}`
+    : ` ✗ 0/${tested.length}`;
+};
+
+// 生成密钥行：每组可用凭证 × (该凭证可用区域 ∩ 已选区域)，区域按已选顺序。
+// - 全部凭证都没测过：手动模式，每组凭证 × 全部已选区域（与原单凭证行为一致）
+// - 部分凭证没测过（测试后改了密钥框）：返回 untested，由调用方提示重新测试，不生成
+// - 测过但无可用区域：剔除，记入 unavailable
+// - 有可用区域但都没被勾选：记入 noSelected
+export const buildAwsRegionKeyLines = (
+  credentials,
+  resultsByPrefix,
+  selectedRegions,
+) => {
+  const creds = credentials || [];
+  const results = resultsByPrefix || {};
+  const selected = selectedRegions || [];
+  const lines = [];
+  const used = [];
+  const unavailable = [];
+  const noSelected = [];
+
+  const manual = creds.every((cred) => !results[cred.prefix]);
+  const untested = manual ? [] : creds.filter((cred) => !results[cred.prefix]);
+  if (untested.length > 0) {
+    return { lines, used, unavailable, noSelected, untested };
+  }
+
+  creds.forEach((cred) => {
+    let regions;
+    if (manual) {
+      regions = selected;
+    } else {
+      const result = results[cred.prefix];
+      const availableSet = new Set(getAvailableRegions(result));
+      if (availableSet.size === 0) {
+        unavailable.push({ cred, reason: describeUnavailableReason(result) });
+        return;
+      }
+      regions = selected.filter((region) => availableSet.has(region));
+      if (regions.length === 0) {
+        noSelected.push(cred);
+        return;
+      }
+    }
+    regions.forEach((region) => lines.push(`${cred.prefix}|${region}`));
+    used.push(cred);
+  });
+
+  return {
+    lines: Array.from(new Set(lines)),
+    used,
+    unavailable,
+    noSelected,
+    untested,
+  };
+};
+
+// 「第 2 行 AKIA****WXYZ」
+export const formatAwsCredentialRef = (cred, t) =>
+  t('第 {{line}} 行 {{label}}', { line: cred.lineNo, label: cred.label });
+
+// 有限并发执行异步任务，结果按输入顺序返回
+export const runWithConcurrency = async (items, limit, worker) => {
+  const results = new Array(items.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.max(1, Math.min(limit, items.length)) },
+    async () => {
+      while (next < items.length) {
+        const idx = next++;
+        results[idx] = await worker(items[idx], idx);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+};

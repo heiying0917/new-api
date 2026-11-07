@@ -177,6 +177,8 @@ func SetApiRouter(router *gin.Engine) {
 			supplierSelfRoute.GET("/test/:id", controller.SupplierTestChannel)
 			// AWS 多区域可用性测试:仅凭请求体中的凭证探测,不涉及具体渠道,与管理员共用 handler。
 			supplierSelfRoute.POST("/aws/test_regions", controller.TestAwsRegions)
+			// 代理连通性测试:仅凭请求体中的代理地址探测,不涉及具体渠道,与管理员共用 handler。
+			supplierSelfRoute.POST("/proxy/test", controller.TestChannelProxy)
 			supplierSelfRoute.GET("/update_balance/:id", controller.SupplierUpdateChannelBalance)
 			supplierSelfRoute.POST("/copy/:id", controller.SupplierCopyChannel)
 			supplierSelfRoute.POST("/multi_key/manage", controller.SupplierManageMultiKeys)
@@ -336,6 +338,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.POST("/aws/test_regions", controller.TestAwsRegions)
+			channelRoute.POST("/proxy/test", controller.TestChannelProxy)
 			channelRoute.GET("/test/:id", controller.TestChannel)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)
 			channelRoute.GET("/update_balance/:id", controller.UpdateChannelBalance)

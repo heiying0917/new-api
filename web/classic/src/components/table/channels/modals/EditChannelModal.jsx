@@ -24,6 +24,7 @@ import {
   showError,
   showInfo,
   showSuccess,
+  showWarning,
   verifyJSON,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
@@ -74,6 +75,16 @@ import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from './statusCodeRiskGuard';
+import {
+  AWS_CRED_TEST_CONCURRENCY,
+  parseAwsCredentials,
+  summarizeAwsCredentialResults,
+  unionAvailableRegions,
+  regionStatusSuffix,
+  buildAwsRegionKeyLines,
+  formatAwsCredentialRef,
+  runWithConcurrency,
+} from './awsRegionCredentials';
 import {
   IconSave,
   IconClose,
@@ -260,8 +271,18 @@ const EditChannelModal = (props) => {
   const [keyMode, setKeyMode] = useState('append'); // 密钥模式：replace（覆盖）或 append（追加）
   // 仅 AWS: 区域多选 / 测试结果 / 测试中状态（均为临时 UI 态，不持久化）
   const [awsRegions, setAwsRegions] = useState([]);
-  const [awsRegionTestResult, setAwsRegionTestResult] = useState({});
+  // 按凭证主体（AK|SK 或 APIKey）记录的逐区域测试结果，见 awsRegionCredentials.js
+  const [awsCredResults, setAwsCredResults] = useState({});
+  // 最近一次测试的凭证列表（行号 + 打码标签），用于展示每组凭证的测试结论
+  const [awsTestedCreds, setAwsTestedCreds] = useState([]);
   const [awsRegionTesting, setAwsRegionTesting] = useState(false);
+  // 代理连通性测试（临时 UI 态）
+  const [proxyTesting, setProxyTesting] = useState(false);
+  const [proxyTestResult, setProxyTestResult] = useState(null);
+  const awsTestSummary = useMemo(
+    () => summarizeAwsCredentialResults(awsTestedCreds, awsCredResults),
+    [awsTestedCreds, awsCredResults],
+  );
   const [isEnterpriseAccount, setIsEnterpriseAccount] = useState(false); // 是否为企业账户
   const [doubaoApiEditUnlocked, setDoubaoApiEditUnlocked] = useState(false); // 豆包渠道自定义 API 地址隐藏入口
   const redirectModelList = useMemo(() => {
@@ -1444,8 +1465,11 @@ const EditChannelModal = (props) => {
     setClipboardConfig(null);
     // 重置 AWS 区域测试状态，避免下次打开创建窗口残留上次的测试结果与勾选
     setAwsRegions([]);
-    setAwsRegionTestResult({});
+    setAwsCredResults({});
+    setAwsTestedCreds([]);
     setAwsRegionTesting(false);
+    setProxyTesting(false);
+    setProxyTestResult(null);
   };
 
   const handleVertexUploadChange = ({ fileList }) => {
@@ -2020,15 +2044,15 @@ const EditChannelModal = (props) => {
     }
   };
 
-  // 从密钥框第一非空行解析出凭证主体（忽略行内已写的 region）
-  const parseAwsCredentialParts = () => {
-    const firstLine =
-      (formApiRef.current?.getValue('key') || inputs.key || '')
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)[0] || '';
-    return firstLine.split('|');
-  };
+  // 读取密钥框全部内容，解析出所有凭证（每行一组，忽略行内已写的 region，按凭证去重）
+  const parseAwsKeyBox = () =>
+    parseAwsCredentials(
+      formApiRef.current?.getValue('key') || inputs.key || '',
+      inputs.aws_key_type || 'ak_sk',
+    );
+
+  const formatAwsCredRefs = (creds) =>
+    creds.map((cred) => formatAwsCredentialRef(cred, t)).join('、');
 
   // 从已选模型里挑一个用于测试：仅 Claude（探测用 Anthropic 格式），便宜优先 haiku>sonnet>opus
   const pickAwsTestModel = (models) => {
@@ -2048,31 +2072,19 @@ const EditChannelModal = (props) => {
     )[0];
   };
 
-  // 测试可用区域：对全量 AWS_BEDROCK_REGIONS 并发探测，回填结果并默认选中可用项
-  const handleTestAwsRegions = async () => {
-    const keyType = inputs.aws_key_type || 'ak_sk';
-    const parts = parseAwsCredentialParts();
+  // 单组凭证对全量 AWS_BEDROCK_REGIONS 探测；整体失败返回 { error }，不抛异常
+  const testAwsCredentialRegions = async (cred, keyType, model) => {
     const payload = {
       aws_key_type: keyType,
       regions: AWS_BEDROCK_REGIONS.map((r) => r.region),
-      model: pickAwsTestModel(inputs.models),
+      model,
     };
     if (keyType === 'api_key') {
-      if (!parts[0]) {
-        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
-        return;
-      }
-      payload.api_key = parts[0];
+      payload.api_key = cred.apiKey;
     } else {
-      if (!parts[0] || !parts[1]) {
-        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
-        return;
-      }
-      payload.access_key = parts[0];
-      payload.secret_key = parts[1];
+      payload.access_key = cred.accessKey;
+      payload.secret_key = cred.secretKey;
     }
-
-    setAwsRegionTesting(true);
     try {
       const res = await API.post(
         isSupplierMode
@@ -2081,53 +2093,112 @@ const EditChannelModal = (props) => {
         payload,
       );
       const { success, message, data } = res.data;
-      if (!success) {
-        showError(message || t('测试失败'));
+      if (!success) return { error: message || t('测试失败') };
+      return { items: data || [] };
+    } catch (e) {
+      return { error: t('测试失败') };
+    }
+  };
+
+  // 测试可用区域：密钥框中每组凭证分别对全量区域并发探测（凭证之间限并发），
+  // 回填结果并默认勾选所有凭证可用区域的并集；不可用凭证给出提示，生成时自动剔除
+  const handleTestAwsRegions = async () => {
+    const keyType = inputs.aws_key_type || 'ak_sk';
+    const { credentials, invalidLines } = parseAwsKeyBox();
+    if (credentials.length === 0) {
+      showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+      return;
+    }
+    if (invalidLines.length > 0) {
+      showWarning(
+        t('第 {{lines}} 行格式不正确，已忽略', {
+          lines: invalidLines.join('、'),
+        }),
+      );
+    }
+    const model = pickAwsTestModel(inputs.models);
+
+    setAwsRegionTesting(true);
+    try {
+      const results = await runWithConcurrency(
+        credentials,
+        AWS_CRED_TEST_CONCURRENCY,
+        (cred) => testAwsCredentialRegions(cred, keyType, model),
+      );
+      // 全部凭证都整体失败（参数错误 / 网络异常）：与原逻辑一致，提示错误且不改动现有结果与勾选
+      if (results.every((r) => r.error)) {
+        showError(results[0].error);
         return;
       }
       const resultMap = {};
-      (data || []).forEach((item) => {
-        resultMap[item.region] = item;
+      credentials.forEach((cred, idx) => {
+        resultMap[cred.prefix] = results[idx];
       });
-      setAwsRegionTestResult(resultMap);
-      const available = (data || [])
-        .filter((item) => item.ok)
-        .map((item) => item.region);
-      setAwsRegions(available);
-      showSuccess(
-        t('测试完成：{{count}} 个区域可用', { count: available.length }),
+      setAwsCredResults(resultMap);
+      setAwsTestedCreds(credentials);
+      const available = unionAvailableRegions(
+        AWS_BEDROCK_REGIONS.map((r) => r.region),
+        credentials,
+        resultMap,
       );
-    } catch (e) {
-      showError(t('测试失败'));
+      setAwsRegions(available);
+
+      if (credentials.length === 1) {
+        showSuccess(
+          t('测试完成：{{count}} 个区域可用', { count: available.length }),
+        );
+        return;
+      }
+      const { unavailable } = summarizeAwsCredentialResults(
+        credentials,
+        resultMap,
+      );
+      showSuccess(
+        t('测试完成：{{ok}}/{{total}} 组凭证可用，共 {{count}} 个区域', {
+          ok: credentials.length - unavailable.length,
+          total: credentials.length,
+          count: available.length,
+        }),
+      );
+      if (unavailable.length > 0) {
+        showWarning(
+          t('{{count}} 组凭证不可用，生成时将自动剔除：{{list}}', {
+            count: unavailable.length,
+            list: formatAwsCredRefs(unavailable.map((u) => u.cred)),
+          }),
+        );
+      }
     } finally {
       setAwsRegionTesting(false);
     }
   };
 
-  // 生成密钥并写回密钥框：当前凭证主体 × 已选区域，去重后写入 key 字段
+  // 生成密钥并写回密钥框：每组可用凭证 × (其可用区域 ∩ 已选区域)，不可用凭证自动剔除
   const handleGenerateAwsKeys = () => {
-    const keyType = inputs.aws_key_type || 'ak_sk';
     if (!awsRegions || awsRegions.length === 0) {
       showInfo(t('请先选择至少一个区域'));
       return;
     }
-    const parts = parseAwsCredentialParts();
-    let prefix;
-    if (keyType === 'api_key') {
-      if (!parts[0]) {
-        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
-        return;
-      }
-      prefix = parts[0];
-    } else {
-      if (!parts[0] || !parts[1]) {
-        showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
-        return;
-      }
-      prefix = `${parts[0]}|${parts[1]}`;
+    const { credentials, invalidLines } = parseAwsKeyBox();
+    if (credentials.length === 0) {
+      showInfo(t('请先在密钥框输入一对 AccessKey|SecretAccessKey'));
+      return;
     }
-    const lines = awsRegions.map((region) => `${prefix}|${region}`);
-    const text = Array.from(new Set(lines)).join('\n');
+    const { lines, used, unavailable, noSelected, untested } =
+      buildAwsRegionKeyLines(credentials, awsCredResults, awsRegions);
+    if (untested.length > 0) {
+      showInfo(
+        t('密钥框中有未测试的凭证（{{list}}），请先重新测试可用区域', {
+          list: formatAwsCredRefs(untested),
+        }),
+      );
+      return;
+    }
+    if (lines.length === 0) {
+      showError(t('没有可生成的密钥：凭证均不可用，或其可用区域均未勾选'));
+      return;
+    }
+    const text = lines.join('\n');
     if (formApiRef.current) {
       formApiRef.current.setValue('key', text);
     }
@@ -2137,10 +2208,72 @@ const EditChannelModal = (props) => {
     setMultiToSingle(true);
     setInputs((prev) => ({ ...prev, multi_key_mode: multiKeyMode }));
     showSuccess(
-      t('已写回 {{count}} 行密钥，已自动开启「批量创建」+「密钥聚合模式」', {
-        count: awsRegions.length,
-      }),
+      used.length > 1
+        ? t(
+            '已写回 {{count}} 行密钥（{{creds}} 组凭证），已自动开启「批量创建」+「密钥聚合模式」',
+            { count: lines.length, creds: used.length },
+          )
+        : t('已写回 {{count}} 行密钥，已自动开启「批量创建」+「密钥聚合模式」', {
+            count: lines.length,
+          }),
     );
+    if (unavailable.length > 0) {
+      showWarning(
+        t('已剔除 {{count}} 组不可用凭证：{{list}}', {
+          count: unavailable.length,
+          list: formatAwsCredRefs(unavailable.map((u) => u.cred)),
+        }),
+      );
+    }
+    if (noSelected.length > 0) {
+      showWarning(
+        t('以下凭证的可用区域均未勾选，未生成：{{list}}', {
+          list: formatAwsCredRefs(noSelected),
+        }),
+      );
+    }
+    if (invalidLines.length > 0) {
+      showWarning(
+        t('第 {{lines}} 行格式不正确，已忽略', {
+          lines: invalidLines.join('、'),
+        }),
+      );
+    }
+  };
+
+  // 测试代理连通性：后端经代理访问探测地址，返回延迟与出口 IP / 国家
+  const handleTestProxy = async () => {
+    const proxy = String(
+      formApiRef.current?.getValue('proxy') || inputs.proxy || '',
+    ).trim();
+    if (!proxy) {
+      showInfo(t('请先填写代理地址'));
+      return;
+    }
+    setProxyTesting(true);
+    setProxyTestResult(null);
+    try {
+      const res = await API.post(
+        isSupplierMode
+          ? '/api/supplier/channel/proxy/test'
+          : '/api/channel/proxy/test',
+        { proxy },
+      );
+      const { success, message, data } = res.data;
+      if (!success) {
+        setProxyTestResult({ ok: false, message: message || t('测试失败') });
+        return;
+      }
+      // 未写协议但实际是 SOCKS5 端口：后端按 socks5 连通后给出补全前缀的写法，直接回填，保存后转发即走 socks5
+      if (data?.ok && data.suggested_proxy) {
+        handleChannelSettingsChange('proxy', data.suggested_proxy);
+      }
+      setProxyTestResult(data);
+    } catch (e) {
+      setProxyTestResult({ ok: false, message: t('测试失败') });
+    } finally {
+      setProxyTesting(false);
+    }
   };
 
   const addCustomModels = () => {
@@ -2740,7 +2873,65 @@ const EditChannelModal = (props) => {
                   <Form.Switch field='thinking_to_content' label={t('思考内容转换')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('thinking_to_content', value)} extraText={t('将 reasoning_content 转换为 <think> 标签拼接到内容中')} />
                   <Form.Switch field='pass_through_body_enabled' label={t('透传请求体')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('pass_through_body_enabled', value)} extraText={t('启用请求体透传功能')} />
 
-                  <Form.Input field='proxy' label={t('代理地址')} placeholder={t('例如: socks5://user:pass@host:port')} onChange={(value) => handleChannelSettingsChange('proxy', value)} showClear extraText={t('用于配置网络代理，支持 socks5 协议')} />
+                  <Form.Input
+                    field='proxy'
+                    label={t('代理地址')}
+                    placeholder={t('例如: socks5://user:pass@host:port 或 host:port:user:pass')}
+                    onChange={(value) => {
+                      handleChannelSettingsChange('proxy', value);
+                      setProxyTestResult(null);
+                    }}
+                    showClear
+                    suffix={
+                      <Button
+                        size='small'
+                        theme='light'
+                        loading={proxyTesting}
+                        onClick={handleTestProxy}
+                      >
+                        {t('测试连通性')}
+                      </Button>
+                    }
+                    extraText={
+                      <div>
+                        <div>
+                          {t(
+                            '支持 http / https / socks5 / socks5h，可写为 协议://用户名:密码@主机:端口、主机:端口:用户名:密码、用户名:密码@主机:端口 或 主机:端口；不写协议默认按 http，点「测试连通性」可自动识别 SOCKS5 并补全前缀',
+                          )}
+                        </div>
+                        {proxyTestResult && (
+                          <Text
+                            type={proxyTestResult.ok ? 'success' : 'danger'}
+                            size='small'
+                          >
+                            {proxyTestResult.ok
+                              ? [
+                                  proxyTestResult.exit_ip
+                                    ? t('连通正常，出口 IP {{ip}}{{country}}', {
+                                        ip: proxyTestResult.exit_ip,
+                                        country: proxyTestResult.country
+                                          ? `（${proxyTestResult.country}）`
+                                          : '',
+                                      })
+                                    : t('连通正常'),
+                                  `${proxyTestResult.latency_ms}ms`,
+                                  proxyTestResult.suggested_proxy &&
+                                    t('已识别为 SOCKS5 代理并自动补全协议前缀'),
+                                  proxyTestResult.proxy &&
+                                    t('识别为 {{proxy}}', {
+                                      proxy: proxyTestResult.proxy,
+                                    }),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')
+                              : t('连通失败：{{message}}', {
+                                  message: proxyTestResult.message,
+                                })}
+                          </Text>
+                        )}
+                      </div>
+                    }
+                  />
 
                   <Form.TextArea field='system_prompt' label={t('系统提示词')} placeholder={t('输入系统提示词，用户的系统提示词将优先于此设置')} onChange={(value) => handleChannelSettingsChange('system_prompt', value)} autosize showClear extraText={t('用户优先：如果用户在请求中指定了系统提示词，将优先使用用户的设置')} />
                   <Form.Switch field='system_prompt_override' label={t('系统提示词拼接')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('system_prompt_override', value)} extraText={t('如果用户请求中包含系统提示词，则使用此设置拼接到用户的系统提示词前面')} />
@@ -3354,19 +3545,14 @@ const EditChannelModal = (props) => {
                           placeholder={t('选择要测试 / 写回的区域')}
                           value={awsRegions}
                           onChange={setAwsRegions}
-                          optionList={AWS_BEDROCK_REGIONS.map((r) => {
-                            const res = awsRegionTestResult[r.region];
-                            let suffix = '';
-                            if (res) {
-                              suffix = res.ok
-                                ? ` ✓ ${res.latency_ms}ms`
-                                : ` ✗ ${res.message || res.status_code}`;
-                            }
-                            return {
-                              value: r.region,
-                              label: `${r.label}${suffix}`,
-                            };
-                          })}
+                          optionList={AWS_BEDROCK_REGIONS.map((r) => ({
+                            value: r.region,
+                            label: `${r.label}${regionStatusSuffix(
+                              r.region,
+                              awsTestedCreds,
+                              awsCredResults,
+                            )}`,
+                          }))}
                         />
                         <div
                           className='flex items-center gap-2 flex-wrap'
@@ -3388,10 +3574,44 @@ const EditChannelModal = (props) => {
                           </Button>
                           <Text type='tertiary' size='small'>
                             {t(
-                              '填一对凭证 → 测试 → 勾选可用区域 → 批量生成，自动开启「批量创建」+「密钥聚合模式」后提交',
+                              '每行一组凭证（可填多组）→ 测试 → 勾选区域 → 批量生成：每组凭证按各自可用区域生成，不可用的自动剔除；自动开启「批量创建」+「密钥聚合模式」后提交',
                             )}
                           </Text>
                         </div>
+                        {(awsTestedCreds.length > 1 ||
+                          awsTestSummary.unavailable.length > 0) && (
+                          <div style={{ marginTop: 8 }}>
+                            <Text type='tertiary' size='small'>
+                              {t(
+                                '共 {{total}} 组凭证：{{ok}} 组可用，{{bad}} 组不可用',
+                                {
+                                  total: awsTestedCreds.length,
+                                  ok: awsTestSummary.available.length,
+                                  bad: awsTestSummary.unavailable.length,
+                                },
+                              )}
+                            </Text>
+                            {awsTestSummary.available.map(({ cred, regions }) => (
+                              <div key={`ok-${cred.lineNo}`}>
+                                <Text type='tertiary' size='small'>
+                                  {`✓ ${formatAwsCredentialRef(cred, t)}：${t(
+                                    '{{count}} 个区域可用',
+                                    { count: regions.length },
+                                  )}`}
+                                </Text>
+                              </div>
+                            ))}
+                            {awsTestSummary.unavailable.map(({ cred, reason }) => (
+                              <div key={`bad-${cred.lineNo}`}>
+                                <Text type='danger' size='small'>
+                                  {`✗ ${formatAwsCredentialRef(cred, t)}：${
+                                    reason || t('无可用区域')
+                                  }（${t('生成时将自动剔除')}）`}
+                                </Text>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <Form.Switch
                           field='aws_force_global'
                           label={t('强制使用 Global 跨区域推理')}
