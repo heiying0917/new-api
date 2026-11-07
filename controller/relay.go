@@ -387,13 +387,21 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
-		})
+		if service.NeedsDisableProbe(err) && isChannelTestSupported(channelError.ChannelType) && c != nil && !c.GetBool(channelTestContextKey) {
+			// 余额不足可能只是这类请求不在额度覆盖范围（如 Claude Code），先用普通请求探测同一个 key 再决定
+			reason, modelName := err.ErrorWithStatusCode(), c.GetString("original_model")
+			goChannelDisable(func() {
+				probeThenDisableChannel(channelError, reason, modelName)
+			})
+		} else {
+			goChannelDisable(func() {
+				service.DisableChannel(channelError, err.ErrorWithStatusCode())
+			})
+		}
 	} else if common.AutomaticDisableChannelEnabled && channelError.AutoBan && service.IsModelUnavailableError(err) {
 		// 「模型 ID 无效」可能是我方模型映射问题，经熔断限量禁用，防止误禁全部渠道
 		modelName := c.GetString("original_model")
-		gopool.Go(func() {
+		goChannelDisable(func() {
 			if service.AllowUnavailableModelDisable(modelName, channelError.ChannelId) {
 				service.DisableChannel(channelError, err.ErrorWithStatusCode())
 			}
