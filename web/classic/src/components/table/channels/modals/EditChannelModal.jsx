@@ -1951,17 +1951,31 @@ const EditChannelModal = (props) => {
       mode = multiToSingle ? 'multi_to_single' : 'batch';
     }
 
+    // 编辑时把当前单 key 渠道转为多 key：仅当原渠道非多 key 且已开启批量+聚合（如 AWS 批量生成可用区域密钥）
+    const convertToMultiKey =
+      isEdit && !isMultiKeyChannel && batch && multiToSingle;
+
     if (isSupplierMode) {
+      // 供应商接口请求体即渠道本身，添加模式 / 多 key 字段与管理员语义一致（后端共用拆分与追加逻辑）
       const supplierPayload = { ...localInputs };
       if (isEdit) {
         supplierPayload.id = parseInt(channelId);
+        if (isMultiKeyChannel) {
+          supplierPayload.key_mode = keyMode;
+        }
+        if (convertToMultiKey) {
+          supplierPayload.mode = 'multi_to_single';
+          supplierPayload.multi_key_mode = multiKeyMode;
+        }
         res = await API.put('/api/supplier/channel/', supplierPayload);
       } else {
+        supplierPayload.mode = mode;
+        if (mode === 'multi_to_single') {
+          supplierPayload.multi_key_mode = multiKeyMode;
+        }
         res = await API.post('/api/supplier/channel/', supplierPayload);
       }
     } else if (isEdit) {
-      // 编辑时把当前单 key 渠道转为多 key：仅当原渠道非多 key 且已开启批量+聚合（如 AWS 批量生成可用区域密钥）
-      const convertToMultiKey = !isMultiKeyChannel && batch && multiToSingle;
       const editPayload = {
         ...localInputs,
         id: parseInt(channelId),
@@ -2198,6 +2212,16 @@ const EditChannelModal = (props) => {
       showError(t('没有可生成的密钥：凭证均不可用，或其可用区域均未勾选'));
       return;
     }
+    // 编辑只能改当前这一个渠道：多组凭证不合并进同一渠道（账号级故障、统计、代理都会分不开），提示去新建
+    if (isEdit && used.length > 1) {
+      showError(
+        t(
+          '编辑渠道只能使用一组凭证（当前 {{count}} 组），不会合并；多组凭证请新建渠道，每组凭证会各建一个渠道',
+          { count: used.length },
+        ),
+      );
+      return;
+    }
     const text = lines.join('\n');
     if (formApiRef.current) {
       formApiRef.current.setValue('key', text);
@@ -2210,7 +2234,7 @@ const EditChannelModal = (props) => {
     showSuccess(
       used.length > 1
         ? t(
-            '已写回 {{count}} 行密钥（{{creds}} 组凭证），已自动开启「批量创建」+「密钥聚合模式」',
+            '已写回 {{count}} 行密钥（{{creds}} 组凭证），已自动开启「批量创建」+「密钥聚合模式」，提交后每组凭证各建一个渠道',
             { count: lines.length, creds: used.length },
           )
         : t('已写回 {{count}} 行密钥，已自动开启「批量创建」+「密钥聚合模式」', {
@@ -3574,7 +3598,7 @@ const EditChannelModal = (props) => {
                           </Button>
                           <Text type='tertiary' size='small'>
                             {t(
-                              '每行一组凭证（可填多组）→ 测试 → 勾选区域 → 批量生成：每组凭证按各自可用区域生成，不可用的自动剔除；自动开启「批量创建」+「密钥聚合模式」后提交',
+                              '每行一组凭证（可填多组）→ 测试 → 勾选区域 → 批量生成：每组凭证按各自可用区域生成，不可用的自动剔除；自动开启「批量创建」+「密钥聚合模式」后提交。新建时每组凭证各建一个渠道（名称追加 AK 后四位），编辑时只能使用一组凭证',
                             )}
                           </Text>
                         </div>
@@ -3677,6 +3701,17 @@ const EditChannelModal = (props) => {
                             )}
                             className='!rounded-lg mt-2'
                           />
+                        )}
+                        {!isEdit && inputs.type === 33 && (
+                          <Text
+                            type='tertiary'
+                            size='small'
+                            style={{ display: 'block', marginTop: 8 }}
+                          >
+                            {t(
+                              'AWS：每组凭证各建一个渠道，渠道内聚合该凭证的各区域密钥；多组凭证时名称追加 AK 后四位',
+                            )}
+                          </Text>
                         )}
                       </>
                     )}

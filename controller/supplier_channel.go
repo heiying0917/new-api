@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -117,14 +118,23 @@ func SupplierGetChannelKey(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"key": ch.Key})
 }
 
-// SupplierAddChannel 创建渠道（强制归属本人 + 成本价必填 > 0）
+// supplierAddChannelRequest 供应商新建渠道：请求体即渠道本身（兼容旧调用），可选附带与管理员一致的添加模式。
+type supplierAddChannelRequest struct {
+	model.Channel
+	Mode                      string                `json:"mode"` // single（缺省）/ batch / multi_to_single
+	MultiKeyMode              constant.MultiKeyMode `json:"multi_key_mode"`
+	BatchAddSetKeyPrefix2Name bool                  `json:"batch_add_set_key_prefix_2_name"`
+}
+
+// SupplierAddChannel 创建渠道（强制归属本人 + 成本价必填 > 0）；批量 / 聚合模式与管理员共用拆分逻辑，可能一次建多个渠道
 func SupplierAddChannel(c *gin.Context) {
 	supplierId := c.GetInt("id")
-	var ch model.Channel
-	if err := c.ShouldBindJSON(&ch); err != nil {
+	var req supplierAddChannelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	ch := &req.Channel
 	if ch.CostPrice == nil || *ch.CostPrice <= 0 {
 		common.ApiErrorMsg(c, "cost_price is required and must be > 0")
 		return
@@ -149,20 +159,42 @@ func SupplierAddChannel(c *gin.Context) {
 	if ch.Group == "" {
 		ch.Group = "default"
 	}
-	if err := ch.Insert(); err != nil {
+	mode := req.Mode
+	if mode == "" {
+		mode = "single"
+	}
+	channels, err := buildChannelsToAdd(&AddChannelRequest{
+		Mode:                      mode,
+		MultiKeyMode:              req.MultiKeyMode,
+		BatchAddSetKeyPrefix2Name: req.BatchAddSetKeyPrefix2Name,
+		Channel:                   ch,
+	})
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if len(channels) == 0 {
+		common.ApiErrorMsg(c, "name, key and models are required")
+		return
+	}
+	if err := model.BatchInsertChannels(channels); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	// 新增了可用渠道：因无可用渠道被自动停用的供应商随之恢复
 	_ = model.CascadeSupplierBySupplierId(supplierId)
 	model.InitChannelCache()
-	common.ApiSuccess(c, gin.H{"id": ch.Id})
+	ids := make([]int, 0, len(channels))
+	for _, created := range channels {
+		ids = append(ids, created.Id)
+	}
+	common.ApiSuccess(c, gin.H{"id": ids[0], "ids": ids})
 }
 
-// SupplierUpdateChannel 更新自己的渠道（保持归属不变）
+// SupplierUpdateChannel 更新自己的渠道（保持归属不变）；多 key 状态以库里为准，密钥追加 / 转多 key 与管理员编辑共用逻辑
 func SupplierUpdateChannel(c *gin.Context) {
 	supplierId := c.GetInt("id")
-	var patch model.Channel
+	var patch PatchChannel
 	if err := c.ShouldBindJSON(&patch); err != nil {
 		common.ApiError(c, err)
 		return
@@ -186,6 +218,10 @@ func SupplierUpdateChannel(c *gin.Context) {
 	}
 	if err := validateSupplierChannelBaseURL(patch.BaseURL); err != nil {
 		common.ApiErrorMsg(c, "base_url 不被允许（疑似指向内部地址）："+err.Error())
+		return
+	}
+	if err := applyChannelKeyEdit(&patch, existing); err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
 	patch.SupplierId = supplierId
@@ -218,7 +254,8 @@ func SupplierUpdateChannel(c *gin.Context) {
 	model.InitChannelCache()
 	// 返回更新后的渠道(Update 内已回填全字段),供前端 manageChannel 就地刷新行状态;不回传 key。
 	patch.Key = ""
-	common.ApiSuccess(c, patch)
+	clearChannelInfo(&patch.Channel)
+	common.ApiSuccess(c, patch.Channel)
 }
 
 // SupplierDeleteChannel 删除自己的渠道

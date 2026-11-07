@@ -493,12 +493,15 @@ func BatchInsertChannels(channels []Channel) error {
 		}
 	}()
 
-	for _, chunk := range lo.Chunk(channels, 50) {
+	const chunkSize = 50
+	for chunkIdx, chunk := range lo.Chunk(channels, chunkSize) {
 		if err := tx.Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
-		for _, channel_ := range chunk {
+		for i, channel_ := range chunk {
+			// lo.Chunk 插入的是副本：把生成的 Id 回填给调用方
+			channels[chunkIdx*chunkSize+i].Id = channel_.Id
 			if err := channel_.AddAbilities(tx); err != nil {
 				tx.Rollback()
 				return err

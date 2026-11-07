@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -736,6 +737,80 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 	return cleanKeys, nil
 }
 
+// buildChannelsToAdd 按添加模式把新建请求展开为待插入的渠道（管理员与供应商新建渠道共用）：
+// single 一个渠道；batch 每行（Vertex 为每个 JSON）一个渠道；multi_to_single 聚合为一个多 key 渠道，
+// 其中 AWS 按凭证拆分，每组凭证一个多 key 渠道。
+func buildChannelsToAdd(req *AddChannelRequest) ([]model.Channel, error) {
+	base := req.Channel
+	isVertexJsonKey := base.Type == constant.ChannelTypeVertexAi && base.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey
+	var keys []string
+	switch req.Mode {
+	case "multi_to_single":
+		base.ChannelInfo.IsMultiKey = true
+		base.ChannelInfo.MultiKeyMode = req.MultiKeyMode
+		if isVertexJsonKey {
+			array, err := getVertexArrayKeys(base.Key)
+			if err != nil {
+				return nil, err
+			}
+			base.ChannelInfo.MultiKeySize = len(array)
+			base.Key = strings.Join(array, "\n")
+		} else if base.Type == constant.ChannelTypeAws {
+			return buildAwsChannelsByCredential(*base)
+		} else {
+			cleanKeys := make([]string, 0)
+			for _, key := range strings.Split(base.Key, "\n") {
+				if key == "" {
+					continue
+				}
+				key = strings.TrimSpace(key)
+				cleanKeys = append(cleanKeys, key)
+			}
+			base.ChannelInfo.MultiKeySize = len(cleanKeys)
+			base.Key = strings.Join(cleanKeys, "\n")
+		}
+		keys = []string{base.Key}
+	case "batch":
+		if isVertexJsonKey {
+			array, err := getVertexArrayKeys(base.Key)
+			if err != nil {
+				return nil, err
+			}
+			keys = array
+		} else {
+			keys = strings.Split(base.Key, "\n")
+		}
+	case "single":
+		if base.Type == constant.ChannelTypeAws {
+			if err := validateAwsChannelKey(base.Key, false); err != nil {
+				return nil, err
+			}
+		}
+		keys = []string{base.Key}
+	default:
+		return nil, errors.New("不支持的添加模式")
+	}
+
+	channels := make([]model.Channel, 0, len(keys))
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		// 按值复制：各渠道的名称互不影响（以前共用同一指针，key 前缀会逐个累加到后面渠道的名称上）
+		localChannel := *base
+		localChannel.Key = key
+		if req.BatchAddSetKeyPrefix2Name && len(keys) > 1 {
+			keyPrefix := key
+			if len(key) > 8 {
+				keyPrefix = key[:8]
+			}
+			localChannel.Name = fmt.Sprintf("%s %s", base.Name, keyPrefix)
+		}
+		channels = append(channels, localChannel)
+	}
+	return channels, nil
+}
+
 func AddChannel(c *gin.Context) {
 	addChannelRequest := AddChannelRequest{}
 	err := c.ShouldBindJSON(&addChannelRequest)
@@ -755,74 +830,13 @@ func AddChannel(c *gin.Context) {
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
 	addChannelRequest.Channel.CreatedBy = c.GetInt("id") // 记录创建该渠道的管理员
-	keys := make([]string, 0)
-	switch addChannelRequest.Mode {
-	case "multi_to_single":
-		addChannelRequest.Channel.ChannelInfo.IsMultiKey = true
-		addChannelRequest.Channel.ChannelInfo.MultiKeyMode = addChannelRequest.MultiKeyMode
-		if addChannelRequest.Channel.Type == constant.ChannelTypeVertexAi && addChannelRequest.Channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
-			array, err := getVertexArrayKeys(addChannelRequest.Channel.Key)
-			if err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
-			addChannelRequest.Channel.ChannelInfo.MultiKeySize = len(array)
-			addChannelRequest.Channel.Key = strings.Join(array, "\n")
-		} else {
-			cleanKeys := make([]string, 0)
-			for _, key := range strings.Split(addChannelRequest.Channel.Key, "\n") {
-				if key == "" {
-					continue
-				}
-				key = strings.TrimSpace(key)
-				cleanKeys = append(cleanKeys, key)
-			}
-			addChannelRequest.Channel.ChannelInfo.MultiKeySize = len(cleanKeys)
-			addChannelRequest.Channel.Key = strings.Join(cleanKeys, "\n")
-		}
-		keys = []string{addChannelRequest.Channel.Key}
-	case "batch":
-		if addChannelRequest.Channel.Type == constant.ChannelTypeVertexAi && addChannelRequest.Channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
-			// multi json
-			keys, err = getVertexArrayKeys(addChannelRequest.Channel.Key)
-			if err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
-		} else {
-			keys = strings.Split(addChannelRequest.Channel.Key, "\n")
-		}
-	case "single":
-		keys = []string{addChannelRequest.Channel.Key}
-	default:
+	channels, err := buildChannelsToAdd(&addChannelRequest)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": "不支持的添加模式",
+			"message": err.Error(),
 		})
 		return
-	}
-
-	channels := make([]model.Channel, 0, len(keys))
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		localChannel := addChannelRequest.Channel
-		localChannel.Key = key
-		if addChannelRequest.BatchAddSetKeyPrefix2Name && len(keys) > 1 {
-			keyPrefix := localChannel.Key
-			if len(localChannel.Key) > 8 {
-				keyPrefix = localChannel.Key[:8]
-			}
-			localChannel.Name = fmt.Sprintf("%s %s", localChannel.Name, keyPrefix)
-		}
-		channels = append(channels, *localChannel)
 	}
 	err = model.BatchInsertChannels(channels)
 	if err != nil {
@@ -1014,31 +1028,11 @@ type PatchChannel struct {
 	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
 }
 
-func UpdateChannel(c *gin.Context) {
-	channel := PatchChannel{}
-	err := c.ShouldBindJSON(&channel)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
-	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
-	originChannel, err := model.GetChannelById(channel.Id, true)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
+// applyChannelKeyEdit 编辑渠道时处理多 key 状态与密钥（管理员与供应商编辑共用）：多 key 状态以库里为准（不信任请求体），
+// 按需转为多 key（multi_to_single），多 key 渠道按 key_mode 追加或覆盖密钥；AWS 渠道提交了新密钥时校验只有一组凭证。
+func applyChannelKeyEdit(channel *PatchChannel, originChannel *model.Channel) error {
+	// 前端编辑多 key 渠道总会带 key_mode=append，密钥框为空时追加逻辑也会把原密钥写回，以此区分是否真的提交了新密钥
+	keyProvided := strings.TrimSpace(channel.Key) != ""
 
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
@@ -1075,7 +1069,7 @@ func UpdateChannel(c *gin.Context) {
 				if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
 					// JSON数组格式
 					var arr []json.RawMessage
-					if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
+					if err := common.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
 						existingKeys = make([]string, len(arr))
 						for i, v := range arr {
 							existingKeys[i] = string(v)
@@ -1092,11 +1086,7 @@ func UpdateChannel(c *gin.Context) {
 					if strings.HasPrefix(strings.TrimSpace(channel.Key), "[") {
 						array, err := getVertexArrayKeys(channel.Key)
 						if err != nil {
-							c.JSON(http.StatusOK, gin.H{
-								"success": false,
-								"message": "追加密钥解析失败: " + err.Error(),
-							})
-							return
+							return fmt.Errorf("追加密钥解析失败: %w", err)
 						}
 						newKeys = array
 					} else {
@@ -1141,6 +1131,52 @@ func UpdateChannel(c *gin.Context) {
 		case "replace":
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
+	}
+
+	channelType := channel.Type
+	if channelType == 0 {
+		channelType = originChannel.Type
+	}
+	if keyProvided && channelType == constant.ChannelTypeAws {
+		if err := validateAwsChannelKey(channel.Key, channel.ChannelInfo.IsMultiKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func UpdateChannel(c *gin.Context) {
+	channel := PatchChannel{}
+	err := c.ShouldBindJSON(&channel)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	// 使用统一的校验函数
+	if err := validateChannel(&channel.Channel, false); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
+	originChannel, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if err := applyChannelKeyEdit(&channel, originChannel); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 	err = channel.Update()
 	if err != nil {
