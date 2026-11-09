@@ -231,17 +231,20 @@ func IsChannelCooling(channel *model.Channel, modelName string) bool {
 	return cooling
 }
 
-// PickChannelKey 选本次请求使用的 key：多 key 渠道跳过对该模型冷却中的 key（全部冷却时照常选）。
-func PickChannelKey(channel *model.Channel, modelName string) (string, int, *types.NewAPIError) {
-	if !channel.ChannelInfo.IsMultiKey || !rateLimitCooldownEnabled() {
+// PickChannelKey 选本次请求使用的 key：多 key 渠道跳过对该模型冷却中的 key（全部冷却时照常选）；
+// 请求命中渠道亲和规则时，在渠道内按亲和键稳定选 key（见 model.Channel.GetEnabledKeyByAffinity），否则按渠道的随机 / 轮询模式。
+func PickChannelKey(c *gin.Context, channel *model.Channel, modelName string) (string, int, *types.NewAPIError) {
+	if !channel.ChannelInfo.IsMultiKey {
 		return channel.GetNextEnabledKey()
 	}
-	cooling := loadChannelCooldowns([]int{channel.Id}, modelName)[channel.Id]
-	if len(cooling) == 0 {
-		return channel.GetNextEnabledKey()
+	var avoid func(key string) bool
+	if rateLimitCooldownEnabled() {
+		if cooling := loadChannelCooldowns([]int{channel.Id}, modelName)[channel.Id]; len(cooling) > 0 {
+			avoid = func(key string) bool {
+				_, ok := cooling[cooldownKeyFingerprint(key)]
+				return ok
+			}
+		}
 	}
-	return channel.GetNextEnabledKeyAvoiding(func(key string) bool {
-		_, ok := cooling[cooldownKeyFingerprint(key)]
-		return ok
-	})
+	return channel.GetEnabledKeyByAffinity(channelKeyAffinity(c), avoid)
 }

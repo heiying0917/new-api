@@ -1,7 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -275,6 +277,15 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 // GetNextEnabledKeyAvoiding 同 GetNextEnabledKey，但优先避开 avoid 返回 true 的 key（如 429 冷却中）；
 // 启用中的 key 全被避开时照常从中选，不因此报无可用 key。
 func (channel *Channel) GetNextEnabledKeyAvoiding(avoid func(key string) bool) (string, int, *types.NewAPIError) {
+	return channel.GetEnabledKeyByAffinity("", avoid)
+}
+
+// GetEnabledKeyByAffinity 同 GetNextEnabledKeyAvoiding；affinity 非空（请求命中渠道亲和规则）时不再按渠道的随机 / 轮询模式，
+// 而是在可用 key 中按亲和标识做 rendezvous hashing：同一会话始终落在同一把 key 上，不同会话均匀分散到各把 key。
+// AWS 多 region key 渠道里一把 key 就是一个 region，Bedrock 提示词缓存按 region 隔离，会话换 key 就读不到上一轮写的缓存。
+// 按 key 内容而不是下标计算，key 顺序变化不影响结果；选中的 key 被禁用或被避开（429 冷却）时，
+// 只有落在它上面的会话顺延到各自排第二的 key，恢复后回到原 key。
+func (channel *Channel) GetEnabledKeyByAffinity(affinity string, avoid func(key string) bool) (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
 	if !channel.ChannelInfo.IsMultiKey {
 		return channel.Key, 0, nil
@@ -333,6 +344,11 @@ func (channel *Channel) GetNextEnabledKeyAvoiding(avoid func(key string) bool) (
 		}
 	}
 
+	if affinity != "" {
+		selectedIdx := pickKeyIndexByAffinity(affinity, keys, enabledIdx)
+		return keys[selectedIdx], selectedIdx, nil
+	}
+
 	switch channel.ChannelInfo.MultiKeyMode {
 	case constant.MultiKeyModeRandom:
 		// Randomly pick one enabled key
@@ -374,6 +390,28 @@ func (channel *Channel) GetNextEnabledKeyAvoiding(avoid func(key string) bool) (
 		// Unknown mode, default to first enabled key (or original key string)
 		return keys[enabledIdx[0]], enabledIdx[0], nil
 	}
+}
+
+// pickKeyIndexByAffinity rendezvous hashing：在候选下标中取 keyAffinityScore 最大的一个。
+// 候选集合变化（禁用 / 冷却 / 增删 key）时只影响原本落在变化 key 上的会话。
+func pickKeyIndexByAffinity(affinity string, keys []string, candidates []int) int {
+	best, bestScore := candidates[0], uint64(0)
+	for i, idx := range candidates {
+		if score := keyAffinityScore(affinity, keys[idx]); i == 0 || score > bestScore {
+			best, bestScore = idx, score
+		}
+	}
+	return best
+}
+
+// keyAffinityScore 亲和标识与 key 内容的组合哈希。同一凭证的各 region key 只有末尾不同，用 SHA-256 保证分布均匀。
+func keyAffinityScore(affinity string, key string) uint64 {
+	h := sha256.New()
+	_, _ = h.Write([]byte(affinity))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(key))
+	var sum [sha256.Size]byte
+	return binary.BigEndian.Uint64(h.Sum(sum[:0]))
 }
 
 func (channel *Channel) SaveChannelInfo() error {

@@ -268,14 +268,14 @@ func TestSelect_MultiKeyChannelCooling(t *testing.T) {
 		full, err := model.GetChannelById(1, true)
 		require.NoError(t, err)
 		for i := 0; i < 30; i++ {
-			key, _, apiErr := PickChannelKey(full, "m")
+			key, _, apiErr := PickChannelKey(nil, full, "m")
 			require.Nil(t, apiErr)
 			require.Equal(t, "kc", key, "跳过冷却中的 ka、kb")
 		}
 
 		markChannelCooldown(1, "kc", "m", 5*time.Second)
 		require.Equal(t, 2, pickOnce(t, "m", 0), "三个 key 都冷却：渠道 1 冷却")
-		key, _, apiErr := PickChannelKey(full, "m")
+		key, _, apiErr := PickChannelKey(nil, full, "m")
 		require.Nil(t, apiErr)
 		require.Contains(t, []string{"ka", "kb", "kc"}, key, "全部冷却时照常选 key")
 	})

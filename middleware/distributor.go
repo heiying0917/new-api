@@ -471,8 +471,8 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	// 多 key 渠道跳过对该模型 429 冷却中的 key
-	key, index, newAPIError := service.PickChannelKey(channel, modelName)
+	// 多 key 渠道跳过对该模型 429 冷却中的 key；命中渠道亲和规则时按亲和键在渠道内稳定选 key
+	key, index, newAPIError := service.PickChannelKey(c, channel, modelName)
 	if newAPIError != nil {
 		return newAPIError
 	}

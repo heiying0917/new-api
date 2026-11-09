@@ -623,6 +623,20 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 	return 0, false
 }
 
+// channelKeyAffinity 本次请求的亲和标识：命中渠道亲和规则时为亲和缓存键（含规则名 / 分组等与亲和值），
+// 供多 key 渠道内按会话稳定选 key；未命中规则（如没有 metadata.user_id）返回空，选 key 保持原有行为。
+// 首次请求还没有亲和缓存记录时也已有标识，所以会话从第一轮起就落在之后会一直使用的那把 key 上。
+func channelKeyAffinity(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok {
+		return ""
+	}
+	return meta.CacheKey
+}
+
 func ShouldSkipRetryAfterChannelAffinityFailure(c *gin.Context) bool {
 	if c == nil {
 		return false
