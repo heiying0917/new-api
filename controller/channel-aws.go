@@ -22,12 +22,13 @@ const (
 )
 
 type awsTestRegionsRequest struct {
-	AwsKeyType string   `json:"aws_key_type"` // "ak_sk" 或 "api_key"
-	AccessKey  string   `json:"access_key"`
-	SecretKey  string   `json:"secret_key"`
-	ApiKey     string   `json:"api_key"`
-	Regions    []string `json:"regions"`
-	Model      string   `json:"model"` // 可空，空则用内置默认
+	AwsKeyType  string   `json:"aws_key_type"` // "ak_sk" 或 "api_key"
+	AccessKey   string   `json:"access_key"`
+	SecretKey   string   `json:"secret_key"`
+	ApiKey      string   `json:"api_key"`
+	Regions     []string `json:"regions"`
+	Model       string   `json:"model"`        // 可空，空则用内置默认
+	ForceGlobal bool     `json:"force_global"` // 与渠道「强制 Global」一致，保证测试的模型 ID 与真实流量相同
 }
 
 type awsTestRegionResult struct {
@@ -114,7 +115,7 @@ func TestAwsRegions(c *gin.Context) {
 				return
 			}
 
-			modelID := awsrelay.ResolveModelIDForRegion(model, region)
+			modelID := awsrelay.ResolveModelIDForRegion(model, region, req.ForceGlobal)
 
 			ctx, cancel := context.WithTimeout(context.Background(), awsTestRegionTimeout)
 			defer cancel()

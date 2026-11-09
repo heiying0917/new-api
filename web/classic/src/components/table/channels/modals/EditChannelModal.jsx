@@ -2092,6 +2092,7 @@ const EditChannelModal = (props) => {
       aws_key_type: keyType,
       regions: AWS_BEDROCK_REGIONS.map((r) => r.region),
       model,
+      force_global: inputs.aws_force_global === true,
     };
     if (keyType === 'api_key') {
       payload.api_key = cred.apiKey;

@@ -91,18 +91,8 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 	}
 	a.AwsClient = awsCli
 
-	// 获取对应的AWS模型ID
-	awsModelId := getAwsModelID(info.UpstreamModelName)
-
-	if info.ChannelOtherSettings.AwsForceGlobal {
-		// 强制 Global：无条件加 global. 前缀，绕过 per-model 跨区白名单
-		awsModelId = "global." + awsModelId
-	} else {
-		awsRegionPrefix := getAwsRegionPrefix(awsCli.Options().Region)
-		if awsModelCanCrossRegion(awsModelId, awsRegionPrefix) {
-			awsModelId = awsModelCrossRegion(awsModelId, awsRegionPrefix)
-		}
-	}
+	// 获取该区域实际调用的 AWS 模型 ID（与区域测试共用同一解析逻辑）
+	awsModelId := ResolveModelIDForRegion(info.UpstreamModelName, awsCli.Options().Region, info.ChannelOtherSettings.AwsForceGlobal)
 
 	// init empty request.header
 	requestHeader := http.Header{}

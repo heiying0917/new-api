@@ -198,14 +198,18 @@ export const MODEL_FETCHABLE_CHANNEL_TYPES = new Set([
 
 export const MODEL_TABLE_PAGE_SIZE = 10;
 
-// AWS Bedrock 区域列表（单点维护）。geo 对应后端 us/eu/ap 跨区前缀识别范围。
-// 列表偏「广覆盖」，个别区域可能没有 Claude；测试不可用的默认不选中，用户可手动剔除。
+// AWS Bedrock 区域列表（单点维护）。geo 仅为区域前缀（分组展示用），实际调用的模型 ID
+// （us./eu./apac./global.）由后端 ResolveModelIDForRegion 按模型与区域决定。
+// 覆盖 AWS 账号默认启用的全部 17 个区域，另含部分需手动开启（opt-in）的区域；
+// 测试不可用的默认不选中，用户可手动剔除。
 export const AWS_BEDROCK_REGIONS = [
-  // US
+  // Americas
   { region: 'us-east-1', label: 'us-east-1 (N. Virginia)', geo: 'us' },
   { region: 'us-east-2', label: 'us-east-2 (Ohio)', geo: 'us' },
   { region: 'us-west-1', label: 'us-west-1 (N. California)', geo: 'us' },
   { region: 'us-west-2', label: 'us-west-2 (Oregon)', geo: 'us' },
+  { region: 'ca-central-1', label: 'ca-central-1 (Canada)', geo: 'ca' },
+  { region: 'sa-east-1', label: 'sa-east-1 (São Paulo)', geo: 'sa' },
   // EU
   { region: 'eu-west-1', label: 'eu-west-1 (Ireland)', geo: 'eu' },
   { region: 'eu-west-2', label: 'eu-west-2 (London)', geo: 'eu' },

@@ -54,13 +54,23 @@ func BuildBedrockRuntimeClient(keyType dto.AwsKeyType, accessKey, secretKey, api
 	}
 }
 
-// ResolveModelIDForRegion 把 OpenAI 侧模型名解析为该区域应使用的 Bedrock 模型 ID，
-// 与真实 relay 流量一致：支持跨区的模型加 us./eu./apac. 前缀，否则用 base ID。
-func ResolveModelIDForRegion(model, region string) string {
+// ResolveModelIDForRegion 把 OpenAI 侧模型名解析为该区域应使用的 Bedrock 模型 ID。
+// relay（doAwsClientRequest）与区域测试接口共用此函数，保证测试结果与真实流量一致：
+//  1. 强制 Global：无条件加 global. 前缀；
+//  2. 该区域有地理跨区配置文件：加 us./eu./apac. 前缀；
+//  3. 只能经推理配置文件调用的模型：回退 global.（base ID 按需调用必然 400）；
+//  4. 其余用 base ID。
+func ResolveModelIDForRegion(model, region string, forceGlobal bool) string {
 	awsModelId := getAwsModelID(model)
+	if forceGlobal {
+		return "global." + awsModelId
+	}
 	regionPrefix := getAwsRegionPrefix(region)
 	if awsModelCanCrossRegion(awsModelId, regionPrefix) {
 		return awsModelCrossRegion(awsModelId, regionPrefix)
+	}
+	if awsModelGlobalProfileModels[awsModelId] {
+		return "global." + awsModelId
 	}
 	return awsModelId
 }

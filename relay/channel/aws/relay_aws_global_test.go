@@ -23,6 +23,9 @@ func TestDoAwsClientRequest_ForceGlobalPrefix(t *testing.T) {
 		{"global on => global. prefix", true, "us-east-1", "global.anthropic.claude-opus-4-6-v1"},
 		{"global off => region prefix", false, "us-east-1", "us.anthropic.claude-opus-4-6-v1"},
 		{"global off eu => eu prefix", false, "eu-west-1", "eu.anthropic.claude-opus-4-6-v1"},
+		// Bedrock 没有 apac.anthropic.claude-opus-4-6-v1，APAC / sa-east-1 只能走 global.
+		{"global off ap => global fallback", false, "ap-northeast-1", "global.anthropic.claude-opus-4-6-v1"},
+		{"global off sa => global fallback", false, "sa-east-1", "global.anthropic.claude-opus-4-6-v1"},
 	}
 	for _, tc := range cases {
 		tc := tc
