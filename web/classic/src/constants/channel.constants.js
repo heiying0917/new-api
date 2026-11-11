@@ -228,3 +228,8 @@ export const AWS_BEDROCK_REGIONS = [
   { region: 'ap-southeast-1', label: 'ap-southeast-1 (Singapore)', geo: 'ap' },
   { region: 'ap-southeast-2', label: 'ap-southeast-2 (Sydney)', geo: 'ap' },
 ];
+
+// 「测试可用区域」固定使用的探测模型（与后端 awsTestDefaultModel 一致）。
+// 不再按渠道模型挑最便宜的 haiku：有的账号 haiku-4-5 全区 404 而 opus/sonnet 可用，
+// 会把整组凭证误判为 0 个区域可用；opus-4-6 在 17 个默认区域都有 us./eu./global. 配置文件。
+export const AWS_REGION_TEST_MODEL = 'claude-opus-4-6';

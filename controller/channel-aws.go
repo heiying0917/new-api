@@ -15,10 +15,12 @@ import (
 )
 
 const (
-	awsTestDefaultModel      = "claude-haiku-4-5-20251001" // 未指定测试模型时的内置默认（便宜且 us/eu/apac 三区均跨区，探测更准）
-	awsTestRegionConcurrency = 8                           // 区域探测并发上限
-	awsTestRegionTimeout     = 10 * time.Second            // 单区域探测超时
-	awsTestMessageMaxLen     = 200                         // 错误信息最大长度（截断，避免过长）
+	// 未指定测试模型时的内置默认。opus-4-6 在 17 个默认区域都有 us./eu./global. 配置文件；
+	// 不用 haiku-4-5：有的账号 haiku-4-5 全区 404 而 opus/sonnet 可用，会把整组凭证误判为 0 个区域可用。
+	awsTestDefaultModel      = "claude-opus-4-6"
+	awsTestRegionConcurrency = 8                // 区域探测并发上限
+	awsTestRegionTimeout     = 10 * time.Second // 单区域探测超时
+	awsTestMessageMaxLen     = 300              // 错误原因最大字符数（截断，避免过长）
 )
 
 type awsTestRegionsRequest struct {
@@ -36,25 +38,30 @@ type awsTestRegionResult struct {
 	Ok         bool   `json:"ok"`
 	StatusCode int    `json:"status_code"`
 	LatencyMs  int64  `json:"latency_ms"`
-	Message    string `json:"message"`
+	ErrorCode  string `json:"error_code"` // AWS 短错误码（如 ResourceNotFoundException），非 AWS API 错误为空
+	Message    string `json:"message"`    // 失败原因：「错误码: AWS 说明」，非 AWS API 错误为单行错误串
 }
 
-// summarizeAwsProbeError 把 AWS SDK 错误压成单行、限长的精简串（不含凭证）。
-// 优先用 AWS 短错误码（如 AccessDeniedException），简洁且贴合区域状态展示；
-// 非 AWS API 错误（网络/超时等）回退到截断的完整错误串。
-func summarizeAwsProbeError(err error) string {
+// summarizeAwsProbeError 把 AWS SDK 错误压成（短错误码，单行限长的原因），均不含凭证。
+// AWS API 错误的原因为「错误码: AWS 说明」——只给错误码看不出是账号未提交用例表单、模型下线还是区域未开通；
+// 非 AWS API 错误（网络/超时等）错误码为空，原因回退到完整错误串。
+func summarizeAwsProbeError(err error) (code string, message string) {
 	if err == nil {
-		return ""
+		return "", ""
 	}
-	if code := awsrelay.AwsErrorCode(err); code != "" {
-		return code
+	if code = awsrelay.AwsErrorCode(err); code != "" {
+		message = code
+		if detail := strings.TrimSpace(awsrelay.AwsErrorMessage(err)); detail != "" {
+			message = code + ": " + detail
+		}
+	} else {
+		message = strings.TrimSpace(err.Error())
 	}
-	msg := strings.TrimSpace(err.Error())
-	msg = strings.ReplaceAll(msg, "\n", " ")
-	if len(msg) > awsTestMessageMaxLen {
-		msg = msg[:awsTestMessageMaxLen] + "..."
+	message = strings.ReplaceAll(message, "\n", " ")
+	if runes := []rune(message); len(runes) > awsTestMessageMaxLen {
+		message = string(runes[:awsTestMessageMaxLen]) + "..."
 	}
-	return msg
+	return code, message
 }
 
 // TestAwsRegions 并发探测每个区域对给定凭证 + 测试模型的可用性。
@@ -110,7 +117,7 @@ func TestAwsRegions(c *gin.Context) {
 
 			client, err := awsrelay.BuildBedrockRuntimeClient(keyType, req.AccessKey, req.SecretKey, req.ApiKey, region, httpClient)
 			if err != nil {
-				result.Message = summarizeAwsProbeError(err)
+				result.ErrorCode, result.Message = summarizeAwsProbeError(err)
 				results[idx] = result
 				return
 			}
@@ -126,7 +133,7 @@ func TestAwsRegions(c *gin.Context) {
 			result.StatusCode = statusCode
 			result.Ok = awsrelay.ClassifyRegionProbe(statusCode)
 			if !result.Ok && probeErr != nil {
-				result.Message = summarizeAwsProbeError(probeErr)
+				result.ErrorCode, result.Message = summarizeAwsProbeError(probeErr)
 			}
 			results[idx] = result
 		}(i, region)

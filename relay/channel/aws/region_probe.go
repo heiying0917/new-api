@@ -106,3 +106,13 @@ func AwsErrorCode(err error) string {
 	}
 	return ""
 }
+
+// AwsErrorMessage 从 AWS SDK 错误中提取 AWS 返回的原因说明（如 "Model use case details have not
+// been submitted for this account."），不含 RequestID 等 SDK 包装。非 AWS API 错误返回 ""。
+func AwsErrorMessage(err error) string {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorMessage()
+	}
+	return ""
+}

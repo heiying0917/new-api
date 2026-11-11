@@ -24,6 +24,7 @@ import {
   summarizeAwsCredentialResults,
   unionAvailableRegions,
   regionStatusSuffix,
+  groupFailedRegions,
   buildAwsRegionKeyLines,
   runWithConcurrency,
 } from './awsRegionCredentials';
@@ -240,6 +241,118 @@ describe('summarize / union / suffix', () => {
       regionStatusSuffix('eu-west-1', credentials.slice(0, 1), results),
     ).toBe(' ✗ AccessDeniedException');
     expect(regionStatusSuffix('us-east-1', credentials, {})).toBe('');
+  });
+});
+
+// 后端区域探测失败项：error_code 为 AWS 短错误码，message 为「错误码: AWS 说明」
+const failed = (region, errorCode, detail, statusCode = 404) => ({
+  region,
+  ok: false,
+  status_code: statusCode,
+  latency_ms: 50,
+  error_code: errorCode,
+  message: detail ? `${errorCode}: ${detail}` : errorCode,
+});
+const USE_CASE =
+  'Model use case details have not been submitted for this account.';
+const BAD_TOKEN = 'The security token included in the request is invalid.';
+
+describe('失败原因展示', () => {
+  const { credentials } = parseAwsCredentials(`${AK1}|sk1`, 'ak_sk');
+
+  test('单凭证下拉框后缀只显示短错误码，完整原因不塞进选项', () => {
+    const results = {
+      [`${AK1}|sk1`]: {
+        items: [failed('us-east-1', 'ResourceNotFoundException', USE_CASE)],
+      },
+    };
+    expect(regionStatusSuffix('us-east-1', credentials, results)).toBe(
+      ' ✗ ResourceNotFoundException',
+    );
+  });
+
+  test('非 AWS API 错误（无错误码）下拉框后缀回退到原因', () => {
+    const results = {
+      [`${AK1}|sk1`]: {
+        items: [
+          {
+            region: 'us-east-1',
+            ok: false,
+            status_code: 500,
+            latency_ms: 10000,
+            error_code: '',
+            message: 'dial tcp: i/o timeout',
+          },
+        ],
+      },
+    };
+    expect(regionStatusSuffix('us-east-1', credentials, results)).toBe(
+      ' ✗ dial tcp: i/o timeout',
+    );
+  });
+
+  test('失败区域按原因分组：次数多的在前，区域保持探测顺序', () => {
+    const result = {
+      items: [
+        ok('us-east-2'),
+        failed('us-east-1', 'ResourceNotFoundException', USE_CASE),
+        failed('eu-central-2', 'UnrecognizedClientException', BAD_TOKEN, 403),
+        failed('us-west-2', 'ResourceNotFoundException', USE_CASE),
+        failed('eu-south-1', 'UnrecognizedClientException', BAD_TOKEN, 403),
+        failed('ap-south-2', 'UnrecognizedClientException', BAD_TOKEN, 403),
+      ],
+    };
+    expect(groupFailedRegions(result)).toEqual([
+      {
+        errorCode: 'UnrecognizedClientException',
+        message: `UnrecognizedClientException: ${BAD_TOKEN}`,
+        regions: ['eu-central-2', 'eu-south-1', 'ap-south-2'],
+        regionNotEnabled: true,
+      },
+      {
+        errorCode: 'ResourceNotFoundException',
+        message: `ResourceNotFoundException: ${USE_CASE}`,
+        regions: ['us-east-1', 'us-west-2'],
+        regionNotEnabled: false,
+      },
+    ]);
+  });
+
+  test('凭证在所有区域都不可用时，UnrecognizedClientException 不判为区域未开通', () => {
+    const result = {
+      items: [
+        failed('us-east-1', 'UnrecognizedClientException', BAD_TOKEN, 403),
+        failed('eu-west-1', 'UnrecognizedClientException', BAD_TOKEN, 403),
+      ],
+    };
+    expect(groupFailedRegions(result).map((g) => g.regionNotEnabled)).toEqual([
+      false,
+    ]);
+  });
+
+  test('无原因时用状态码兜底；整体请求失败或未测试返回空', () => {
+    expect(
+      groupFailedRegions({
+        items: [
+          {
+            region: 'us-east-1',
+            ok: false,
+            status_code: 500,
+            latency_ms: 1,
+            message: '',
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        errorCode: '',
+        message: '500',
+        regions: ['us-east-1'],
+        regionNotEnabled: false,
+      },
+    ]);
+    expect(groupFailedRegions({ error: '测试失败' })).toEqual([]);
+    expect(groupFailedRegions(undefined)).toEqual([]);
   });
 });
 

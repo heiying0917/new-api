@@ -22,6 +22,7 @@ export {
   MODEL_FETCHABLE_CHANNEL_TYPES,
   MODEL_TABLE_PAGE_SIZE,
   AWS_BEDROCK_REGIONS,
+  AWS_REGION_TEST_MODEL,
 } from './channel.constants';
 export { userConstants } from './user.constants';
 export { toastConstants } from './toast.constants';

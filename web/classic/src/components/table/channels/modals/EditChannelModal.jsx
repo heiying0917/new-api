@@ -28,7 +28,7 @@ import {
   verifyJSON,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
-import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES, AWS_BEDROCK_REGIONS } from '../../../../constants';
+import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES, AWS_BEDROCK_REGIONS, AWS_REGION_TEST_MODEL } from '../../../../constants';
 import {
   SideSheet,
   Space,
@@ -81,6 +81,7 @@ import {
   summarizeAwsCredentialResults,
   unionAvailableRegions,
   regionStatusSuffix,
+  groupFailedRegions,
   buildAwsRegionKeyLines,
   formatAwsCredentialRef,
   runWithConcurrency,
@@ -2068,24 +2069,6 @@ const EditChannelModal = (props) => {
   const formatAwsCredRefs = (creds) =>
     creds.map((cred) => formatAwsCredentialRef(cred, t)).join('、');
 
-  // 从已选模型里挑一个用于测试：仅 Claude（探测用 Anthropic 格式），便宜优先 haiku>sonnet>opus
-  const pickAwsTestModel = (models) => {
-    const claudeModels = (models || []).filter((m) =>
-      String(m).toLowerCase().includes('claude'),
-    );
-    if (claudeModels.length === 0) return 'claude-haiku-4-5-20251001';
-    const tier = (m) => {
-      const s = String(m).toLowerCase();
-      if (s.includes('haiku')) return 0;
-      if (s.includes('sonnet')) return 1;
-      if (s.includes('opus')) return 2;
-      return 3;
-    };
-    return [...claudeModels].sort(
-      (a, b) => tier(a) - tier(b) || String(a).localeCompare(String(b)),
-    )[0];
-  };
-
   // 单组凭证对全量 AWS_BEDROCK_REGIONS 探测；整体失败返回 { error }，不抛异常
   const testAwsCredentialRegions = async (cred, keyType, model) => {
     const payload = {
@@ -2131,7 +2114,7 @@ const EditChannelModal = (props) => {
         }),
       );
     }
-    const model = pickAwsTestModel(inputs.models);
+    const model = AWS_REGION_TEST_MODEL;
 
     setAwsRegionTesting(true);
     try {
@@ -3598,24 +3581,30 @@ const EditChannelModal = (props) => {
                             {t('批量生成可用区域密钥')}
                           </Button>
                           <Text type='tertiary' size='small'>
+                            {t('测试模型：{{model}}', {
+                              model: AWS_REGION_TEST_MODEL,
+                            })}
+                          </Text>
+                          <Text type='tertiary' size='small'>
                             {t(
                               '每行一组凭证（可填多组）→ 测试 → 勾选区域 → 批量生成：每组凭证按各自可用区域生成，不可用的自动剔除；自动开启「批量创建」+「密钥聚合模式」后提交。新建时每组凭证各建一个渠道（名称追加 AK 后四位），编辑时只能使用一组凭证',
                             )}
                           </Text>
                         </div>
-                        {(awsTestedCreds.length > 1 ||
-                          awsTestSummary.unavailable.length > 0) && (
+                        {awsTestedCreds.length > 0 && (
                           <div style={{ marginTop: 8 }}>
-                            <Text type='tertiary' size='small'>
-                              {t(
-                                '共 {{total}} 组凭证：{{ok}} 组可用，{{bad}} 组不可用',
-                                {
-                                  total: awsTestedCreds.length,
-                                  ok: awsTestSummary.available.length,
-                                  bad: awsTestSummary.unavailable.length,
-                                },
-                              )}
-                            </Text>
+                            {awsTestedCreds.length > 1 && (
+                              <Text type='tertiary' size='small'>
+                                {t(
+                                  '共 {{total}} 组凭证：{{ok}} 组可用，{{bad}} 组不可用',
+                                  {
+                                    total: awsTestedCreds.length,
+                                    ok: awsTestSummary.available.length,
+                                    bad: awsTestSummary.unavailable.length,
+                                  },
+                                )}
+                              </Text>
+                            )}
                             {awsTestSummary.available.map(({ cred, regions }) => (
                               <div key={`ok-${cred.lineNo}`}>
                                 <Text type='tertiary' size='small'>
@@ -3624,6 +3613,30 @@ const EditChannelModal = (props) => {
                                     { count: regions.length },
                                   )}`}
                                 </Text>
+                                {/* 可用凭证的失败区域按原因分组，避免只看到错误码猜不出原因 */}
+                                {groupFailedRegions(
+                                  awsCredResults[cred.prefix],
+                                ).map((group) => (
+                                  <div
+                                    key={`fail-${cred.lineNo}-${group.message}`}
+                                    style={{ paddingLeft: 16 }}
+                                  >
+                                    <Text
+                                      type={
+                                        group.regionNotEnabled
+                                          ? 'tertiary'
+                                          : 'warning'
+                                      }
+                                      size='small'
+                                    >
+                                      {`✗ ${group.regions.join('、')}：${
+                                        group.regionNotEnabled
+                                          ? `${t('账号未开通这些区域')}（${group.errorCode}）`
+                                          : group.message
+                                      }`}
+                                    </Text>
+                                  </div>
+                                ))}
                               </div>
                             ))}
                             {awsTestSummary.unavailable.map(({ cred, reason }) => (

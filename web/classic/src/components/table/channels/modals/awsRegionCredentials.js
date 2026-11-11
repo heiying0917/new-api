@@ -139,6 +139,35 @@ export const unionAvailableRegions = (
   return (allRegions || []).filter((region) => union.has(region));
 };
 
+// 失败区域按原因分组：[{ errorCode, message, regions, regionNotEnabled }]，次数多的在前（同数按首次出现），区域保持探测顺序。
+// regionNotEnabled：凭证在其他区域可用、仅该区域报 UnrecognizedClientException（AWS 原文为「token 无效」），
+// 实为账号未开通该 opt-in 区域；凭证全区不可用时则是凭证本身无效，不做此判断。
+export const groupFailedRegions = (result) => {
+  const items = (result && result.items) || [];
+  const hasAvailable = items.some((item) => item.ok);
+  const groups = new Map();
+  items
+    .filter((item) => !item.ok)
+    .forEach((item) => {
+      const message =
+        item.message || (item.status_code ? String(item.status_code) : '');
+      if (!groups.has(message)) {
+        const errorCode = item.error_code || '';
+        groups.set(message, {
+          errorCode,
+          message,
+          regions: [],
+          regionNotEnabled:
+            hasAvailable && errorCode === 'UnrecognizedClientException',
+        });
+      }
+      groups.get(message).regions.push(item.region);
+    });
+  return Array.from(groups.values()).sort(
+    (a, b) => b.regions.length - a.regions.length,
+  );
+};
+
 // 区域下拉框后缀：单凭证沿用「✓ 延迟 / ✗ 错误」，多凭证显示可用凭证数「✓ k/n」
 export const regionStatusSuffix = (region, credentials, resultsByPrefix) => {
   const tested = (credentials || [])
@@ -148,9 +177,10 @@ export const regionStatusSuffix = (region, credentials, resultsByPrefix) => {
   if (tested.length === 1) {
     const item = (tested[0].items || []).find((it) => it.region === region);
     if (!item) return '';
+    // 选项里只放短错误码（完整原因在按钮下方按原因分组展示）；非 AWS API 错误无错误码，回退到原因
     return item.ok
       ? ` ✓ ${item.latency_ms}ms`
-      : ` ✗ ${item.message || item.status_code}`;
+      : ` ✗ ${item.error_code || item.message || item.status_code}`;
   }
   const okCount = tested.filter((result) =>
     (result.items || []).some((it) => it.region === region && it.ok),

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/require"
 )
@@ -127,6 +129,24 @@ func TestAwsErrorCode(t *testing.T) {
 	// 非 AWS API 错误 => 空串（调用方回退完整错误串）
 	require.Equal(t, "", AwsErrorCode(errors.New("dial tcp: i/o timeout")))
 	require.Equal(t, "", AwsErrorCode(nil))
+}
+
+// 区域测试要把 AWS 给出的原因展示出来：只有错误码（如 ResourceNotFoundException）看不出是
+// 「账号未提交 Anthropic 用例表单」还是「模型下线 / Legacy」。
+func TestAwsErrorMessage(t *testing.T) {
+	const useCase = "Model use case details have not been submitted for this account."
+	sdkErr := &smithy.OperationError{
+		ServiceID:     "Bedrock Runtime",
+		OperationName: "InvokeModel",
+		Err:           &types.ResourceNotFoundException{Message: aws.String(useCase)},
+	}
+	require.Equal(t, useCase, AwsErrorMessage(sdkErr))
+
+	generic := fmt.Errorf("wrap: %w", &smithy.GenericAPIError{Code: "UnrecognizedClientException", Message: "The security token included in the request is invalid."})
+	require.Equal(t, "The security token included in the request is invalid.", AwsErrorMessage(generic))
+
+	require.Equal(t, "", AwsErrorMessage(errors.New("dial tcp: i/o timeout")))
+	require.Equal(t, "", AwsErrorMessage(nil))
 }
 
 // Bedrock 客户端不在同一渠道内重试：限流/故障立即返回，由上层换渠道重试（SDK 默认 3 次退避重试会拖慢切换、放大上游压力）。
