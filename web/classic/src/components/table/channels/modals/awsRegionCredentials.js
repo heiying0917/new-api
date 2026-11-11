@@ -168,6 +168,47 @@ export const groupFailedRegions = (result) => {
   );
 };
 
+// 「测试可用区域」测试模型的下拉候选：默认模型第一，当前选中的模型第二（手动输入的也保留，否则下拉里看不到当前值），
+// 其次渠道已选模型（保持原顺序），再次 AWS 适配器支持的模型（按名称倒序：后端 map 遍历顺序随机，倒序让新模型靠前、Claude 3.x 靠后）。
+// 渠道 / 适配器列表只保留 Claude（探测请求固定用 Anthropic 格式）；非数组忽略；去首尾空白、去重、忽略空值。
+export const buildAwsTestModelOptions = (
+  defaultModel,
+  channelModels,
+  adaptorModels,
+  currentModel,
+) => {
+  const seen = new Set();
+  const options = [];
+  const add = (model) => {
+    const name = String(model ?? '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    options.push(name);
+  };
+  const isClaude = (model) =>
+    String(model ?? '')
+      .toLowerCase()
+      .includes('claude');
+  const byNameDesc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
+  add(defaultModel);
+  add(currentModel);
+  const asList = (value) => (Array.isArray(value) ? value : []);
+  asList(channelModels).filter(isClaude).forEach(add);
+  asList(adaptorModels)
+    .filter(isClaude)
+    .map((model) => String(model).trim())
+    .sort(byNameDesc)
+    .forEach(add);
+  return options;
+};
+
+// 测试模型在浏览器本地记住上次的选择
+export const AWS_TEST_MODEL_STORAGE_KEY = 'aws_region_test_model';
+
+// 实际使用的测试模型：去首尾空白，为空时回退默认模型
+export const resolveAwsTestModel = (value, defaultModel) =>
+  String(value ?? '').trim() || defaultModel;
+
 // 区域下拉框后缀：单凭证沿用「✓ 延迟 / ✗ 错误」，多凭证显示可用凭证数「✓ k/n」
 export const regionStatusSuffix = (region, credentials, resultsByPrefix) => {
   const tested = (credentials || [])

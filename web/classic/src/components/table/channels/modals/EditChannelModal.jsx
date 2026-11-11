@@ -82,6 +82,9 @@ import {
   unionAvailableRegions,
   regionStatusSuffix,
   groupFailedRegions,
+  buildAwsTestModelOptions,
+  resolveAwsTestModel,
+  AWS_TEST_MODEL_STORAGE_KEY,
   buildAwsRegionKeyLines,
   formatAwsCredentialRef,
   runWithConcurrency,
@@ -277,6 +280,19 @@ const EditChannelModal = (props) => {
   // 最近一次测试的凭证列表（行号 + 打码标签），用于展示每组凭证的测试结论
   const [awsTestedCreds, setAwsTestedCreds] = useState([]);
   const [awsRegionTesting, setAwsRegionTesting] = useState(false);
+  // 测试模型：可选可输入，浏览器本地记住上次的选择；读不到时回退默认（AWS_REGION_TEST_MODEL）
+  const [awsTestModel, setAwsTestModel] = useState(() => {
+    try {
+      return resolveAwsTestModel(
+        localStorage.getItem(AWS_TEST_MODEL_STORAGE_KEY),
+        AWS_REGION_TEST_MODEL,
+      );
+    } catch (e) {
+      return AWS_REGION_TEST_MODEL;
+    }
+  });
+  // 最近一次测试实际用的模型（测完再切换下拉框，结果仍标明是哪个模型测的）
+  const [awsTestedModel, setAwsTestedModel] = useState('');
   // 代理连通性测试（临时 UI 态）
   const [proxyTesting, setProxyTesting] = useState(false);
   const [proxyTestResult, setProxyTestResult] = useState(null);
@@ -284,6 +300,15 @@ const EditChannelModal = (props) => {
     () => summarizeAwsCredentialResults(awsTestedCreds, awsCredResults),
     [awsTestedCreds, awsCredResults],
   );
+  // 测试模型下拉候选：默认 → 当前选择 → 渠道已选 Claude 模型 → AWS 适配器支持的 Claude 模型（渠道类型 33）。
+  // 不用 useMemo：适配器列表（channel_models）由渠道页挂载后异步加载，memo 会停在加载前的空列表；
+  // getChannelModels 自带缓存，每次渲染重算几十个字符串开销可忽略。
+  const awsTestModelOptions = buildAwsTestModelOptions(
+    AWS_REGION_TEST_MODEL,
+    inputs.models,
+    getChannelModels(33),
+    awsTestModel,
+  ).map((model) => ({ label: model, value: model }));
   const [isEnterpriseAccount, setIsEnterpriseAccount] = useState(false); // 是否为企业账户
   const [doubaoApiEditUnlocked, setDoubaoApiEditUnlocked] = useState(false); // 豆包渠道自定义 API 地址隐藏入口
   const redirectModelList = useMemo(() => {
@@ -1468,6 +1493,7 @@ const EditChannelModal = (props) => {
     setAwsRegions([]);
     setAwsCredResults({});
     setAwsTestedCreds([]);
+    setAwsTestedModel('');
     setAwsRegionTesting(false);
     setProxyTesting(false);
     setProxyTestResult(null);
@@ -2069,6 +2095,17 @@ const EditChannelModal = (props) => {
   const formatAwsCredRefs = (creds) =>
     creds.map((cred) => formatAwsCredentialRef(cred, t)).join('、');
 
+  // 切换测试模型：清空时回退默认；写入浏览器本地（不可用时忽略）
+  const handleAwsTestModelChange = (value) => {
+    const model = resolveAwsTestModel(value, AWS_REGION_TEST_MODEL);
+    setAwsTestModel(model);
+    try {
+      localStorage.setItem(AWS_TEST_MODEL_STORAGE_KEY, model);
+    } catch (e) {
+      // 隐私模式等场景下 localStorage 不可用，只在本次会话生效
+    }
+  };
+
   // 单组凭证对全量 AWS_BEDROCK_REGIONS 探测；整体失败返回 { error }，不抛异常
   const testAwsCredentialRegions = async (cred, keyType, model) => {
     const payload = {
@@ -2114,7 +2151,7 @@ const EditChannelModal = (props) => {
         }),
       );
     }
-    const model = AWS_REGION_TEST_MODEL;
+    const model = resolveAwsTestModel(awsTestModel, AWS_REGION_TEST_MODEL);
 
     setAwsRegionTesting(true);
     try {
@@ -2134,6 +2171,7 @@ const EditChannelModal = (props) => {
       });
       setAwsCredResults(resultMap);
       setAwsTestedCreds(credentials);
+      setAwsTestedModel(model);
       const available = unionAvailableRegions(
         AWS_BEDROCK_REGIONS.map((r) => r.region),
         credentials,
@@ -3562,6 +3600,17 @@ const EditChannelModal = (props) => {
                             )}`,
                           }))}
                         />
+                        <Select
+                          prefix={t('测试模型')}
+                          filter={selectFilter}
+                          allowCreate
+                          showClear
+                          position='bottomLeft'
+                          style={{ width: '100%', marginTop: 8 }}
+                          value={awsTestModel}
+                          optionList={awsTestModelOptions}
+                          onChange={handleAwsTestModelChange}
+                        />
                         <div
                           className='flex items-center gap-2 flex-wrap'
                           style={{ marginTop: 8 }}
@@ -3581,11 +3630,6 @@ const EditChannelModal = (props) => {
                             {t('批量生成可用区域密钥')}
                           </Button>
                           <Text type='tertiary' size='small'>
-                            {t('测试模型：{{model}}', {
-                              model: AWS_REGION_TEST_MODEL,
-                            })}
-                          </Text>
-                          <Text type='tertiary' size='small'>
                             {t(
                               '每行一组凭证（可填多组）→ 测试 → 勾选区域 → 批量生成：每组凭证按各自可用区域生成，不可用的自动剔除；自动开启「批量创建」+「密钥聚合模式」后提交。新建时每组凭证各建一个渠道（名称追加 AK 后四位），编辑时只能使用一组凭证',
                             )}
@@ -3593,6 +3637,15 @@ const EditChannelModal = (props) => {
                         </div>
                         {awsTestedCreds.length > 0 && (
                           <div style={{ marginTop: 8 }}>
+                            {awsTestedModel && (
+                              <div>
+                                <Text type='tertiary' size='small'>
+                                  {t('测试模型：{{model}}', {
+                                    model: awsTestedModel,
+                                  })}
+                                </Text>
+                              </div>
+                            )}
                             {awsTestedCreds.length > 1 && (
                               <Text type='tertiary' size='small'>
                                 {t(

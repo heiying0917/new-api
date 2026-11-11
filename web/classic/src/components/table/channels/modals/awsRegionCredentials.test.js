@@ -25,6 +25,8 @@ import {
   unionAvailableRegions,
   regionStatusSuffix,
   groupFailedRegions,
+  buildAwsTestModelOptions,
+  resolveAwsTestModel,
   buildAwsRegionKeyLines,
   runWithConcurrency,
 } from './awsRegionCredentials';
@@ -353,6 +355,120 @@ describe('失败原因展示', () => {
     ]);
     expect(groupFailedRegions({ error: '测试失败' })).toEqual([]);
     expect(groupFailedRegions(undefined)).toEqual([]);
+  });
+});
+
+describe('测试模型选择', () => {
+  const DEFAULT = 'claude-opus-4-6';
+
+  test('默认模型第一，渠道已选的 Claude 模型（保持原顺序）优先于适配器列表', () => {
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        ['claude-sonnet-4-6', 'claude-opus-4-5-20251101'],
+        ['claude-haiku-4-5-20251001', 'claude-opus-4-7'],
+      ),
+    ).toEqual([
+      DEFAULT,
+      'claude-sonnet-4-6',
+      'claude-opus-4-5-20251101',
+      'claude-opus-4-7',
+      'claude-haiku-4-5-20251001',
+    ]);
+  });
+
+  test('适配器列表按名称倒序（后端 map 遍历顺序随机；倒序让新模型靠前、Claude 3.x 靠后）', () => {
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        [],
+        [
+          'claude-3-haiku-20240307',
+          'claude-sonnet-4-20250514',
+          'claude-opus-4-7',
+          'claude-sonnet-4-6',
+          'claude-sonnet-4-5-20250929',
+          'claude-3-7-sonnet-20250219',
+        ],
+      ),
+    ).toEqual([
+      DEFAULT,
+      'claude-sonnet-4-6',
+      'claude-sonnet-4-5-20250929',
+      'claude-sonnet-4-20250514',
+      'claude-opus-4-7',
+      'claude-3-haiku-20240307',
+      'claude-3-7-sonnet-20250219',
+    ]);
+  });
+
+  test('只保留 Claude 模型（探测固定用 Anthropic 格式），大小写不敏感', () => {
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        ['gpt-4o', 'Claude-Sonnet-4-6'],
+        ['amazon.nova-pro-v1:0', 'meta.llama3-70b', 'claude-opus-4-7'],
+      ),
+    ).toEqual([DEFAULT, 'Claude-Sonnet-4-6', 'claude-opus-4-7']);
+  });
+
+  test('去掉首尾空白、去重（含与默认模型重复）、忽略空值', () => {
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        [' claude-opus-4-6 ', 'claude-sonnet-4-6', '', '  ', null],
+        ['claude-sonnet-4-6', 'claude-opus-4-6', undefined],
+      ),
+    ).toEqual([DEFAULT, 'claude-sonnet-4-6']);
+  });
+
+  test('渠道模型 / 适配器列表不是数组时忽略（不能让弹窗崩溃）', () => {
+    expect(
+      buildAwsTestModelOptions(DEFAULT, 'claude-sonnet-4-6,claude-opus-4-7', {
+        33: ['claude-opus-4-7'],
+      }),
+    ).toEqual([DEFAULT]);
+  });
+
+  test('渠道模型 / 适配器列表缺失时只剩默认模型', () => {
+    expect(buildAwsTestModelOptions(DEFAULT, undefined, null)).toEqual([
+      DEFAULT,
+    ]);
+  });
+
+  test('当前选中的模型（含手动输入的非 Claude 名）紧跟默认模型，不被过滤', () => {
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        ['claude-sonnet-4-6'],
+        ['claude-opus-4-7'],
+        'my-custom-model',
+      ),
+    ).toEqual([
+      DEFAULT,
+      'my-custom-model',
+      'claude-sonnet-4-6',
+      'claude-opus-4-7',
+    ]);
+    // 当前选中的就是候选之一：不重复，位置提前到默认之后
+    expect(
+      buildAwsTestModelOptions(
+        DEFAULT,
+        ['claude-sonnet-4-6'],
+        ['claude-opus-4-7'],
+        'claude-opus-4-7',
+      ),
+    ).toEqual([DEFAULT, 'claude-opus-4-7', 'claude-sonnet-4-6']);
+  });
+
+  test('resolveAwsTestModel：去首尾空白，空值回退默认', () => {
+    expect(resolveAwsTestModel(' claude-opus-4-5-20251101 ', DEFAULT)).toBe(
+      'claude-opus-4-5-20251101',
+    );
+    expect(resolveAwsTestModel('', DEFAULT)).toBe(DEFAULT);
+    expect(resolveAwsTestModel('   ', DEFAULT)).toBe(DEFAULT);
+    expect(resolveAwsTestModel(undefined, DEFAULT)).toBe(DEFAULT);
+    expect(resolveAwsTestModel(null, DEFAULT)).toBe(DEFAULT);
   });
 });
 

@@ -31,6 +31,7 @@
     "无可用区域": "No available region",
     "生成时将自动剔除": "will be removed when generating",
     "测试模型：{{model}}": "Test model: {{model}}",
+    "测试模型": "Test model",
     "账号未开通这些区域": "Regions not enabled for this account",
     "请先填写代理地址": "Please enter a proxy address first",
     "测试连通性": "Test connectivity",
